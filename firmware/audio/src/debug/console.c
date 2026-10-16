@@ -30,6 +30,9 @@
 #include "flash_rmw.h"
 #include "recovery.h"
 #include "regs.h"
+#ifdef NAM_RUNTIME
+#include "namstore/namstore.h"
+#endif
 #ifndef FB200_RECOVERY
 #include "loopstore/lsio.h"
 #include "ui/display.h"
@@ -888,6 +891,40 @@ static void dispatch(char *cmd)
                    on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
                    (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
+#ifdef NAM_RUNTIME
+    else if (streq(argv[0], "namls")) {
+        namstore_list();
+        log_printf("nam active %u\r\n", engine_nam_selected());
+    }
+    else if (streq(argv[0], "namput")) {
+        int a=0,b=0,c=0;
+        uint32_t slot = argc == 4 ? parse_num(argv[1], &a) : 0;
+        uint32_t bytes = argc == 4 ? parse_num(argv[2], &b) : 0;
+        uint32_t crc = argc == 4 ? parse_num(argv[3], &c) : 0;
+        if (a && b && c) (void)namstore_begin(slot, bytes, crc);
+        else log_printf("nam: usage namput <1-3> <bytes> <crc>\r\n");
+    }
+    else if (streq(argv[0], "namuse") || streq(argv[0], "namdel")) {
+        int ok=0;
+        uint32_t slot = (argc == 2 || (argc == 3 && streq(argv[0], "namuse") &&
+                                      streq(argv[2], "save"))) ? parse_num(argv[1], &ok) : 99;
+        int r = !ok ? -1 : streq(argv[0], "namuse") ? engine_nam_select(slot)
+            : namstore_delete(slot);
+        if (r == 0 && (streq(argv[0], "namuse") || engine_nam_selected() == slot)) {
+            unsigned selected = streq(argv[0], "namuse") ? slot : 0;
+            if (!selected) (void)engine_nam_select(0);
+            uint8_t record[4] = {(uint8_t)NAM_MARK, (uint8_t)(NAM_MARK>>8), (uint8_t)selected, 0};
+            ui_edit_write(P_NAM_MARK, record, sizeof record);
+            if (selected) {
+                uint8_t enabled[2] = {1,0};
+                ui_edit_write(P_AMP_EN, enabled, sizeof enabled);
+            }
+            if (argc == 3 && ui_save() != 0) r = -1;
+        }
+        log_printf("nam %s %s slot %u\r\n", streq(argv[0], "namuse") ? "use" : "delete",
+                   r == 0 ? "ok" : "FAILED", (unsigned)slot);
+    }
+#endif
     else if (streq(argv[0], "prof")) engine_profile();
     else if (streq(argv[0], "loop")) cmd_loop(argc, argv);
     else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
@@ -1064,6 +1101,9 @@ void console_init(void)
 void console_task(void)
 {
     if (fw_active()) { fw_rx_task(); return; }
+#ifdef NAM_RUNTIME
+    if (namstore_active()) { namstore_task(); return; }
+#endif
 #ifndef FB200_RECOVERY
     if (irstore_put_active()) { irstore_put_task(); return; }
 #endif
@@ -1074,6 +1114,10 @@ void console_task(void)
             line[line_len] = 0;
             dispatch(line);
             line_len = 0;
+#ifdef NAM_RUNTIME
+            /* Do not consume coalesced binary bytes in the line reader. */
+            if (namstore_active()) return;
+#endif
         } else if (c == 8 || c == 127) {
             if (line_len) { line_len--; cdc_log_write("\b \b", 3); }
         } else if (line_len < sizeof line - 1) {

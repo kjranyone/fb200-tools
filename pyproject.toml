@@ -14,6 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 hid = ["hidapi>=0.14"]
+nam = ["pyserial>=3.5"]  # native Windows USB-console model management
 # `fb200 ir import|process --minphase`
 ir = ["numpy>=1.26"]
 # `fb200 mcp`: MCP server for AI agents (audio_test also needs numpy + sounddevice)

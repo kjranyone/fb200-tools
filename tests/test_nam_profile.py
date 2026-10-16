@@ -37,9 +37,9 @@ int main(void) { return 0; }
 
 
 @functools.cache
-def probe_build():
+def probe_build(profile="nam-probe"):
     out = Path(tempfile.mkdtemp(prefix="nam_probe_"))
-    subprocess.run(["make", f"BUILD={out}", "PROFILE=nam-probe", "-j4", "build", "layout"],
+    subprocess.run(["make", f"BUILD={out}", f"PROFILE={profile}", "-j4", "build", "layout"],
                    cwd=FW, check=True)
     return out
 
@@ -67,3 +67,26 @@ def test_probe_reserves_real_ram():
     undefined = subprocess.run(["arm-none-eabi-nm", "-u", str(obj)], capture_output=True,
                                text=True, check=True).stdout
     assert all(line.split()[-1] in {"memcpy", "memset"} for line in undefined.splitlines())
+
+
+@pytest.mark.skipif(any(shutil.which(t) is None for t in ("arm-none-eabi-gcc", "make", "curl")),
+                    reason="ARM toolchain not installed")
+def test_runtime_image_and_flash_busy_safety():
+    out = probe_build("nam-runtime")
+    elf = out / "fb200-app.elf"
+    subprocess.run(["python3", str(ROOT / "firmware/tools/hot_path.py"), str(elf),
+                    "--nam-runtime"], check=True)
+    nm = subprocess.run(["arm-none-eabi-nm", "-S", str(elf)], capture_output=True,
+                        text=True, check=True).stdout
+    syms = {p[3]: (int(p[0], 16), int(p[1], 16)) for line in nm.splitlines()
+            if len(p := line.split()) == 4}
+    address, size = syms["s_nam"]
+    assert size == 83976 and 0x20000000 <= address < address+size <= 0x20018A00
+    address, size = syms["staging"]
+    assert size == 8192 and 0x20200000 <= address < address+size <= 0x20208000
+    assert "s_rev" not in syms  # restricted runtime profile frees reverb ITCM
+    assert "nam_a2_process" in syms and syms["nam_a2_process"][0] < 0x20000
+    # This profile must not silently weaken the stock image's required checks.
+    result = subprocess.run(["python3", str(ROOT / "firmware/tools/hot_path.py"),
+                             str(elf)], check=False, capture_output=True)
+    assert result.returncode != 0 and b"lsio_" in result.stdout

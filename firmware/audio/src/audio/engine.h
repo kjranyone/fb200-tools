@@ -67,6 +67,12 @@ void engine_apply_preset(const preset_t *p, unsigned master);
 /* Global settings: input gain (S+0x1a), tuner A4 (S+0x2c), tuner mute (S+0x2e). */
 void engine_apply_settings(const settings_t *s);
 void engine_dsp_reset(void);
+#ifdef NAM_RUNTIME
+/* Main-loop only: validated flash slot -> RAM, zero-input warmup, then use.
+ * slot 0 = dry bypass. Selection never erases flash. */
+int engine_nam_select(unsigned slot);
+unsigned engine_nam_selected(void);
+#endif
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
 /* User IR staging in taps, a RAM budget (engine.c; memory map:
  * docs/FIRMWARE_BRINGUP.md). 512 (CAB_TAPS, the stock and user slot size) =

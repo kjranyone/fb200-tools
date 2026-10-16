@@ -27,10 +27,12 @@ Its firmware is closed and frozen. This project aims to:
 
 ## Status (v0.12)
 
-**NAM research branch:** host-tested fixed A2-Lite inference, a strict model-to-C
-converter and a compile-only 48 kHz/RAM probe are described in
-[`docs/NAM_A2_LITE.md`](docs/NAM_A2_LITE.md). NAM is not yet connected to the
-pedal audio path. The default firmware stays at 44.1 kHz.
+**NAM research branch:** the optional `nam-runtime` profile connects A2-Lite
+inference with three persistent, runtime-loadable USB model slots (`fb200 nam
+put/list/select/delete`). Model changes require no firmware rebuild. It is
+host-tested and cross-built, **not yet tested on a pedal**. See
+[`docs/NAM_A2_LITE.md`](docs/NAM_A2_LITE.md) for its restricted effect chain and
+remaining gates. The default firmware stays at 44.1 kHz.
 
 Verified on a real pedal:
 

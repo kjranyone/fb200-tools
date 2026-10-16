@@ -239,10 +239,14 @@ def _chains(img: Image, parent: dict[int, int | None], roots: dict[int, str],
     return bad
 
 
-def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
+def check(elf: Path, cross: str = "arm-none-eabi-", *, nam_runtime: bool = False) -> list[str]:
     """Returns one line per violation (empty = pass): a hot function outside
     ITCM, or a flash-write function in flash."""
     img = Image(elf, cross)
+    if nam_runtime:
+        for name in ("nam_a2_process", "engine_nam_select", "namstore_write", "namstore_task"):
+            if name not in img.addr:
+                return [f"NAM runtime entry {name} not found in {elf}"]
     roots = hot_roots(img)
     for n in HOT_ENTRY:
         if n not in img.funcs.values():
@@ -250,20 +254,22 @@ def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
     bad = _chains(img, reachable(img, roots), roots, lambda f: f not in ITCM, "")
     wroots = flash_write_roots(img)
     for n in FLASH_WRITE_ENTRY:
+        if nam_runtime and n.startswith("lsio_"):
+            continue  # looper disabled; its writer is removed by the linker
         if n not in img.addr:
             return bad + [f"flash-write entry {n} not found in {elf}"]
     skip, gate_bad = gated_edges(img)
     bad += gate_bad
     bad += _chains(img, reachable(img, wroots, skip), wroots, lambda f: f in FLASH,
                    "flash write: ")
-    return bad + check_flash_busy(img)
+    return bad + check_flash_busy(img, nam_runtime=nam_runtime)
 
 
 def flash_busy_roots(img: Image) -> dict[int, str]:
     return {a: "flash busy" for a, n in img.funcs.items() if n in FLASH_BUSY_ENTRY}
 
 
-def check_flash_busy(img: Image) -> list[str]:
+def check_flash_busy(img: Image, *, nam_runtime: bool = False) -> list[str]:
     """The audio pump: RAM only, no flash address, and wired both ways."""
     roots = flash_busy_roots(img)
     if len(roots) != len(FLASH_BUSY_ENTRY):
@@ -275,6 +281,8 @@ def check_flash_busy(img: Image) -> list[str]:
     bad += [f"flash busy: {', '.join(FLASH_BUSY_ENTRY)} does not reach {n}"
             for n in PUMP_MUST_REACH if n not in names]
     for caller in PUMP_CALLERS:
+        if nam_runtime and caller.startswith("lsio_"):
+            continue
         a = img.addr.get(caller)
         reach = {img.name(f) for f in reachable(img, {a: "caller"})} if a is not None else set()
         if not set(FLASH_BUSY_ENTRY) & reach:
@@ -287,6 +295,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("elf", type=Path)
     ap.add_argument("--cross", default="arm-none-eabi-")
+    ap.add_argument("--nam-runtime", action="store_true",
+                    help="require NAM entry points; looper writers are disabled in this profile")
     ap.add_argument("--list", action="store_true", help="print the hot set")
     ap.add_argument("--list-flash-write", action="store_true",
                     help="print the flash-write set")
@@ -304,7 +314,7 @@ def main() -> int:
         for f in sorted(found):
             print(f"{f:#010x} {img.name(f)}")
         return 0
-    bad = check(args.elf, args.cross)
+    bad = check(args.elf, args.cross, nam_runtime=args.nam_runtime)
     for line in bad:
         print(line)
     return 1 if bad else 0

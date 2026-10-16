@@ -29,6 +29,8 @@
  * a chip that holds all of it (flash_capacity). */
 #define FLASH_IRSTORE_BASE  0x00400000u
 #define FLASH_IRSTORE_LIMIT 0x00502000u
+#define FLASH_NAM_BASE      0x00502000u
+#define FLASH_NAM_LIMIT     0x0050E000u /* 3 slots, two 8 KiB banks each */
 /* The looper's area (loopstore/loopstore.h): F:0x510000 (64 kB aligned,
  * after the long IR store) to the end of the chip (flash_capacity), at most
  * FLASH_LOOP_END. FLASH_LOOP_META (one sector below it) holds `loop save`.

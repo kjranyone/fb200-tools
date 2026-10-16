@@ -43,6 +43,8 @@ enum {
     P_DLY_MARK = 0x96, P_DLY_LOWCUT = 0x98, P_DLY_TONE = 0x9a,
     /* Our bass EQ (see preset_eq_on): marker, then EQ_REC bytes (dsp/eq.h) */
     P_EQ_MARK = 0xc4, P_EQ_DATA = 0xc6,
+    /* Runtime NAM: unused tail after the EQ record, marker + slot 0..3. */
+    P_NAM_MARK = 0xde, P_NAM_SLOT = 0xe0,
 };
 
 /* The stock format has a delay block (fn 0x85: en, type, mix, feedback,
@@ -63,6 +65,7 @@ enum {
  * stock preset, erased flash, a whole-preset write from the app with 0 there)
  * = EQ off with the default settings. docs/PARITY.md M4. */
 #define EQ_MARK 0x5145u
+#define NAM_MARK 0x414eu /* "NA"; absent marker = NAM bypass */
 
 /* Global settings offsets. */
 enum { S_PRESET = 0x16, S_BT = 0x17, S_MASTER = 0x18, S_IN_GAIN = 0x1a, S_STOMP = 0x1f,
@@ -96,6 +99,12 @@ static inline const uint8_t *preset_eq(const preset_t *p)
 static inline bool preset_eq_on(const preset_t *p)
 {
     return preset_eq(p) && p->b[P_EQ_DATA] != 0;
+}
+
+static inline unsigned preset_nam_slot(const preset_t *p)
+{
+    unsigned slot = pget(p, P_NAM_SLOT);
+    return pget(p, P_NAM_MARK) == NAM_MARK && slot <= 3u ? slot : 0u;
 }
 
 /* Checks of untrusted records (preset_check.c): an erased preset becomes
