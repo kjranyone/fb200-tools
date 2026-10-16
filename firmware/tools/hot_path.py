@@ -86,9 +86,17 @@ class Image:
                             check=True, capture_output=True, text=True).stdout
         self.funcs: dict[int, str] = {}      # start -> name (first seen)
         self.size: dict[int, int] = {}
+        # nm's t/T describes the output section, not the ELF symbol type.
+        # linker.ld merges const data into executable .blob/.xiptext, so a
+        # table (e.g. kRingFirst) also appears as t. A table's odd address
+        # must not be interpreted as a Thumb callback. Use STT_FUNC.
+        symbols = subprocess.run([f"{cross}readelf", "--symbols", "--wide", str(elf)],
+                                 check=True, capture_output=True, text=True).stdout
+        functions = {parts[7] for line in symbols.splitlines()
+                     if len(parts := line.split()) >= 8 and parts[3] == "FUNC"}
         for line in nm.splitlines():
             parts = line.split()
-            if len(parts) == 4 and parts[2] in "tTwW":
+            if len(parts) == 4 and parts[3] in functions:
                 addr, size = int(parts[0], 16), int(parts[1], 16)
                 self.funcs.setdefault(addr, parts[3])
                 self.size[addr] = max(self.size.get(addr, 0), size)
