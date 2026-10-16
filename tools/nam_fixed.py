@@ -1,0 +1,120 @@
+"""Validate one 48 kHz A2-Lite .nam and emit fixed C weights (no device I/O).
+
+Only the fixed shape implemented by dsp/nam_a2.c is accepted. Model files
+remain user-supplied; conversion does not grant redistribution rights.
+"""
+import argparse
+import hashlib
+import json
+import math
+import struct
+from pathlib import Path
+
+KERNELS = [6] * 14 + [15, 15] + [6] * 7
+DILATIONS = [1, 3, 7, 17, 41, 101, 239] * 2 + [1, 13] + [1, 3, 7, 17, 41, 101, 239]
+WEIGHTS = 1871
+
+
+def require(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def number(x):
+    return type(x) in (int, float) and math.isfinite(x)
+
+
+def validate(document):
+    """Return weights, inheriting a packed container's rate only when absent.
+
+    Conservative subset of Core's is_a2_shape at 0b3d3c97. Unknown architecture
+    keys fail closed so future features cannot silently change inference.
+    """
+    model = document
+    if document.get("architecture") == "SlimmableContainer":
+        models = [entry["model"] for entry in document["config"]["submodels"]
+                  if entry.get("model", {}).get("architecture") == "WaveNet"
+                  and entry["model"].get("config", {}).get("layers", [{}])[0]
+                  .get("channels") == 3]
+        require(len(models) == 1, "container must have exactly one A2-Lite model")
+        model = models[0]
+    require(model.get("architecture") == "WaveNet", "expected WaveNet/A2-Lite")
+    rate = model.get("sample_rate", document.get("sample_rate"))
+    require(number(rate) and rate == 48000, "model sample_rate must be explicitly 48000")
+    if model is not document and "sample_rate" in document:
+        require(document["sample_rate"] == rate, "container/model rate mismatch")
+    cfg = model["config"]
+    require(set(cfg) <= {"layers", "head", "head_scale", "in_channels", "condition_dsp"},
+            "unsupported WaveNet configuration key")
+    require(cfg.get("head") is None and cfg.get("condition_dsp") is None,
+            "post head/condition DSP unsupported")
+    require(cfg.get("in_channels", 1) == 1 and number(cfg.get("head_scale")),
+            "mono input and finite head_scale required")
+    require(len(cfg["layers"]) == 1, "expected one layer array")
+    la = cfg["layers"][0]
+    films = {"conv_pre_film", "conv_post_film", "input_mixin_pre_film",
+             "input_mixin_post_film", "activation_pre_film", "activation_post_film",
+             "layer1x1_post_film", "head1x1_post_film"}
+    require(set(la) <= films | {"input_size", "condition_size", "channels", "bottleneck",
+            "kernel_sizes", "dilations", "activation", "gating_mode", "gated",
+            "secondary_activation", "head", "head1x1", "layer1x1", "groups_input",
+            "groups_input_mixin", "slimmable"}, "unsupported layer configuration key")
+    for key, value in {"input_size": 1, "condition_size": 1, "channels": 3,
+                       "bottleneck": 3, "kernel_sizes": KERNELS,
+                       "dilations": DILATIONS}.items():
+        require(la.get(key) == value, f"unsupported {key}")
+    require(la.get("activation") == [{"type": "LeakyReLU", "negative_slope": 0.01}] * 23,
+            "expected 23 LeakyReLU(0.01) activations")
+    require(la.get("gating_mode") in (None, ["none"] * 23)
+            and la.get("gated", False) is False, "gating unsupported")
+    require(la.get("secondary_activation") in (None, [None] * 23),
+            "secondary activation unsupported")
+    for key in films | {"head1x1"}:
+        value = la.get(key)
+        require(value is None or value is False or
+                (isinstance(value, dict) and value.get("active", False) is False),
+                f"active {key} unsupported")
+    linear = la.get("layer1x1", {})
+    require(linear.get("active") is True and linear.get("groups", 1) == 1,
+            "ungrouped layer1x1 required")
+    head = la.get("head", {})
+    require(head.get("out_channels") == 1 and head.get("kernel_size") == 16
+            and head.get("bias") is True and head.get("head_dilation", 1) == 1,
+            "expected biased mono k=16 head")
+    require(set(head) <= {"out_channels", "kernel_size", "bias", "head_dilation"}
+            and set(linear) <= {"active", "groups"}, "unsupported head/layer1x1 key")
+    require(la.get("groups_input", 1) == la.get("groups_input_mixin", 1) == 1
+            and la.get("slimmable") is None, "grouped/slimmable layer unsupported")
+    weights = model["weights"]
+    require(len(weights) == WEIGHTS, "expected exactly 1871 weights")
+    require(all(number(w) and abs(w) <= 3.402823466e38 for w in weights),
+            "weights must be finite float32 values")
+    return [struct.unpack("<f", struct.pack("<f", w))[0] for w in weights]
+
+
+def emit(document, source_sha256):
+    weights = validate(document)
+    literals = [float(w).hex() + "f" for w in weights]
+    rows = ["    " + ", ".join(literals[i:i+6]) + "," for i in range(0, WEIGHTS, 6)]
+    return (f"/* User-supplied model SHA-256: {source_sha256}. Generated by nam_fixed.py. */\n"
+            '#include "dsp/nam_a2.h"\n'
+            "/* Host prototype asset; firmware integration must copy weights to RAM. */\n"
+            "const float nam_fixed_weights[NAM_A2_WEIGHTS] = {\n" + "\n".join(rows) +
+            "\n};\nconst unsigned nam_fixed_rate = NAM_A2_RATE;\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("model", type=Path)
+    parser.add_argument("-o", "--output", type=Path, required=True)
+    args = parser.parse_args()
+    raw = args.model.read_bytes()
+    try:
+        output = emit(json.loads(raw), hashlib.sha256(raw).hexdigest())
+    except (ValueError, KeyError, TypeError, IndexError, OverflowError) as exc:
+        parser.error(f"invalid/unsupported A2-Lite model: {exc}")
+    args.output.write_text(output, encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

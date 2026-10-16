@@ -142,12 +142,26 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 static bool s_ready;          /* engine_init done: engine_pump may run */
+#ifdef NAM_MEMORY_PROBE
+#include "dsp/nam_a2.h"
+/* Reserve the complete fixed-player working set (weights + history + state).
+ * Volatile endpoint writes retain this allocation in the linked image.
+ * No NAM processing is connected to the pedal's audio path in this first step. */
+static volatile nam_a2_t s_nam_reserve __attribute__((section(".dtcm_lo")));
+_Static_assert(AUDIO_FS == NAM_A2_RATE && !ENGINE_LONG_IR,
+               "NAM probe needs 48 kHz and the long-IR tail's RAM");
+_Static_assert(sizeof(nam_a2_t) <= 84u * 1024u, "NAM working set exceeds budget");
+#endif
 static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
 static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
 static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
 
 COLD void engine_init(void)
 {
+#ifdef NAM_MEMORY_PROBE
+    s_nam_reserve.history[0] = 0;
+    s_nam_reserve.history[NAM_A2_HISTORY - 1] = 0;
+#endif
     usb_audio_init();
     sai_audio_init();
     gain_init(&s_gain, 1.0f);

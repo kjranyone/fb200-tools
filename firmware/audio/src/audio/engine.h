@@ -73,7 +73,9 @@ bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again 
  * long IRs off: no conv2 tail (~96 kB), no 512-point FFT tables (~4.9 kB);
  * `cab long` over 512 is "not available". Up to 4096 (CAB_MAX_TAPS) = long
  * IRs on (docs/PARITY.md M5). */
+#ifndef ENGINE_IR_TAPS
 #define ENGINE_IR_TAPS 4096
+#endif
 /* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on
  * success, -2 when taps is over what this build has RAM for (long IRs off:
  * 512, engine.c ENGINE_IR_TAPS), -4 while the IR buffer is in use (long IR

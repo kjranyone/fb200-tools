@@ -6,6 +6,7 @@
 
 /* TinyUSB configuration for the FB200 (i.MX RT10xx, device-only, no OS). */
 #pragma once
+#include "audio/audio_config.h"
 
 #define CFG_TUSB_MCU            OPT_MCU_MIMXRT10XX
 #define CFG_TUSB_OS             OPT_OS_NONE
@@ -24,7 +25,7 @@
 #define CFG_TUD_HID_EP_BUFSIZE  64
 #define CFG_TUD_AUDIO_ENABLE_INTERRUPT_EP 1
 #define CFG_TUD_AUDIO_FUNC_1_N_FORMATS 1
-#define CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE 44100   /* = AUDIO_FS */
+#define CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE AUDIO_FS
 #define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX 2
 #define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX 2
 #define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX 2

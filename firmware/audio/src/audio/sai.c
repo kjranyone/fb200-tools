@@ -4,8 +4,8 @@
  * See the LICENSE file in the project root for full license information.
  */
 
-/* SAI1 + eDMA audio path. The SAI is the I2S master (MCLK 12.288 MHz =
- * 256*fs at 44.1 kHz, BCLK 1.4112 MHz, 16-bit stereo); the NAU88L21 codec is
+/* SAI1 + eDMA audio path. The SAI is the I2S master (MCLK 256*fs,
+ * BCLK 32*fs, 16-bit stereo); the NAU88L21 codec is
  * the clock slave. TX drives BCLK/FS and RX is synchronous with TX, so both
  * directions share one clock pair.
  *
@@ -49,19 +49,19 @@ static volatile uint32_t s_rx_blocks, s_tx_blocks, s_over, s_under;
 
 static void sai_clock_init(void)
 {
-    /* The stock clock tree: PLL4 = 24 MHz * (30 + 66/625) = 722.5344 MHz,
-     * SAI1 root = PLL4 / 1 / 64 = 11.2896 MHz = 256 * 44.1 kHz. */
+    /* audio_config.h selects PLL4 for 44.1 or 48 kHz. SAI1 root is
+     * PLL4 / 1 / 64 = MCLK = 256*fs. The default is the stock clock tree. */
     const clock_audio_pll_config_t pll = {
-        .loopDivider = 30,
+        .loopDivider = AUDIO_PLL_LOOP,
         .postDivider = 1,
-        .numerator = 66,
-        .denominator = 625,
+        .numerator = AUDIO_PLL_NUM,
+        .denominator = AUDIO_PLL_DENOM,
         .src = 0,
     };
     CLOCK_InitAudioPll(&pll);
     CLOCK_SetMux(kCLOCK_Sai1Mux, 2);     /* PLL4 */
     CLOCK_SetDiv(kCLOCK_Sai1PreDiv, 0);  /* /1 */
-    CLOCK_SetDiv(kCLOCK_Sai1Div, 63);    /* /64 -> 11.2896 MHz */
+    CLOCK_SetDiv(kCLOCK_Sai1Div, 63);    /* /64 -> 256*fs */
 }
 
 static void sai_pads(void)

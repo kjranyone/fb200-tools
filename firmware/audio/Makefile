@@ -10,6 +10,18 @@
 # VARIANT=recovery builds the resident recovery image (block 0); the default
 # builds the app for the slot. See docs/BOOTLOADER.md §4.
 VARIANT      ?= app
+# Host-first NAM memory/clock experiment, NOT a supported pedal image.
+# Separate BUILD prevents stale objects when changing rate/RAM defines.
+PROFILE      ?= stock
+ifeq ($(PROFILE),nam-probe)
+ifneq ($(VARIANT),app)
+$(error nam-probe is app-only; keep recovery on its stock configuration)
+endif
+BUILD        ?= build/nam-probe
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_MEMORY_PROBE
+else ifneq ($(PROFILE),stock)
+$(error unknown PROFILE $(PROFILE))
+endif
 # BUILD overrides where output goes (default: build/); tests/fwbuild.py passes
 # a per-process tmp dir so parallel pytest workers never share one build tree.
 BUILD        ?= build
@@ -80,14 +92,14 @@ CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
              $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \
-             $(TUSB_INC) $(TUSB_DEFS) -I src -I src/compat -I board -I . -MMD -MP
+             $(TUSB_INC) $(TUSB_DEFS) $(PROFILE_DEFS) -I src -I src/compat -I board -I . -MMD -MP
 LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -L $(TARGET) -T linker.ld \
              -Wl,-Map=$(TARGET).map,--cref
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c src/cpu_idle.c src/cpu_power.c \
-  src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
+  src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c src/dsp/nam_a2.c \
   src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
   src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loopcodec.c \

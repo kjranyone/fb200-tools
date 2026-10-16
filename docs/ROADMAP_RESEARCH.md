@@ -1,5 +1,10 @@
 # What "better than stock" means: research (2026-09-27)
 
+Implementation update (2026-10-17): see [NAM_A2_LITE.md](NAM_A2_LITE.md) for
+the first host inference/48 kHz clock/RAM probe. The compact fixed player's
+measured allocation is 83,976 bytes including weights; this does not establish
+real-time CPU feasibility or a working 48 kHz feature chain on the pedal.
+
 Web research behind the M4-M8 items in `PARITY.md`. CPU figures without a
 source are estimates. Budget: 600 MHz Cortex-M7 = 12.5k cycles/sample at
 48 kHz (13.6k at 44.1 kHz); 512 KB FlexRAM, no external RAM - RAM is the
