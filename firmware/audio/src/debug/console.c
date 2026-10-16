@@ -1102,7 +1102,7 @@ void console_task(void)
 {
     if (fw_active()) { fw_rx_task(); return; }
 #ifdef NAM_RUNTIME
-    if (namstore_active()) { namstore_task(); return; }
+    if (namstore_console_active()) { namstore_task(); return; }
 #endif
 #ifndef FB200_RECOVERY
     if (irstore_put_active()) { irstore_put_task(); return; }
@@ -1116,7 +1116,7 @@ void console_task(void)
             line_len = 0;
 #ifdef NAM_RUNTIME
             /* Do not consume coalesced binary bytes in the line reader. */
-            if (namstore_active()) return;
+            if (namstore_console_active()) return;
 #endif
         } else if (c == 8 || c == 127) {
             if (line_len) { line_len--; cdc_log_write("\b \b", 3); }

@@ -40,11 +40,12 @@ LOOPER_SRC = ["dsp/looper.c", "dsp/loopcodec.c", "loopstore/loopstore.c", "loops
 
 
 @functools.cache
-def build() -> Path:
+def build(nam_runtime=False) -> Path:
     """Once per process, in its own dir: parallel workers (pytest -n) do not collide."""
     exe = Path(tempfile.mkdtemp(prefix="proto_host_")) / "proto_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
+         *(["-DNAM_RUNTIME"] if nam_runtime else []),
          "-I", str(FW / "src"), "-I", str(FW / "tests"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
          str(FW / "src" / "ui" / "lightbar.c"), str(FW / "src" / "preset" / "preset_check.c"),
@@ -228,6 +229,28 @@ def test_rename_preset(h):
     assert [(t, fn) for t, fn, _ in out] == [("b", 0x97), ("b", 0xA1)]
     assert h.flash(PRESET_FLASH + 3 * 0x200, 20) == b"Renamed".ljust(20, b"\0")
     assert out[1][2][0] == 3 and out[1][2][1:8] == b"Renamed"
+
+
+def test_legacy_app_full_preset_preserves_nam_binding():
+    h = Harness(build(nam_runtime=True))
+    try:
+        preset = bytearray(h.edit())
+        binding = struct.pack("<HH", 0x414E, 2)
+        preset[0xDE:0xE2] = binding
+        h.send(0x97, bytes([4]) + preset)
+        legacy = bytearray(preset)
+        legacy[0xDE:0xE2] = bytes(4)
+        legacy[:4] = b"Old!"
+        h.send(0x97, b"\xff" + legacy)
+        assert h.edit()[0xDE:0xE2] == binding
+        h.send(0x97, bytes([4]) + legacy)
+        assert h.flash(PRESET_FLASH + 4 * 0x200 + 0xDE, 4) == binding
+        # An explicit NAM marker can intentionally clear the binding.
+        legacy[0xDE:0xE2] = struct.pack("<HH", 0x414E, 0)
+        h.send(0x97, b"\xff" + legacy)
+        assert h.edit()[0xDE:0xE2] == struct.pack("<HH", 0x414E, 0)
+    finally:
+        h.close()
 
 
 def test_app_edits_keep_our_eq_bytes(h):

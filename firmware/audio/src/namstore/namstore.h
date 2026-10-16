@@ -24,6 +24,13 @@ int namstore_write(unsigned slot, uint8_t *staging);
 int namstore_delete(unsigned slot);
 int namstore_begin(unsigned slot, uint32_t bytes, uint32_t crc);
 int namstore_active(void);
+int namstore_console_active(void);
+/* Framed BLE/HID upload shares the staging-buffer lock with USB CDC. */
+int namstore_framed_begin(unsigned slot, uint32_t bytes, uint32_t crc);
+int namstore_framed_feed(unsigned offset, const uint8_t *data, unsigned n);
+unsigned namstore_received(void);
+int namstore_framed_finish(void);
+void namstore_framed_abort(void);
 void namstore_task(void);
 void namstore_list(void);
 /* Target hooks; host tests supply fake NOR, USB and time. */

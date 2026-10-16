@@ -54,6 +54,9 @@ __attribute__((weak)) void proto_hook_bt_enable(bool on) { (void)on; }
 __attribute__((weak)) void proto_hook_bootloader(void) {}
 __attribute__((weak)) int proto_hook_factory_reset(void) { return -1; }
 __attribute__((weak)) void proto_hook_ir_changed(unsigned slot) { (void)slot; }
+__attribute__((weak)) uint32_t proto_hook_nam(uint8_t src, const uint8_t *p, uint32_t n,
+                                            uint8_t *out, uint32_t cap)
+{ (void)src; (void)p; (void)n; (void)out; (void)cap; return 0; }
 
 /* ---- state -------------------------------------------------------------- */
 typedef struct { uint8_t buf[PROTO_MAX_FRAME]; uint32_t n; } rx_t;
@@ -456,6 +459,11 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
 {
     uint8_t *s = ui_settings()->b;
     switch (fn) {
+    case 0xE0: {
+        uint32_t size=proto_hook_nam(src,p,n,pl,sizeof pl);
+        if (size) send(src,0xE1,pl,size);
+        break;
+    }
     case 0x00:
         send(src, 0x01, pl, version_block(pl));
         break;
@@ -504,6 +512,17 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
         if (n < 1u + PRESET_SIZE) break;
         preset_t np;
         memcpy(np.b, p + 1, PRESET_SIZE);
+#ifdef NAM_RUNTIME
+        /* Legacy apps may zero the unknown preset tail. Preserve the NAM
+         * binding unless the incoming record explicitly contains our marker. */
+        if (pget(&np,P_NAM_MARK)!=NAM_MARK) {
+            preset_t old;
+            if (p[0]==0xFF) old=*ui_edit_preset();
+            else if (p[0]<PRESET_COUNT) preset_read(p[0],&old);
+            else break;
+            memcpy(np.b+P_NAM_MARK,old.b+P_NAM_MARK,4);
+        }
+#endif
         if (p[0] == 0xFF) { ui_edit_load(&np); break; }
         if (p[0] >= PRESET_COUNT) break;
         uint8_t ok = preset_write(p[0], &np) == 0;

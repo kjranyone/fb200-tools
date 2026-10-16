@@ -148,7 +148,7 @@ SRC_C := \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
 ifeq ($(PROFILE),nam-runtime)
-SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c
+SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
 endif
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
@@ -214,7 +214,7 @@ COLD_SRC := \
 # tests/test_audio_image.py: negative controls of hot_path.py
 COLD_SRC += $(COLD_EXTRA)
 ifeq ($(PROFILE),nam-runtime)
-COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c
+COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
 endif
 ifeq ($(VARIANT),recovery)
 COLD_SRC :=
@@ -245,10 +245,16 @@ $(TARGET)/cold.ld: Makefile
 # .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
 # .dtcmdata.bin is the slot's data blob: .xiptext + .ocramdata + .dtcmdata
 # (contiguous LMAs).
-$(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin: $(TARGET).elf
+$(TARGET).vectors.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
+
+$(TARGET).blob.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
+
+$(TARGET).copier.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .copier $< $(TARGET).copier.bin
+
+$(TARGET).dtcmdata.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .xiptext -j .ocramdata -j .dtcmdata $< $(TARGET).dtcmdata.bin
 
 $(TARGET)/%.c.o: %.c

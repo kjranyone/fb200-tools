@@ -29,7 +29,11 @@ Its firmware is closed and frozen. This project aims to:
 
 **NAM research branch:** the optional `nam-runtime` profile connects A2-Lite
 inference with three persistent, runtime-loadable USB model slots (`fb200 nam
-put/list/select/delete`). Model changes require no firmware rebuild. It is
+put/list/select/delete`). The new [Flutter mobile manager](mobile/README.md)
+adds `.nam` import, three-slot BLE transfer, selection, deletion and preset save,
+with an explicit offline demo. The matching BLE protocol is implemented in the
+runtime profile; physical BT201 endpoints and phone interoperability still need
+measurement. Model changes require no firmware rebuild. It is
 host-tested and cross-built, **not yet tested on a pedal**. See
 [`docs/NAM_A2_LITE.md`](docs/NAM_A2_LITE.md) for its restricted effect chain and
 remaining gates. The default firmware stays at 44.1 kHz.

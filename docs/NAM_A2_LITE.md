@@ -164,6 +164,11 @@ Hardware/stock/fuzz markers retain their existing default exclusions.
 
 ## Remaining before pedal use
 
+The [Flutter manager](../mobile/README.md) now implements model import, BLE slot
+transfer and preset binding with the matching [RPC extension](NAM_BLE_PROTOCOL.md).
+It is a host-tested prototype; measured BT201 endpoints and real phone/pedal
+tests remain outstanding. The USB console workflow is still available.
+
 - Measure worst-case Cortex-M7 cycles and underruns. The complete 32-frame
   48 kHz path has 400,000 cycles; this scalar kernel may require optimization.
 - Verify PLL/codec/USB behavior and model switching on actual hardware, and
@@ -172,7 +177,7 @@ Hardware/stock/fuzz markers retain their existing default exclusions.
 - Verify physical power-cut recovery and flash wear behavior, preset save/boot,
   battery critical-write refusal, and long-duration USB transfer/streaming.
 - Add a suitable 48 kHz cabinet/IR stage, front-panel model selection and controls,
-  calibration, and a user-facing editor. Restore other effects only after their
+  calibration, and finish physical validation of the mobile editor. Restore other effects only after their
   rate and resource requirements are validated.
 
 No real pedal access or firmware/model write was performed during development.

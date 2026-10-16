@@ -68,6 +68,9 @@ static bool loop_work_pending(void)
 #define VARIANT "app"
 #endif
 
+#ifdef NAM_RUNTIME
+#include "namstore/namrpc.h"
+#endif
 void app_main(void)
 {
     cdc_log_init();
@@ -139,6 +142,9 @@ void app_main(void)
                 }
             }
             bt_task(now);
+#ifdef NAM_RUNTIME
+            namrpc_task();
+#endif
             usb_hid_task();
         }
 #endif

@@ -1,0 +1,35 @@
+{
+    "name": "FB200 NAM",
+    "short_name": "FB200 NAM",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0d151b",
+    "theme_color": "#0d151b",
+    "description": "FB200 A2-Lite model manager demo",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

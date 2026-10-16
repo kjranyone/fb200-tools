@@ -85,9 +85,44 @@ int namstore_begin(unsigned slot, uint32_t bytes, uint32_t crc)
 }
 
 int namstore_active(void) { return session.active; }
+int namstore_console_active(void) { return session.active == 1; }
+int namstore_framed_begin(unsigned slot, uint32_t bytes, uint32_t crc)
+{
+    if (session.active || !namstore_ready() || slot < 1 || slot > NAMSTORE_SLOTS ||
+        bytes != NAMSTORE_BYTES) return -1;
+    session.slot=slot; session.rx=0; session.crc=crc;
+    session.last=namstore_now(); session.active=2;
+    return 0;
+}
+unsigned namstore_received(void) { return session.rx; }
+int namstore_framed_feed(unsigned offset, const uint8_t *data, unsigned n)
+{
+    if (session.active != 2 || !n || n>64 || offset>session.rx ||
+        offset>NAMSTORE_BYTES || n>NAMSTORE_BYTES-offset) return -1;
+    uint8_t *p=namstore_buffer();
+    if (offset<session.rx) {
+        if (n>session.rx-offset || memcmp(p+offset,data,n)) return -1;
+    } else { memcpy(p+offset,data,n); session.rx+=n; }
+    session.last=namstore_now();
+    return 0;
+}
+int namstore_framed_finish(void)
+{
+    if (session.active!=2 || session.rx!=NAMSTORE_BYTES) return -1;
+    uint8_t *p=namstore_buffer();
+    int result = crc32_ieee(p,NAMSTORE_BYTES)==session.crc && namstore_valid(p)==1
+        ? namstore_write(session.slot,p) : -4;
+    session.active=0;
+    return result;
+}
+void namstore_framed_abort(void) { if (session.active==2) session.active=0; }
 void namstore_task(void)
 {
     if (!session.active) return;
+    if (session.active==2) {
+        if ((uint32_t)(namstore_now()-session.last)>=3000u) session.active=0;
+        return;
+    }
     uint8_t *p = namstore_buffer();
     uint32_t got = namstore_rx(p+session.rx, NAMSTORE_BYTES-session.rx);
     session.rx += got;
