@@ -251,14 +251,18 @@ def check(elf: Path, cross: str = "arm-none-eabi-", *, nam_runtime: bool = False
     for n in HOT_ENTRY:
         if n not in img.funcs.values():
             return [f"hot entry {n} not found in {elf}"]
-    bad = _chains(img, reachable(img, roots), roots, lambda f: f not in ITCM, "")
+    # The runtime gates (e.g. tud_hid_set_report_cb returns before
+    # proto_feed once an app update erased the XIP code) prune both the
+    # hot and the flash-write sets: a taken-callback root reaches the same
+    # guarded edges in either graph.
+    skip, gate_bad = gated_edges(img)
+    bad = _chains(img, reachable(img, roots, skip), roots, lambda f: f not in ITCM, "")
     wroots = flash_write_roots(img)
     for n in FLASH_WRITE_ENTRY:
         if nam_runtime and n.startswith("lsio_"):
             continue  # looper disabled; its writer is removed by the linker
         if n not in img.addr:
             return bad + [f"flash-write entry {n} not found in {elf}"]
-    skip, gate_bad = gated_edges(img)
     bad += gate_bad
     bad += _chains(img, reachable(img, wroots, skip), wroots, lambda f: f in FLASH,
                    "flash write: ")
