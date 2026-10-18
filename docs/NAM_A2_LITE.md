@@ -1,10 +1,12 @@
 # NAM A2-Lite: runtime model slots
 
 Model changes must not require a firmware rebuild. The `nam-runtime` research
-profile implements **USB upload -> persistent model slot -> RAM load -> inference**.
+profile implements **model upload -> persistent model slot -> RAM load -> inference**.
 The firmware's fixed A2-Lite engine is installed once; subsequent captures are
-data transfers. `.nam` parsing and packed-model extraction happen on the PC.
-The device validates the resulting binary packet again.
+data transfers. `.nam` parsing and packed-model extraction happen on the PC or
+in the [Flutter app](../mobile/README.md). The device validates the resulting
+binary packet again. USB CDC and the [BLE/HID extension](NAM_BLE_PROTOCOL.md)
+share the same persistent store.
 
 **Status:** implemented and host-tested, ARM cross-built, not flashed or tested
 on a real FB200. This is not a production firmware release. Real-time CPU cost,
@@ -137,7 +139,7 @@ coalesced binary bytes.
 make -C firmware/audio PROFILE=nam-runtime -j4 build layout
 python3 firmware/tools/hot_path.py \
   firmware/audio/build/nam-runtime/fb200-app.elf --nam-runtime
-pytest -q tests/test_nam_runtime.py tests/test_nam_profile.py tests/test_nam_a2.py
+pytest -q tests/test_nam_runtime.py tests/test_nam_rpc.py tests/test_nam_profile.py tests/test_nam_a2.py tests/test_proto_host.py
 pytest -q
 ruff check .
 ```
@@ -156,11 +158,17 @@ actual flash-RMW capacity/boundary guards and audio pumping, and the ARM image's
 model/staging allocation and RAM-only live path. Numerical Core-reference tests
 from the initial milestone remain in place.
 
-Validation on 2026-10-17: full suite **475 passed / 15 skipped** with the optional
+USB runtime milestone on 2026-10-17: full suite **475 passed / 15 skipped** with the optional
 official Core oracle enabled; runtime store/client/preset/RMW/Windows-mock tests
 **65 passed**; the final runtime image and flash-busy safety check also passed
 after the watchdog-service change. Ruff and diff whitespace checks passed.
 Hardware/stock/fuzz markers retain their existing default exclusions.
+
+After the mobile/RPC implementation at `969f833`, the full suite passed
+**492 tests / 15 skipped**, and Flutter passed **27 tests**. Android debug APK
+and web builds, Flutter analyze, Ruff and the ARM image/safety checks passed.
+iOS remains unbuilt. See [NAM_HANDOVER.md](NAM_HANDOVER.md) for reproducible
+checks and the remaining hardware gates.
 
 ## Remaining before pedal use
 
@@ -177,7 +185,7 @@ tests remain outstanding. The USB console workflow is still available.
 - Verify physical power-cut recovery and flash wear behavior, preset save/boot,
   battery critical-write refusal, and long-duration USB transfer/streaming.
 - Add a suitable 48 kHz cabinet/IR stage, front-panel model selection and controls,
-  calibration, and finish physical validation of the mobile editor. Restore other effects only after their
-  rate and resource requirements are validated.
+  calibration, and finish physical validation of the mobile editor. Restore
+  other effects only after their rate and resource requirements are validated.
 
 No real pedal access or firmware/model write was performed during development.

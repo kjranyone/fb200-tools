@@ -1,13 +1,79 @@
 ![banner](images/banner.svg)
 
-# fb200-tools: open firmware for the FLAMMA FB200
+# fb200-tools — Experimental NAM A2-Lite Port for FLAMMA FB200
 
-**Open-source replacement firmware and tools for the
-[FLAMMA FB200](https://www.flamma.shop/products/flamma-fb200-bass-guitar-intelligent-combined-multi-effects-pedal)
-bass multi-effects pedal.** It sounds like the stock firmware, keeps your presets and the
-official app working, and adds what the stock firmware lacks: USB updates without a
-button combo, a debug console, crash reports, better display feedback, drums in
-your recordings and a bass delay. Add what you want: the software is yours to modify.
+This fork of [w1ne/fb200-tools](https://github.com/w1ne/fb200-tools) explores
+running NAM A2-Lite models on the FLAMMA FB200's i.MX RT1052.
+
+**Status: experimental, host-tested and ARM cross-built. The NAM firmware and
+physical Bluetooth model transfer have not been tested on an FB200. Real-time
+performance and audio quality remain unverified.**
+
+Development branch: [`feat/nam-a2-lite-foundation`](https://github.com/kjranyone/fb200-tools/tree/feat/nam-a2-lite-foundation).
+
+## What this fork adds
+
+- An optional `nam-runtime` firmware profile with a fixed 48 kHz, 3-channel
+  A2-Lite inference engine.
+- Three persistent model slots, runtime model loading and preset-to-slot binding.
+- USB model management without rebuilding firmware for each model.
+- A Flutter model manager with `.nam` validation, BLE transfer support,
+  slot selection, deletion and preset save.
+- An explicit offline demo for reviewing the app without a pedal.
+
+The app requires matching custom firmware for device operations. It does not
+install firmware. The model is transferred as data; it is not rebuilt into the
+firmware for each capture. No musical capture is bundled.
+
+## Current limitations
+
+- Only the documented fixed A2-Lite architecture is accepted; arbitrary NAM
+  models are unsupported.
+- Physical Bluetooth endpoints and Android/iOS interoperability remain
+  unverified. The Android debug APK builds; iOS has not been built or signed.
+- The NAM profile uses 48 kHz, 16-bit audio. Stock amp/tone, cabinet IRs,
+  modulation, reverb, tuner, drums, looper and Bluetooth audio processing are
+  disabled. BLE control is separate from Bluetooth audio.
+- There is currently no cabinet/IR stage in this profile. Use a capture including
+  a cabinet or an external cabinet stage, after hardware/audio validation.
+- NAM captures retain their trained behavior. Existing amp GAIN/tone controls
+  do not become NAM parameter controls.
+- Compatibility with the official mobile app has not been verified on hardware.
+
+The default `stock` profile remains at 44.1 kHz. Upstream stock-firmware
+measurements do not establish the behavior or performance of the NAM profile.
+
+## Validation
+
+Validation snapshot, **2026-10-17**, at implementation commit `969f833`:
+
+- Python/C/ARM test suite: **492 passed, 15 skipped** (optional official Core
+  oracle enabled; hardware, stock-emulation and long-fuzz tests excluded).
+- Flutter tests: **27 passed**.
+- Static checks, Android debug APK and web build succeeded.
+- RAM layout and flash-busy call-graph checks passed.
+
+No pedal connection or physical firmware/model write was performed during this
+development work. Host storage tests and a UI demo do not establish physical
+Bluetooth operation, real-time performance or audio quality.
+
+## NAM documentation and handover
+
+| Document | Contents |
+| --- | --- |
+| [NAM firmware](docs/NAM_A2_LITE.md) | supported models, runtime slots, memory and effect restrictions |
+| [Flutter manager](mobile/README.md) | app build, demo and model-management workflow |
+| [Model-transfer protocol](docs/NAM_BLE_PROTOCOL.md) | BLE/HID messages, retry, storage and compatibility limits |
+| [Agent handover](docs/NAM_HANDOVER.md) | implementation map, reproducible checks and ordered next steps |
+| [Core attribution](docs/NAM_LICENSE.md) | NeuralAmpModelerCore reference and notice |
+
+## Upstream project
+
+This work builds on [w1ne/fb200-tools](https://github.com/w1ne/fb200-tools).
+The following upstream documentation describes the original project and
+stock-profile functionality. Hardware results reported there are upstream
+results, not validation of this fork's NAM implementation. The photograph and
+support links below belong to the upstream project.
 
 ![The FB200 running the open firmware](images/in-use.jpg)
 
@@ -25,20 +91,10 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.12)
+## Upstream stock firmware status (v0.12)
 
-**NAM research branch:** the optional `nam-runtime` profile connects A2-Lite
-inference with three persistent, runtime-loadable USB model slots (`fb200 nam
-put/list/select/delete`). The new [Flutter mobile manager](mobile/README.md)
-adds `.nam` import, three-slot BLE transfer, selection, deletion and preset save,
-with an explicit offline demo. The matching BLE protocol is implemented in the
-runtime profile; physical BT201 endpoints and phone interoperability still need
-measurement. Model changes require no firmware rebuild. It is
-host-tested and cross-built, **not yet tested on a pedal**. See
-[`docs/NAM_A2_LITE.md`](docs/NAM_A2_LITE.md) for its restricted effect chain and
-remaining gates. The default firmware stays at 44.1 kHz.
-
-Verified on a real pedal:
+The following table reproduces **upstream-reported stock-profile hardware
+results**. It does not describe the experimental `nam-runtime` profile.
 
 | Area | What works |
 | --- | --- |
@@ -84,6 +140,14 @@ the "better" roadmap. The code runs on the stock hardware only.
 
 ## Flashing
 
+**The instructions below are for the upstream stock-profile firmware.** The
+linked upstream web flasher and `fb200 update app latest` are not installation
+instructions for this branch's NAM build. No tested NAM firmware release is
+published by this fork. NAM development currently uses the build-only workflow
+in [NAM_A2_LITE.md](docs/NAM_A2_LITE.md); see [NAM_HANDOVER.md](docs/NAM_HANDOVER.md)
+before planning any hardware session. No hardware write has been authorized as
+part of this development work.
+
 > Flashing custom firmware is **at your own risk**; read [`DISCLAIMER.md`](DISCLAIMER.md).
 > The vendor bootloader and your presets are never overwritten, and holding **A+D at
 > power-on** always gets you back to the vendor updater.
@@ -124,7 +188,11 @@ Linux permissions: **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
 ## Using the pedal
 
-The controls work as on the stock firmware:
+The following describes the **upstream stock profile**. Several effects and
+panel actions are disabled in `nam-runtime`; the stock GAIN/tone knobs do not
+edit the NAM model. See the NAM profile's [restricted audio path](docs/NAM_A2_LITE.md#restricted-audio-profile).
+
+The upstream stock-profile controls work as on the stock firmware:
 
 | Action | What it does |
 | --- | --- |
@@ -305,6 +373,10 @@ A desktop app (PoC) with editors and an assistant chat on top of these tools:
 
 ## Credits
 
+- [w1ne/fb200-tools](https://github.com/w1ne/fb200-tools): original FB200 firmware,
+  hardware/protocol research and host tools on which this fork is based.
+- Steven Atkinson's [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore):
+  A2 architecture and reference behavior; see [NAM_LICENSE.md](docs/NAM_LICENSE.md).
 - [wattsline/Flamma-FF20](https://github.com/wattsline/Flamma-FF20): protocol research for
   the sibling Flamma FF20.
 - [ThijsWithaar/MooerManager](https://github.com/ThijsWithaar/MooerManager),
