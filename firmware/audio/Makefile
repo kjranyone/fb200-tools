@@ -155,6 +155,9 @@ SRC_C := \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
 ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
 SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
+# NAM builds: the former long IR area F:0x400000.. is the extended NAM store
+# (flash_rmw.h); the long IR store is not compiled in.
+SRC_C := $(filter-out src/irstore/%,$(SRC_C))
 endif
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
@@ -221,6 +224,7 @@ COLD_SRC := \
 COLD_SRC += $(COLD_EXTRA)
 ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
 COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
+COLD_SRC := $(filter-out src/irstore/%,$(COLD_SRC))
 endif
 ifeq ($(VARIANT),recovery)
 COLD_SRC :=

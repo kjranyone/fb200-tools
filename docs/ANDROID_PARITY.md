@@ -75,6 +75,12 @@ between lag groups. Feature flag 8 enables these tools and read-only RPC op 8.
 This is still a restricted NAM audio chain: stock amp/cab/MOD/reverb, Bluetooth
 audio and the looper are not restored. Unsupported controls stay disabled.
 
+The model store was extended from three to 64 slots (firmware 0.5-era, app
+0.5.0+8): NAM profiles reuse the long IR area F:0x400000..0x4FFFFF and no
+longer compile the long IR store (the stock open profile keeps it); the list
+RPC is paginated (op 1 start byte, capability bit 5). Older app builds cannot
+manage the new firmware and vice versa.
+
 85 Flutter tests and analyze pass (WAV decode/resampler parity against shared
 Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name
 validation, model-rename gating, IR tab and dialog flows). ARM build, RAM

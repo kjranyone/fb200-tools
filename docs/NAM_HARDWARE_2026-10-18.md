@@ -164,3 +164,33 @@ argument validation, empty-slot refusal, alternate-bank sequencing, idempotent
 cached retries, flash-cut preservation and staging exclusion; both NAM profiles
 build for ARM with the strict RAM/flash-busy checks (`ARM_ALL_OK`). The app
 demo implements op 9; 85 Flutter tests and analyze pass.
+
+## 64-slot store: flash authorized and installed (2026-10-18, later session)
+
+The user explicitly authorized flashing in this session. The long IR area
+F:0x400000..0x4FFFFF (1 MiB, unused by the NAM audio chain) became the NAM
+model store: 64 slots, two 8 KiB banks each, guard sector before the looper
+metadata kept. NAM builds no longer compile the long IR store (`irput`/`irls`/
+`irdel` absent from the console; the stock open profile keeps it). The list RPC
+is paginated: op 1 takes a start byte, replies `[selected][start][count]` plus
+records, capability bit 5; slot arguments accept 1..64 everywhere. `namls`
+prints the real slot count. The app (0.5.0+8) reads the slot count from the
+capabilities, pages the list and keeps the legacy unpaged path for the older
+three-slot firmware. 91 host tests, 498 full-suite passes (1 known
+toolchain-dependent checker self-test fails locally with arm-gcc 10.3, passes
+in CI), 88 Flutter tests, ARM builds plus strict RAM/flash-busy checks pass.
+
+Flashed over the USB console (`fb200.console.update`, app slot only —
+recovery, stock data, presets and every other region untouched):
+app slot 208320 bytes, CRC32 `c05b5407`, SHA256
+`463f78cecc46b2abb90e97896ad05b28b31b4d326cf1dc62b541e9be90751c1e`
+(`out/pack-nam64/fb200-app.slot`). `fw done crc=c05b5407 ok` in 2.0 s.
+Read-only verification after reboot: `nam slots: 64`, active 0 (all empty),
+`stock: flash ok, in use`; CRC32 unchanged for presets `afc6cf54`, settings
+`b43bc742`, the abandoned three-slot area `485d974c` and the new store region
+`956bac74` (pre-existing bytes there are rejected as non-FBNM, so every slot
+lists empty). Full log: `out/nam64-flash/flash-64slots.log`. A Python
+RPC-over-HID probe found no E1 replies on this Windows host (the standard
+version command also gets none); the framed RPC remains host-tested against
+the same C code and awaits a physical BLE check with the app once the tablet
+reconnects. No model, preset or IR write was performed.

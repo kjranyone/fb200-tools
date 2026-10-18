@@ -26,11 +26,19 @@
 #define FLASH_STORE_BASE  0x00071000u
 #define FLASH_STORE_LIMIT 0x000A1800u
 /* The long IR store (irstore/irstore.h IRSTORE_BASE..IRSTORE_END): only on
- * a chip that holds all of it (flash_capacity). */
+ * a chip that holds all of it (flash_capacity). NAM builds do not compile
+ * the store at all: the area is the extended NAM model store instead. */
+#ifdef NAM_RUNTIME
+#define FLASH_IRSTORE_BASE  0x00400000u
+#define FLASH_IRSTORE_LIMIT 0x00400000u /* empty: writes here are refused */
+#define FLASH_NAM_BASE      0x00400000u
+#define FLASH_NAM_LIMIT     0x00500000u /* 64 slots, two 8 KiB banks each */
+#else
 #define FLASH_IRSTORE_BASE  0x00400000u
 #define FLASH_IRSTORE_LIMIT 0x00502000u
 #define FLASH_NAM_BASE      0x00502000u
 #define FLASH_NAM_LIMIT     0x0050E000u /* 3 slots, two 8 KiB banks each */
+#endif
 /* The looper's area (loopstore/loopstore.h): F:0x510000 (64 kB aligned,
  * after the long IR store) to the end of the chip (flash_capacity), at most
  * FLASH_LOOP_END. FLASH_LOOP_META (one sector below it) holds `loop save`.

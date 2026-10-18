@@ -10,13 +10,13 @@ from fb200.nam_model import validate
 HEADER = 64
 WEIGHTS = 1871
 PACKET = HEADER + WEIGHTS * 4
-SLOTS = 3
+SLOTS = 64   # namstore.h: F:0x400000..0x4FFFFF, two 8 KiB banks per slot
 MAGIC = 0x4D4E4246
 
 
 def slot_number(value):
     if not 1 <= value <= SLOTS:
-        raise InvalidArgumentError("NAM slot must be 1..3")
+        raise InvalidArgumentError(f"NAM slot must be 1..{SLOTS}")
     return value
 
 
@@ -77,6 +77,6 @@ def delete(con, slot):
 
 def ls(con):
     text = con.run("namls", max_s=10.0)
-    if "nam slots: 3" not in text:
+    if "nam slots: " not in text:
         raise CommunicationError(f"NAM slots unavailable: {text.strip()}")
     return text

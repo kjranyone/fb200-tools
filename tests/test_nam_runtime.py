@@ -14,7 +14,7 @@ from test_nam_a2 import FW, State, init, model, render
 from fb200 import cli, nam
 from fb200.errors import CommunicationError
 
-BASE, END = 0x502000, 0x50E000
+BASE, END = 0x400000, 0x500000   # 64 slots x two 8 KiB banks (namstore.h)
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +96,7 @@ def reseal(packet):
 def test_bad_packets_and_boundaries(store):
     store.fake_reset()
     packet = nam.pack(model())
-    for slot in (0, 4, 0xffffffff):
+    for slot in (0, 65, 0xffffffff):
         assert store.namstore_write(slot, staging(packet)) < 0
         assert not store.namstore_record(slot, 0)
     store.fake_capacity(END-1)

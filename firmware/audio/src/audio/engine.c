@@ -309,16 +309,19 @@ static int load_user_ir(unsigned slot)
 
 static bool s_cab_bypass;   /* user IR slot selected but empty */
 
+#ifndef NAM_RUNTIME
 /* Long IR slots (cab 20..83, irstore.h): the data CRC is checked before the
  * IR loads; an empty or bad slot bypasses the cab, as an empty user slot.
  * The gain is the stored one (the stock rule, computed at upload). A build
- * with less IR RAM (ENGINE_IR_TAPS) plays the first taps. */
+ * with less IR RAM (ENGINE_IR_TAPS) plays the first taps. NAM builds do not
+ * compile the store: their cab path stops at the stock/user slots. */
 static int load_long_ir(unsigned slot)
 {
     irstore_entry_t e;
     int taps = irstore_load(slot, s_ir, ENGINE_IR_TAPS, &e);
     return taps > 0 && cab_set_ir_len(&s_cab, s_ir, (unsigned)taps, e.gain) == 0;
 }
+#endif
 
 COLD float *engine_ir_borrow(void)
 {
@@ -375,8 +378,10 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
         s_cab_bypass = false;
         if (cab >= 1 && cab <= 10) (void)cab_set_model(&s_cab, cab);
         else if (cab >= 11 && cab <= 19) s_cab_bypass = !load_user_ir((unsigned)(cab - 11));
+#ifndef NAM_RUNTIME
         else if (irstore_slot_of((unsigned)cab) >= 0)
             s_cab_bypass = !load_long_ir((unsigned)irstore_slot_of((unsigned)cab));
+#endif
         s_cab_type = cab;
     }
     s_gate_en = pget(p, P_GATE_EN) != 0;

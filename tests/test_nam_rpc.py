@@ -38,8 +38,8 @@ class Client:
 
     def call(self, op, args=b"", *, source=2, status=0, request=None):
         p = request or bytes([1, op]) + struct.pack("<H", next(self.ids)) + args
-        out = ct.create_string_buffer(128)
-        n = self.lib.namrpc_request(source, p, len(p), out, 128)
+        out = ct.create_string_buffer(1024)
+        n = self.lib.namrpc_request(source, p, len(p), out, 1024)
         reply = out.raw[:n]
         assert reply[:4] == p[:4]
         assert reply[4] == status
@@ -59,6 +59,23 @@ class Client:
         self.call(4, token)
         return token
 
+    def list_page(self, start):
+        """One op-1 page: [selected][start][count] + count 30-byte records."""
+        data = self.call(1, bytes([start]))
+        assert data[1] == start and data[2] == min(33, 64 - start)
+        return data[0], data[3:]
+
+    def list_all(self):
+        """Every slot as {slot: (used, name, crc)} plus the selected slot."""
+        selected, slots = None, {}
+        for start in range(0, 64, 33):
+            selected, records = self.list_page(start)
+            for i in range(0, len(records), 30):
+                r = records[i:i+30]
+                slots[r[0]] = (r[1], r[2:26].split(b"\0")[0].decode(), struct.unpack("<I", r[26:30])[0])
+        assert sorted(slots) == list(range(1, 65))
+        return selected, slots
+
 
 @pytest.fixture
 def client(rpc):
@@ -77,9 +94,9 @@ def test_mobile_fixture_matches_python_packet_and_frame():
 
 def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c = client
-    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 3, 64, 7548, 7 | 16, 0)
-    state = c.call(1)
-    assert len(state) == 91 and state[0] == 0 and state[1:3] == b"\x01\0"
+    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32, 0)
+    selected, slots = c.list_all()
+    assert selected == 0 and not any(used for used, _, _ in slots.values())
     packet = nam.pack(model(), "phone")
     token = c.upload(packet)
     commit = c.last_request
@@ -91,9 +108,12 @@ def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c.call(6, b"\x01\x01")
     saved = c.last_request
     c.call(6, request=saved)
-    assert c.lib.fake_saved() == 1 and c.call(1)[0] == 1
+    selected, slots = c.list_all()
+    assert c.lib.fake_saved() == 1 and selected == 1
+    assert slots[1] == (1, "phone", struct.unpack("<I", packet[16:20])[0])
     c.call(7, b"\x01")
-    assert c.call(1)[0] == 0 and c.call(1)[2] == 0
+    selected, slots = c.list_all()
+    assert selected == 0 and slots[1][0] == 0
     c.call(4, token, status=6)
 
 
@@ -163,16 +183,45 @@ def test_failed_mobile_upload_keeps_previous_model(client, fault):
 
 
 @pytest.mark.parametrize("op,args", [(0, b"x"), (1, b"x"), (2, b""),
-    (6, b"\x04\0"), (6, b"\0\x02"), (7, b"\0"), (7, b"\x04")])
+    (6, b"\x41\x00"), (6, b"\0\x02"), (7, b"\0"), (7, b"\x41")])
 def test_invalid_arguments(client, op, args):
     client.call(op, args, status=1)
     assert client.lib.fake_writes() == 0
 
 
 def slot_name(c, slot=1):
-    state = c.call(1)
-    off = 1 + (slot - 1) * 30 + 2   # [slot][used][name 24][crc 4] per slot
-    return state[off:off + 24].split(b"\0")[0].decode()
+    return c.list_all()[1][slot][1]
+
+
+def test_high_slot_upload_select_rename_and_delete(client):
+    c = client
+    packet = nam.pack(model(), "highslot")
+    c.upload(packet, 64)
+    c.call(6, b"\x40\x00")   # select slot 64
+    selected, slots = c.list_all()
+    assert selected == 64 and slots[64][1] == "highslot"
+    c.call(9, b"\x40" + b"top".ljust(24, b"\0"))
+    assert slot_name(c, 64) == "top"
+    c.call(7, b"\x40")
+    assert c.list_all()[1][64][0] == 0
+    # Slot numbers outside 1..64 stay invalid, including 0 and 65.
+    c.call(2, b"\x00" + struct.pack("<HI", 7548, 0), status=1)
+    c.call(6, b"\x41", status=1)
+    c.call(7, b"\x00", status=1)
+    c.call(9, b"\x00" + b"x".ljust(24, b"\0"), status=1)
+
+
+def test_list_pages_are_contiguous_and_bounds_checked(client):
+    c = client
+    packet = nam.pack(model(), "paged")
+    c.upload(packet, 33)   # first record of the page that skips 32 slots
+    _, records = c.list_page(32)
+    first = records[0:30]
+    assert first[0] == 33 and first[1] == 1 and first[2:26].split(b"\0")[0] == b"paged"
+    c.call(1, b"\x40", status=1)   # start 64: out of range
+    c.call(1, b"", status=1)       # the unpaged form is gone
+    c.call(1, b"\x00\x00", status=1)
+    assert c.lib.fake_writes() == 3   # only the upload itself wrote
 
 
 def test_rename_rewrites_header_only_and_keeps_weights(client):
@@ -228,6 +277,6 @@ def test_unsupported_and_capacity(client):
     out = ct.create_string_buffer(128)
     assert client.lib.namrpc_request(2, p, len(p), out, 128) == 5
     assert out.raw[:5] == bytes([1, 0]) + p[2:] + b"\x05"
-    client.lib.fake_capacity(0x50dfff)
+    client.lib.fake_capacity(0x4fffff)
     client.call(0, status=4)
     assert client.lib.fake_writes() == 0

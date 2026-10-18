@@ -8,7 +8,9 @@ static void wr(uint8_t *p,uint32_t v,unsigned n)
 { for(unsigned i=0;i<n;i++) p[i]=(uint8_t)(v>>(i*8)); }
 static uint32_t token, generation;
 static uint8_t owner;
-static uint8_t cached[128];
+/* The largest list page is (cap - 2) / 30 records; the target passes
+ * PROTO_MAX_LEN (1018) -> 33 records. 1024 covers any page we build. */
+static uint8_t cached[1024];
 static uint32_t cached_n, cached_hash;
 static uint16_t cached_id;
 static uint8_t cached_source;
@@ -41,27 +43,37 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         wr(out+5,NAM_A2_RATE,4); wr(out+9,NAM_A2_WEIGHTS,2);
         out[11]=NAMSTORE_SLOTS; out[12]=64;
         wr(out+13,NAMSTORE_BYTES,2);
+        /* bits: 0 framed upload, 1 select/save, 2 delete, 3 drums+tuner,
+         * 4 rename (op 9), 5 paged list (op 1 takes a start index) */
 #ifdef NAM_UTILITIES
-        wr(out+15,15|16,2);
+        wr(out+15,15|16|32,2);
 #else
-        wr(out+15,7|16,2);   /* bit 4: in-place rename (op 9), both profiles */
+        wr(out+15,7|16|32,2);
 #endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
-    case 1:
-        if(len) { out[4]=1; break; }
-        out[size++]=(uint8_t)namrpc_selected();
-        for(unsigned slot=1;slot<=NAMSTORE_SLOTS;slot++) {
-            int bank=namstore_current(slot);
-            const uint8_t *r=bank<0?0:namstore_record(slot,(unsigned)bank);
-            int used=namstore_valid(r)==1;
-            out[size++]=(uint8_t)slot; out[size++]=(uint8_t)used;
-            memset(out+size,0,28);
-            if(used) { memcpy(out+size,r+24,24); memcpy(out+size+24,r+16,4); }
-            size+=28;
+    case 1: /* list page [start:u8, 0-based]: [selected][start][count] then
+     * count records of {slot:u8, used:u8, name 24, payloadCRC:u32} */
+        if(len!=1 || a[0]>=NAMSTORE_SLOTS) { out[4]=1; break; }
+        {
+            unsigned page=(cap-8u)/30u;
+            if(page>NAMSTORE_SLOTS-(unsigned)a[0]) page=NAMSTORE_SLOTS-a[0];
+            out[size++]=(uint8_t)namrpc_selected();
+            out[size++]=(uint8_t)a[0];
+            out[size++]=(uint8_t)page;
+            for(unsigned i=0;i<page;i++) {
+                unsigned slot=(unsigned)a[0]+1u+i;
+                int bank=namstore_current(slot);
+                const uint8_t *r=bank<0?0:namstore_record(slot,(unsigned)bank);
+                int used=namstore_valid(r)==1;
+                out[size++]=(uint8_t)slot; out[size++]=(uint8_t)used;
+                memset(out+size,0,28);
+                if(used) { memcpy(out+size,r+24,24); memcpy(out+size+24,r+16,4); }
+                size+=28;
+            }
         }
         break;
     case 2:
-        if(len!=7 || a[0]<1 || a[0]>3 || rd(a+1,2)!=NAMSTORE_BYTES) { out[4]=1; break; }
+        if(len!=7 || a[0]<1 || a[0]>NAMSTORE_SLOTS || rd(a+1,2)!=NAMSTORE_BYTES) { out[4]=1; break; }
         if(namstore_active()) { out[4]=2; break; }
         if(namstore_framed_begin(a[0],rd(a+1,2),rd(a+3,4))) { out[4]=4; break; }
         generation++; if(!generation) generation++;
@@ -83,15 +95,15 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         }
         break;
     case 6:
-        if(len!=2 || a[0]>3 || a[1]>1) { out[4]=1; break; }
+        if(len!=2 || a[0]>NAMSTORE_SLOTS || a[1]>1) { out[4]=1; break; }
         if(namstore_active()) { out[4]=2; break; }
         out[4]=namrpc_select(a[0],a[1])?4:0; break;
     case 7:
-        if(len!=1 || a[0]<1 || a[0]>3) { out[4]=1; break; }
+        if(len!=1 || a[0]<1 || a[0]>NAMSTORE_SLOTS) { out[4]=1; break; }
         if(namstore_active()) { out[4]=2; break; }
         out[4]=namrpc_delete(a[0])?4:0; break;
     case 9: /* rename: [slot][name 24, NUL padded] */
-        if(len!=25 || a[0]<1 || a[0]>3) { out[4]=1; break; }
+        if(len!=25 || a[0]<1 || a[0]>NAMSTORE_SLOTS) { out[4]=1; break; }
         if(namstore_active()) { out[4]=2; break; }
         { int r=namstore_rename(a[0],a+1);
           out[4]=r==0?0:(r==-2||r==-3)?4:1; }

@@ -35,10 +35,11 @@ the demo without connecting a pedal.
 - Import user-supplied `.nam`: standalone fixed A2-Lite or packed A2 with a unique
   3-channel submodel; validate 48 kHz/exact supported shape and convert locally
   to the same FBNM bytes as the PC tool.
-- Discover BLE, confirm firmware capabilities, list three model slots, upload
-  with progress/cancel, explicitly select/reload, bypass, delete and rename
-  (firmware capability bit 4; the rename re-commits the stored packet under
-  the new name without touching the running model).
+- Discover BLE, confirm firmware capabilities, list the model slots (paged
+  over BLE; 64 slots on current firmware, three on the older unpaged image),
+  upload with progress/cancel, explicitly select/reload, bypass, delete and
+  rename (firmware capability bit 4; the rename re-commits the stored packet
+  under the new name without touching the running model).
 - Save selection into the currently loaded pedal preset.
 - **接続せず試す** simulates slots. It creates no BLE connection or audio process.
 

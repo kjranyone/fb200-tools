@@ -76,12 +76,13 @@ memory-only experiment, with no live NAM inference.
 
 ## Storage and interrupted writes
 
-Three logical slots use two independent 8 KiB banks each:
+Sixty-four logical slots use two independent 8 KiB banks each:
 
 | Area (flash offsets) | Use |
 | --- | --- |
-| below `0x502000` | existing IR store, unchanged |
-| `0x502000..0x50DFFF` | NAM: 3 slots x 2 banks x 8192 bytes |
+| below `0x400000` | vendor library and existing stores, unchanged |
+| `0x400000..0x4FFFFF` | NAM: 64 slots x 2 banks x 8192 bytes (the former long IR store area; the long IR store is not compiled into NAM profiles) |
+| `0x500000..0x50DFFF` | spare (the earlier three-slot store lived at 0x502000) |
 | `0x50E000..0x50EFFF` | unused guard sector |
 | `0x50F000..` | existing looper metadata and audio, unchanged |
 

@@ -171,5 +171,5 @@ void namstore_list(void)
         if (namstore_valid(p) == 1)
             log_printf("nam %u rate 48000 name %s\r\n", slot, (const char *)p+24);
     }
-    log_printf("nam slots: 3\r\n");
+    log_printf("nam slots: %u\r\n", (unsigned)NAMSTORE_SLOTS);
 }

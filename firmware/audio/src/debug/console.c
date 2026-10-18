@@ -180,8 +180,10 @@ static void cmd_help(void)
              "  i2c   : scan | dump [bus addr]\r\n"
              "  flash : fwinfo | fwtest | jedec | fwbegin|fwrec|fwstock <len> <crc32>\r\n"
 #ifndef FB200_RECOVERY
+#ifndef NAM_RUNTIME
              "  irs   : irls | irdel <20-83> | irput <20-83> <taps 1-4096> <crc32> <name> [rate]\r\n"
              "          (long IRs, cab types 20-83; irput then takes taps x 4 raw float32 bytes)\r\n"
+#endif
 #endif
              "  boot  : recovery | boot | reset\r\n");
 }
@@ -488,12 +490,18 @@ static void cmd_jedec(void)
     log_printf("flexspi A1 window %lu kB; usable %lu kB\r\n", (unsigned long)(win / 1024u),
                (unsigned long)(cap / 1024u));
 #ifndef FB200_RECOVERY
+#ifndef NAM_RUNTIME
     log_printf("ir store F:0x%06lx..0x%06lx: %s\r\n", (unsigned long)IRSTORE_BASE,
                (unsigned long)IRSTORE_END, cap >= IRSTORE_END ? "fits" : "does NOT fit (off)");
+#else
+    log_printf("nam store F:0x%06lx..0x%06lx (%u slots)\r\n",
+               (unsigned long)NAMSTORE_BASE, (unsigned long)NAMSTORE_END,
+               (unsigned)NAMSTORE_SLOTS);
+#endif
 #endif
 }
 
-#ifndef FB200_RECOVERY
+#if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
 /* Long IR store (irstore/irstore.h): irput / irls / irdel. */
 static void cmd_irput(int argc, char **argv)
 {
@@ -927,19 +935,31 @@ static void dispatch(char *cmd)
 #endif
     else if (streq(argv[0], "prof")) engine_profile();
     else if (streq(argv[0], "loop")) cmd_loop(argc, argv);
+#if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
     else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
     else if (streq(argv[0], "irls")) irstore_print_list();
     else if (streq(argv[0], "irdel")) cmd_irdel(argv[1]);
+#endif
     else if (streq(argv[0], "cab") && (argc == 1 || !streq(argv[1], "long"))) {
         /* cab [<1-83>]: the edit buffer's cab on, with this type (save: `save`) */
         int ok = 1;
         uint32_t t = argc > 1 ? parse_num(argv[1], &ok) : 0u;
-        if (argc > 1 && ok && t >= 1u && t <= IRSTORE_LAST) {
+        uint32_t max_cab =
+#ifdef NAM_RUNTIME
+            19u;   /* no long IR store in NAM builds */
+#else
+            IRSTORE_LAST;
+#endif
+        if (argc > 1 && ok && t >= 1u && t <= max_cab) {
             uint8_t b[4] = {1, 0, (uint8_t)t, 0};
             ui_edit_write(P_CAB_EN, b, sizeof b);
             proto_notify_module(3);
         } else if (argc > 1) {
+#ifdef NAM_RUNTIME
+            log_printf("usage: cab [<1-10 stock | 11-19 user IR>]\r\n");
+#else
             log_printf("usage: cab [<1-10 stock | 11-19 user IR | 20-83 long IR>] | cab long <taps>\r\n");
+#endif
             return;
         }
         const preset_t *p = ui_edit_preset();
@@ -1104,7 +1124,7 @@ void console_task(void)
 #ifdef NAM_RUNTIME
     if (namstore_console_active()) { namstore_task(); return; }
 #endif
-#ifndef FB200_RECOVERY
+#if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
     if (irstore_put_active()) { irstore_put_task(); return; }
 #endif
     while (tud_cdc_available()) {

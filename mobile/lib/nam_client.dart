@@ -23,13 +23,16 @@ class NamClient {
   final RpcTransport transport;
   int _chunkSize = 64;
   int capabilityFlags = 0;
+  int slotCount = 3;
+
   NamClient(this.transport);
   Future<void> handshake() async {
     final p = await transport.request(0, []);
     if (p.length != 13 ||
         read32(p, 0) != 48000 ||
         read16(p, 4) != weightCount ||
-        p[6] != 3 ||
+        p[6] < 1 ||
+        p[6] > 64 ||
         p[7] < 1 ||
         p[7] > 64 ||
         read16(p, 8) != packetBytes ||
@@ -37,24 +40,64 @@ class NamClient {
       throw DeviceError('本体のモデル管理形式に対応していません。対応ファームウェアを確認してください。');
     }
     _chunkSize = p[7];
+    slotCount = p[6];
     capabilityFlags = read16(p, 10);
   }
 
+  /// Firmware advertises the paged list (op 1 takes a start index) as bit 5.
+  bool get _pagedList => (capabilityFlags & 32) != 0;
+
+  ModelSlot _slotRecord(Uint8List p, int off) {
+    if (p[off + 1] > 1) throw DeviceError('不正なスロット一覧です。');
+    final name = String.fromCharCodes(
+      p.sublist(off + 2, off + 26).takeWhile((v) => v != 0),
+    );
+    return ModelSlot(
+      p[off],
+      p[off + 1] == 1 ? name : null,
+      read32(p, off + 26),
+    );
+  }
+
   Future<DeviceState> readState() async {
-    final p = await transport.request(1, []);
-    if (p.length != 91 || p[0] > 3) throw DeviceError('本体の一覧を読み取れませんでした。');
-    final slots = <ModelSlot>[];
-    for (var i = 0; i < 3; i++) {
-      final off = 1 + i * 30;
-      if (p[off] != i + 1 || p[off + 1] > 1) throw DeviceError('不正なスロット一覧です。');
-      final name = String.fromCharCodes(
-        p.sublist(off + 2, off + 26).takeWhile((v) => v != 0),
-      );
-      slots.add(
-        ModelSlot(i + 1, p[off + 1] == 1 ? name : null, read32(p, off + 26)),
-      );
+    if (!_pagedList) {
+      // Older firmware: one unpaged reply with every (three) slots.
+      final p = await transport.request(1, []);
+      if (p.length != 1 + slotCount * 30 || p[0] > slotCount) {
+        throw DeviceError('本体の一覧を読み取れませんでした。');
+      }
+      return DeviceState(p[0], [
+        for (var i = 0; i < slotCount; i++)
+          _checkedSlot(_slotRecord(p, 1 + i * 30), i + 1),
+      ]);
     }
-    return DeviceState(p[0], slots);
+    var selected = -1;
+    final slots = <ModelSlot>[];
+    for (var start = 0; start < slotCount;) {
+      final p = await transport.request(1, [start]);
+      if (p.length < 3 || p[1] != start || p[2] < 1) {
+        throw DeviceError('本体の一覧を読み取れませんでした。');
+      }
+      if (selected < 0) selected = p[0];
+      if (p[0] > slotCount) throw DeviceError('不正なスロット一覧です。');
+      final count = p[2];
+      if (3 + count * 30 != p.length) {
+        throw DeviceError('不正なスロット一覧です。');
+      }
+      for (var i = 0; i < count; i++) {
+        slots.add(_checkedSlot(_slotRecord(p, 3 + i * 30), start + i + 1));
+      }
+      start += count;
+    }
+    if (slots.length != slotCount || selected < 0) {
+      throw DeviceError('本体の一覧を読み取れませんでした。');
+    }
+    return DeviceState(selected, slots);
+  }
+
+  ModelSlot _checkedSlot(ModelSlot s, int expected) {
+    if (s.number != expected) throw DeviceError('不正なスロット一覧です。');
+    return s;
   }
 
   Future<void> select(int slot, {bool save = false}) async {
@@ -73,7 +116,7 @@ class NamClient {
   Future<void> rename(int slot, String name) async {
     final codes = name.codeUnits;
     if (slot < 1 ||
-        slot > 3 ||
+        slot > slotCount ||
         codes.isEmpty ||
         codes.length > 23 ||
         codes.any((c) => c < 33 || c > 126)) {
@@ -163,13 +206,16 @@ class DemoTransport implements RpcTransport {
           3,
           64,
           ...u16(packetBytes),
-          7 | 16,
+          7 | 16 | 32,
           0,
           _selected,
         ]);
       case 1:
-        final out = <int>[_selected];
-        for (var slot = 1; slot <= 3; slot++) {
+        // Paged list like the firmware: [selected][start][count] + records.
+        final start = a.isEmpty ? 0 : a[0];
+        if (a.length != 1 || start >= 3) throw DeviceError('不正なスロット一覧です。');
+        final out = <int>[_selected, start, 3 - start];
+        for (var slot = start + 1; slot <= 3; slot++) {
           final name = _names[slot]?.codeUnits ?? [];
           out.addAll([
             slot,

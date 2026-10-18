@@ -23,6 +23,93 @@ class RecordingTransport implements RpcTransport {
   Future<void> close() => demo.close();
 }
 
+/// A firmware-like paged list over a dynamic slot count (flags bit 5).
+class PagedTransport implements RpcTransport {
+  final int slots;
+  final int pageSize;
+  final names = <int, String>{};
+  int selected = 0;
+  bool breakOrder = false;
+  PagedTransport(this.slots, {this.pageSize = 4});
+  @override
+  Future<Uint8List> request(int op, List<int> a) async {
+    switch (op) {
+      case 0:
+        return Uint8List.fromList([
+          ...u32(48000),
+          ...u16(1871),
+          slots,
+          64,
+          ...u16(7548),
+          ...u16(7 | 16 | 32),
+          selected,
+        ]);
+      case 1:
+        if (a.length != 1 || a[0] >= slots) throw DeviceError('bad page');
+        final start = a[0];
+        final count = pageSize < slots - start ? pageSize : slots - start;
+        final out = <int>[selected, start, count];
+        for (var i = 0; i < count; i++) {
+          final slot = start + i + 1;
+          final name = names[slot];
+          final used = name != null;
+          out
+            ..add(breakOrder && i == 0 ? slot + 1 : slot)
+            ..add(used ? 1 : 0)
+            ..addAll(used ? name.codeUnits : const [])
+            ..addAll(List.filled(used ? 24 - name.length : 24, 0))
+            ..addAll(u32(used ? 0x12345678 : 0));
+        }
+        return Uint8List.fromList(out);
+      default:
+        throw DeviceError('unsupported');
+    }
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+/// The pre-paging firmware: unpaged op 1, three slots, no flags bit 5.
+class LegacyTransport implements RpcTransport {
+  @override
+  Future<Uint8List> request(int op, List<int> a) async {
+    if (op == 0) {
+      return Uint8List.fromList([
+        ...u32(48000),
+        ...u16(1871),
+        3,
+        64,
+        ...u16(7548),
+        ...u16(7),
+        2,
+      ]);
+    }
+    if (op == 1 && a.isEmpty) {
+      return Uint8List.fromList([
+        2,
+        1,
+        1,
+        ...'Only'.codeUnits,
+        ...List.filled(20, 0),
+        ...u32(1),
+        2,
+        0,
+        ...List.filled(24, 0),
+        ...u32(0),
+        3,
+        0,
+        ...List.filled(24, 0),
+        ...u32(0),
+      ]);
+    }
+    throw DeviceError('unsupported');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 void main() {
   late NamModel model;
   setUp(() {
@@ -126,6 +213,43 @@ void main() {
     final client = NamClient(t);
     await expectLater(client.handshake(), throwsA(isA<DeviceError>()));
     expect(t.operations, [0]);
+    await client.close();
+  });
+  test('paged list assembles any slot count across pages', () async {
+    final t = PagedTransport(7)
+      ..names[1] = 'One'
+      ..names[5] = 'Five'
+      ..names[7] = 'Seven'
+      ..selected = 5;
+    final client = NamClient(t);
+    await client.handshake();
+    expect(client.slotCount, 7);
+    final state = await client.readState();
+    expect(state.selected, 5);
+    expect(state.slots.length, 7);
+    expect(state.slots[0].name, 'One');
+    expect(state.slots[4].name, 'Five');
+    expect(state.slots[6].name, 'Seven');
+    expect(state.slots[1].name, isNull);
+    await client.close();
+  });
+  test('paged list rejects a slot-order corruption', () async {
+    final t = PagedTransport(7)..names[2] = 'Two';
+    final client = NamClient(t);
+    await client.handshake();
+    t.breakOrder = true;
+    await expectLater(client.readState(), throwsA(isA<DeviceError>()));
+    await client.close();
+  });
+  test('legacy unpaged firmware still lists its three slots', () async {
+    final client = NamClient(LegacyTransport());
+    await client.handshake();
+    expect(client.slotCount, 3);
+    final state = await client.readState();
+    expect(state.selected, 2);
+    expect(state.slots[0].name, 'Only');
+    expect(state.slots[1].name, isNull);
+    expect(state.slots[2].name, isNull);
     await client.close();
   });
 }

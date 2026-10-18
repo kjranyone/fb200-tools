@@ -462,7 +462,10 @@ class _ModelPageState extends State<ModelPage> {
                 ]),
                 if (_state != null) ...[
                   const SizedBox(height: 24),
-                  Text('本体のモデル', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    '本体のモデル（${_state!.slots.where((s) => s.name != null).length}/${_client!.slotCount} 使用中）',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 12),
                   for (final slot in _state!.slots) ...[
                     _slotCard(slot),

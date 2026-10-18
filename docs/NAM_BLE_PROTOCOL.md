@@ -38,16 +38,23 @@ Multi-byte fields below are little endian. Maximum request payload is 80 bytes.
 
 | Op | Request args | Successful reply data |
 | --- | --- | --- |
-| 0 capabilities | empty | rate:u32=48000, weights:u16=1871, slots:u8=3, chunk:u8=64, packet:u16=7548, flags:u16=7, selected:u8 |
-| 1 list | empty | selected:u8, then three `{slot:u8, used:u8, name:24 bytes NUL-padded ASCII, payloadCRC:u32}` records |
-| 2 begin | slot:u8 (1..3), total:u16=7548, wholePacketCRC:u32 | token:u32, received:u16=0 |
+| 0 capabilities | empty | rate:u32=48000, weights:u16=1871, slots:u8=64, chunk:u8=64, packet:u16=7548, flags:u16=7, selected:u8 |
+| 1 list page (`flags` bit 5) | start:u8 (0-based, < slots) | `[selected:u8][start:u8][count:u8]` then count `{slot:u8, used:u8, name:24 bytes NUL-padded ASCII, payloadCRC:u32}` records from slot start+1, contiguous and in order; count = min((cap-8)/30, slots-start) |
+| 2 begin | slot:u8 (1..64), total:u16=7548, wholePacketCRC:u32 | token:u32, received:u16=0 |
 | 3 chunk | token:u32, offset:u16, bytes:1..64 | token:u32, received:u16 |
 | 4 commit | token:u32 | empty |
 | 5 abort | token:u32 | empty |
-| 6 select | slot:u8 (0=bypass, 1..3), save:u8 (0/1) | empty |
-| 7 delete | slot:u8 (1..3) | empty |
+| 6 select | slot:u8 (0=bypass, 1..64), save:u8 (0/1) | empty |
+| 7 delete | slot:u8 (1..64) | empty |
 | 8 tuner snapshot (`nam-manager`) | empty | enabled:u8, valid:u8, note:u8 (1..12 A#..A), octave:i8, frequency:f32, cents:f32, confidence:f32 |
-| 9 rename (`flags` bit 4) | slot:u8 (1..3), name:24 bytes NUL-padded, 1..23 printable (33..126) | empty |
+| 9 rename (`flags` bit 4) | slot:u8 (1..64), name:24 bytes NUL-padded, 1..23 printable (33..126) | empty |
+
+The store holds 64 slots in F:0x400000..0x4FFFFF (the former long IR store
+area; the long IR store is not compiled into NAM profiles). The unpaged op-1
+form of the earlier three-slot firmware is gone: a request without the start
+byte answers status 1, and older apps report a capability/list mismatch on
+this firmware. A full list needs two pages at the target reply cap (33
+records per page).
 
 Op 9 rewrites the stored slot header under the new name by re-committing the
 unchanged packet to the alternate bank (sequence + 1), so the previous bank
@@ -59,11 +66,13 @@ new id (and refresh) to retry.
 
 Flags: bit 0 framed upload, bit 1 select/preset save, bit 2 delete,
 bit 3 drum machine + live tuner (`PROFILE=nam-manager`), bit 4 rename (op 9,
-both profiles). Op 8 is read-only;
+both profiles), bit 5 paged list (op 1 takes a start byte; 64 slots). Op 8 is
+read-only;
 the existing B8/BA commands still control tuner/rhythm. Its floats are little
 endian IEEE-754; invalid/silent readings must not be displayed as a pitch.
-The base restricted `nam-runtime` still reports flags 7 (plus bit 4 = 16 for
-rename, 23); `nam-manager` reports 31.
+The base restricted `nam-runtime` reports flags 7|16|32 = 55 (plus bit 3 for
+`nam-manager`: 63) and 64 slots; the earlier three-slot firmware reported 7
+(15 with utilities) without bits 4/5.
 Status:
 0 success, 1 invalid args/incomplete packet, 2 staging busy, 3 CRC/model validation
 failure, 4 storage/selection failure or insufficient capacity, 5 unsupported

@@ -3,8 +3,12 @@
 #define FB200_NAMSTORE_H
 #include <stdint.h>
 #include "dsp/nam_a2.h"
-#define NAMSTORE_BASE 0x00502000u
-#define NAMSTORE_SLOTS 3u
+#define NAMSTORE_BASE 0x00400000u
+/* 64 slots x two 8 KiB banks = 1 MiB: F:0x400000..0x4FFFFF, the former long
+ * IR store area (unused by the NAM audio chain). The long IR store is not
+ * compiled into NAM builds; 0x500000..0x50DFFF stays spare and the guard
+ * sector before the looper metadata remains. */
+#define NAMSTORE_SLOTS 64u
 #define NAMSTORE_BANK 8192u
 #define NAMSTORE_END (NAMSTORE_BASE + NAMSTORE_SLOTS * 2u * NAMSTORE_BANK)
 #define NAMSTORE_HEADER 64u

@@ -58,6 +58,9 @@ void main() {
     await tester.tap(find.text('接続せず試す'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Demo Clean'), 250);
+    // Bring the card up from the bottom edge so its menu fits on screen.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 320));
+    await tester.pumpAndSettle();
     final card = find.ancestor(
       of: find.text('Demo Clean'),
       matching: find.byType(Card),
@@ -74,6 +77,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600)); // dialog outro timer
     expect(find.text('DemoLead'), findsOneWidget);
     expect(find.text('Demo Clean'), findsNothing);
+    await tester.scrollUntilVisible(find.text('スロット 1 の名前を変更しました。'), 250);
     expect(find.text('スロット 1 の名前を変更しました。'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
