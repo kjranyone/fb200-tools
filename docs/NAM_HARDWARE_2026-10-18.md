@@ -189,8 +189,22 @@ Read-only verification after reboot: `nam slots: 64`, active 0 (all empty),
 `stock: flash ok, in use`; CRC32 unchanged for presets `afc6cf54`, settings
 `b43bc742`, the abandoned three-slot area `485d974c` and the new store region
 `956bac74` (pre-existing bytes there are rejected as non-FBNM, so every slot
-lists empty). Full log: `out/nam64-flash/flash-64slots.log`. A Python
-RPC-over-HID probe found no E1 replies on this Windows host (the standard
-version command also gets none); the framed RPC remains host-tested against
-the same C code and awaits a physical BLE check with the app once the tablet
-reconnects. No model, preset or IR write was performed.
+lists empty). Full log: `out/nam64-flash/flash-64slots.log`.
+
+A later verification script mistakenly sent the console's `crash` command
+(a deliberate `__builtin_trap()` recovery test, not a dump reader): the pedal
+faulted exactly as designed, saved crash #1 (UDF in `dispatch`,
+console.c:1057), rebooted into recovery and booted the app cleanly again
+from `reset`. The dump was cleared; this validated the fault→dump→recovery→
+boot path on hardware and was not a firmware defect. A Python RPC-over-HID
+probe found no E1 replies on this Windows host (the standard version command
+also gets none); the framed RPC remains host-tested against the same C code
+and awaits a physical BLE check with the app once the tablet reconnects. No
+model, preset or IR write was performed.
+
+CI follow-up: the first NAM validation of `0a58c80` failed its strict
+hot-path check — removing the long IR objects shifted the link so the CI
+toolchain emits `__proto_feed_veneer` and treats `tud_hid_set_report_cb` as
+an address-taken callback, dragging the XIP protocol tree into the hot set.
+`89e8af6` applies the existing runtime gates to the hot set as well (a
+checker fix; the flashed image is unaffected).

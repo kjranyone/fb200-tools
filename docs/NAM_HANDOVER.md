@@ -267,7 +267,14 @@ RPC (op 1 takes a start byte, capability bit 5; both NAM profiles pass ARM
 build and the strict RAM/flash-busy checks, app 0.5.0+8). With explicit user
 authorization the new `nam-manager` app slot was flashed and verified
 read-only on the pedal (`nam slots: 64`, all other region CRCs unchanged).
-See [NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The pedal's
+`0a58c80` carries the feature; its first NAM validation failed on a
+toolchain-sensitive hot-path check (veneer + address-taken callback), fixed
+by applying the runtime gates to the hot set in `89e8af6`
+([run 39137939017](https://github.com/kjranyone/fb200-tools/actions/runs/39137939017)
+success, all three jobs; inherited CI
+[run 39137929888](https://github.com/kjranyone/fb200-tools/actions/runs/39137929888)
+success — the checker fix does not change the flashed image). See
+[NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The pedal's
 slots were empty when the layout changed, so no migration was needed; older
 app versions cannot manage this firmware.
 
