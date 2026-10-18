@@ -36,7 +36,9 @@ the demo without connecting a pedal.
   3-channel submodel; validate 48 kHz/exact supported shape and convert locally
   to the same FBNM bytes as the PC tool.
 - Discover BLE, confirm firmware capabilities, list three model slots, upload
-  with progress/cancel, explicitly select/reload, bypass and delete.
+  with progress/cancel, explicitly select/reload, bypass, delete and rename
+  (firmware capability bit 4; the rename re-commits the stored packet under
+  the new name without touching the running model).
 - Save selection into the currently loaded pedal preset.
 - **接続せず試す** simulates slots. It creates no BLE connection or audio process.
 

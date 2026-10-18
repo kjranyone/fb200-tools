@@ -65,6 +65,30 @@ class NamClient {
     await transport.request(7, [slot]);
   }
 
+  /// Firmware capabilities include in-place rename (RPC op 9, flags bit 4).
+  bool get canRename => (capabilityFlags & 16) != 0;
+
+  /// Rename a stored slot. The firmware rule (like the upload header):
+  /// 1..23 printable ASCII bytes at 0x21..0x7E, no spaces, NUL padded to 24.
+  Future<void> rename(int slot, String name) async {
+    final codes = name.codeUnits;
+    if (slot < 1 ||
+        slot > 3 ||
+        codes.isEmpty ||
+        codes.length > 23 ||
+        codes.any((c) => c < 33 || c > 126)) {
+      throw DeviceError('モデル名は半角英数字・記号（空白なし）で1〜23文字にしてください。');
+    }
+    if (!canRename) {
+      throw DeviceError('このファームウェアはモデル名の変更に対応していません。');
+    }
+    await transport.request(9, [
+      slot,
+      ...codes,
+      ...List.filled(24 - codes.length, 0),
+    ]);
+  }
+
   Future<void> upload(
     int slot,
     NamModel model, {
@@ -139,7 +163,7 @@ class DemoTransport implements RpcTransport {
           3,
           64,
           ...u16(packetBytes),
-          7,
+          7 | 16,
           0,
           _selected,
         ]);
@@ -194,6 +218,14 @@ class DemoTransport implements RpcTransport {
         _models.remove(a[0]);
         _names.remove(a[0]);
         if (_selected == a[0]) _selected = 0;
+        return Uint8List(0);
+      case 9:
+        if (!_names.containsKey(a[0])) {
+          throw DeviceError('空のスロットです。');
+        }
+        _names[a[0]] = String.fromCharCodes(
+          a.sublist(1, 25).takeWhile((v) => v != 0),
+        );
         return Uint8List(0);
       default:
         throw DeviceError('未対応の操作です。');

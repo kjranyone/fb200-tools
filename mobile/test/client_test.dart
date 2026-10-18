@@ -37,6 +37,7 @@ void main() {
       final transport = RecordingTransport();
       final client = NamClient(transport);
       await client.handshake();
+      expect(client.canRename, isTrue);
       expect((await client.readState()).slots.length, 3);
       final progress = <double>[];
       var committing = false;
@@ -54,6 +55,10 @@ void main() {
       expect(state.slots[2].name, 'synthetic');
       await client.select(3, save: true);
       expect((await client.readState()).selected, 3);
+      await client.rename(3, 'renamed');
+      state = await client.readState();
+      expect(state.slots[2].name, 'renamed');
+      expect(transport.operations.where((op) => op == 9).single, 9);
       await client.delete(3);
       state = await client.readState();
       expect(state.selected, 0);
@@ -62,6 +67,26 @@ void main() {
       await client.close();
     },
   );
+  test('rename validates names, empty slots and firmware capability', () async {
+    final t = RecordingTransport();
+    final client = NamClient(t);
+    await client.handshake();
+    for (final bad in ['', 'has space', '日本語', 'x' * 24]) {
+      await expectLater(client.rename(1, bad), throwsA(isA<DeviceError>()));
+    }
+    await expectLater(client.rename(4, 'ok'), throwsA(isA<DeviceError>()));
+    await expectLater(
+      client.rename(3, 'ok'),
+      throwsA(isA<DeviceError>()),
+    ); // empty
+    // Invalid names/range never reach the wire; the empty-slot check is the
+    // device's, so exactly one op 9 went out and failed there.
+    expect(t.operations.where((op) => op == 9).length, 1);
+    client.capabilityFlags = 7; // older firmware without op 9
+    expect(client.canRename, isFalse);
+    await expectLater(client.rename(1, 'nope'), throwsA(isA<DeviceError>()));
+    await client.close();
+  });
   test(
     'cancelled transfer aborts and never commits or replaces existing slot',
     () async {

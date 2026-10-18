@@ -150,4 +150,17 @@ archive).
   built locally; not installed.
 
 Unchanged: no physical IR transfer, no Bluetooth rename on the air, no model
-or preset writes, no firmware change. `docs/ANDROID_PARITY.md` was updated.
+or preset writes, no firmware installation (the pedal still runs the previous
+`nam-manager` image, so the app hides the rename control until a separately
+authorized firmware update). `docs/ANDROID_PARITY.md` was updated.
+
+Firmware follow-up in the same session (host/ARM validated, not installed):
+RPC op 9 renames a stored model slot by re-committing the unchanged packet to
+the alternate bank (name rules 1..23 printable bytes, NUL-padded 24; header
+CRC resealed; weights/payload CRC/sequence handling unchanged; running RAM
+model untouched). Capability flags gain bit 4 (base 23, `nam-manager` 31), so
+older installed firmware keeps hiding the control. Host tests cover op 9
+argument validation, empty-slot refusal, alternate-bank sequencing, idempotent
+cached retries, flash-cut preservation and staging exclusion; both NAM profiles
+build for ARM with the strict RAM/flash-busy checks (`ARM_ALL_OK`). The app
+demo implements op 9; 85 Flutter tests and analyze pass.

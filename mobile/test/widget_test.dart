@@ -46,4 +46,36 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('demo slot rename updates the list after refresh', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const MainApp());
+    await tester.tap(find.text('接続せず試す'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Demo Clean'), 250);
+    final card = find.ancestor(
+      of: find.text('Demo Clean'),
+      matching: find.byType(Card),
+    );
+    await tester.tap(
+      find.descendant(of: card, matching: find.byType(PopupMenuButton<String>)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('名前の変更'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'DemoLead');
+    await tester.tap(find.text('変更'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600)); // dialog outro timer
+    expect(find.text('DemoLead'), findsOneWidget);
+    expect(find.text('Demo Clean'), findsNothing);
+    expect(find.text('スロット 1 の名前を変更しました。'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
 }

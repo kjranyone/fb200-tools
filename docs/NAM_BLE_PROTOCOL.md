@@ -47,12 +47,23 @@ Multi-byte fields below are little endian. Maximum request payload is 80 bytes.
 | 6 select | slot:u8 (0=bypass, 1..3), save:u8 (0/1) | empty |
 | 7 delete | slot:u8 (1..3) | empty |
 | 8 tuner snapshot (`nam-manager`) | empty | enabled:u8, valid:u8, note:u8 (1..12 A#..A), octave:i8, frequency:f32, cents:f32, confidence:f32 |
+| 9 rename (`flags` bit 4) | slot:u8 (1..3), name:24 bytes NUL-padded, 1..23 printable (33..126) | empty |
+
+Op 9 rewrites the stored slot header under the new name by re-committing the
+unchanged packet to the alternate bank (sequence + 1), so the previous bank
+stays valid until the final header write. Weights, payload CRC and the running
+RAM model are untouched; the old name stays if the write fails. Status 1 for an
+empty/tombstoned slot or an invalid name, 2 while a transfer holds staging,
+4 on flash failure. A cached failure replays for the same request id; issue a
+new id (and refresh) to retry.
 
 Flags: bit 0 framed upload, bit 1 select/preset save, bit 2 delete,
-bit 3 drum machine + live tuner (`PROFILE=nam-manager`). Op 8 is read-only;
+bit 3 drum machine + live tuner (`PROFILE=nam-manager`), bit 4 rename (op 9,
+both profiles). Op 8 is read-only;
 the existing B8/BA commands still control tuner/rhythm. Its floats are little
 endian IEEE-754; invalid/silent readings must not be displayed as a pitch.
-The base restricted `nam-runtime` still reports flags 7; `nam-manager` reports 15.
+The base restricted `nam-runtime` still reports flags 7 (plus bit 4 = 16 for
+rename, 23); `nam-manager` reports 31.
 Status:
 0 success, 1 invalid args/incomplete packet, 2 staging busy, 3 CRC/model validation
 failure, 4 storage/selection failure or insufficient capacity, 5 unsupported

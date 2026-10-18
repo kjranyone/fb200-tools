@@ -74,6 +74,29 @@ int namstore_delete(unsigned slot)
     return namstore_write(slot, p);
 }
 
+int namstore_rename(unsigned slot, const uint8_t *name)
+{
+    if (session.active || slot < 1 || slot > NAMSTORE_SLOTS || !namstore_ready()) return -1;
+    /* Same name rule as namstore_valid(): 1..23 printable bytes (33..126),
+     * NUL-terminated inside the 24-byte field, nothing after the NUL. */
+    unsigned n = 0;
+    while (n < 24 && name[n]) {
+        if (name[n] < 33 || name[n] > 126) return -1;
+        n++;
+    }
+    if (n == 24 || n == 0) return -1;
+    for (unsigned i = n; i < 24; i++) if (name[i]) return -1;
+    int bank = namstore_current(slot);
+    const uint8_t *cur = bank < 0 ? 0 : namstore_record(slot, (unsigned)bank);
+    if (!cur || namstore_valid(cur) != 1) return -1;   /* empty or tombstoned */
+    uint8_t *p = namstore_buffer();
+    memcpy(p, cur, NAMSTORE_BYTES);
+    memset(p + 24, 0, 24);
+    memcpy(p + 24, name, n);
+    seal(p);   /* the header CRC covers the name; weights and their CRC stay */
+    return namstore_write(slot, p);   /* alternate bank, sequence + 1 */
+}
+
 int namstore_begin(unsigned slot, uint32_t bytes, uint32_t crc)
 {
     if (session.active || !namstore_ready() || slot < 1 || slot > NAMSTORE_SLOTS ||

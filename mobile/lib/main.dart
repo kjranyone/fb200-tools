@@ -302,6 +302,45 @@ class _ModelPageState extends State<ModelPage> {
     });
   }
 
+  Future<void> _renameSlot(ModelSlot slot) async {
+    final client = _client;
+    if (client == null || !mounted) return;
+    final controller = TextEditingController(text: slot.name ?? '');
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('スロット ${slot.number} の名前'),
+        content: TextField(
+          controller: controller,
+          maxLength: 23,
+          decoration: const InputDecoration(
+            helperText: '半角英数字・記号（空白なし）で1〜23文字',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('変更'),
+          ),
+        ],
+      ),
+    );
+    // The dialog route is still animating out when its Future completes.
+    Future<void>.delayed(const Duration(milliseconds: 500), controller.dispose);
+    if (name == null || name.isEmpty || !mounted || _client != client) return;
+    await _run('名前を変更中', () async {
+      await client.rename(slot.number, name);
+      await _refresh();
+      if (mounted) {
+        setState(() => _message = 'スロット ${slot.number} の名前を変更しました。');
+      }
+    });
+  }
+
   @override
   void dispose() {
     unawaited(_client?.close() ?? _wire?.close());
@@ -552,8 +591,17 @@ class _ModelPageState extends State<ModelPage> {
           PopupMenuButton<String>(
             enabled: !_busy,
             tooltip: 'スロット ${slot.number} の操作',
-            onSelected: (_) => _delete(slot),
+            onSelected: (v) {
+              switch (v) {
+                case 'rename':
+                  _renameSlot(slot);
+                case 'delete':
+                  _delete(slot);
+              }
+            },
             itemBuilder: (_) => [
+              if (_client!.canRename)
+                const PopupMenuItem(value: 'rename', child: Text('名前の変更')),
               const PopupMenuItem(value: 'delete', child: Text('削除')),
             ],
           ),

@@ -21,6 +21,10 @@ int namstore_ready(void);
 /* Caller owns an 8192-byte staging buffer. Packet validated before any write.
  * Commit writes alternate bank data, then header; old bank stays intact. */
 int namstore_write(unsigned slot, uint8_t *staging);
+/* Rewrites the stored slot under a new name by committing the unchanged
+ * packet to the alternate bank (old bank stays valid until the header
+ * commit). Name: 1..23 printable bytes at 33..126, NUL padded to 24. */
+int namstore_rename(unsigned slot, const uint8_t *name);
 int namstore_delete(unsigned slot);
 int namstore_begin(unsigned slot, uint32_t bytes, uint32_t crc);
 int namstore_active(void);

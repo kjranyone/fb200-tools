@@ -59,6 +59,15 @@ played by the stock firmware. A Bluetooth device-name control (`B3`, 20 bytes,
 no reply) is also included; the name cannot be read back, so the app asks the
 user to verify after reconnecting.
 
+Model slot renaming (firmware RPC op 9, capability flags bit 4) is implemented
+in firmware and app: the stored packet is re-committed under the new name to
+the alternate bank with weights and payload CRC untouched, and the running RAM
+model is not disturbed. Host C tests cover name validation, alternate-bank
+sequencing, flash-failure preservation, retry caching and staging exclusion;
+both NAM profiles build for ARM with the strict RAM/flash-busy checks. The app
+shows the control only when the firmware advertises bit 4, so already-installed
+firmware keeps its current behavior until a separately authorized update.
+
 `PROFILE=nam-manager` restores the drum machine and tuner to the 48 kHz NAM
 engine. Drums retain a 44.1 kHz source sequencer/sample clock and interpolate to
 48 kHz; the tuner uses the actual input rate. YIN analysis services audio/USB
@@ -66,19 +75,21 @@ between lag groups. Feature flag 8 enables these tools and read-only RPC op 8.
 This is still a restricted NAM audio chain: stock amp/cab/MOD/reverb, Bluetooth
 audio and the looper are not restored. Unsupported controls stay disabled.
 
-83 Flutter tests and analyze pass (WAV decode/resampler parity against shared
+85 Flutter tests and analyze pass (WAV decode/resampler parity against shared
 Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name
-validation, IR tab and dialog flows). ARM build, RAM placement, flash-busy
-checks, 44.1/48 kHz pitch and drum-rate host tests pass. The manager firmware
-and the previous app were installed. Physical USB verified flags 15, tuner
-on/off/no-signal, forty preset reads, no crash dump and unchanged
-preset/settings/NAM flash CRCs. The tablet's USB connection disappeared
-immediately after 0.3.0 installation; the new legacy editor/BLE controls,
-physical IR transfer and Bluetooth naming therefore still require physical UI
-validation. 0.3.1+6 corrected bank labels to the pedal's BANK 0–9 / presets
-0A–9D; that APK was not installed because the tablet remained disconnected.
+validation, model-rename gating, IR tab and dialog flows). ARM build, RAM
+placement, flash-busy checks, 44.1/48 kHz pitch and drum-rate host tests pass.
+The manager firmware and the previous app were installed. Physical USB
+verified flags 15, tuner on/off/no-signal, forty preset reads, no crash dump
+and unchanged preset/settings/NAM flash CRCs. The tablet's USB connection
+disappeared immediately after 0.3.0 installation; the new legacy editor/BLE
+controls, physical IR transfer, model rename and Bluetooth naming therefore
+still require physical UI validation. 0.3.1+6 corrected bank labels to the
+pedal's BANK 0–9 / presets 0A–9D; that APK was not installed because the
+tablet remained disconnected.
 
 Remaining parity work includes the complete NAM audio chain, IR auditioning,
-Bluetooth naming/audio read-back, model labels and all advanced settings,
+Bluetooth naming/audio read-back, model labels on already-installed firmware
+(needs a separately authorized firmware update) and all advanced settings,
 physical stock firmware operation, musical audio/deadline checks and real
 TONE3000 OAuth/download.

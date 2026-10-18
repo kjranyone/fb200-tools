@@ -77,7 +77,7 @@ def test_mobile_fixture_matches_python_packet_and_frame():
 
 def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c = client
-    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 3, 64, 7548, 7, 0)
+    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 3, 64, 7548, 7 | 16, 0)
     state = c.call(1)
     assert len(state) == 91 and state[0] == 0 and state[1:3] == b"\x01\0"
     packet = nam.pack(model(), "phone")
@@ -167,6 +167,58 @@ def test_failed_mobile_upload_keeps_previous_model(client, fault):
 def test_invalid_arguments(client, op, args):
     client.call(op, args, status=1)
     assert client.lib.fake_writes() == 0
+
+
+def slot_name(c, slot=1):
+    state = c.call(1)
+    off = 1 + (slot - 1) * 30 + 2   # [slot][used][name 24][crc 4] per slot
+    return state[off:off + 24].split(b"\0")[0].decode()
+
+
+def test_rename_rewrites_header_only_and_keeps_weights(client):
+    c = client
+    packet = nam.pack(model(), "oldname")
+    c.upload(packet, 1)
+    first_bank = c.lib.namstore_current(1)
+    c.call(9, b"\x01" + b"newname".ljust(24, b"\0"))
+    assert slot_name(c) == "newname"
+    stored = latest(c.lib)
+    assert stored[24:48].split(b"\0")[0] == b"newname"
+    assert stored[64:] == packet[64:]          # weights untouched
+    assert stored[16:20] == packet[16:20]      # payload CRC untouched
+    assert c.lib.namstore_current(1) == 1 - first_bank   # alternate bank
+    # Empty slot and empty/oversized/unprintable names are refused.
+    c.call(9, b"\x02" + b"x".ljust(24, b"\0"), status=1)
+    c.call(9, b"\x01" + b"\0" * 24, status=1)
+    c.call(9, b"\x01" + b"x" * 24, status=1)
+    c.call(9, b"\x01" + b"bad name".ljust(24, b"\0"), status=1)
+    assert slot_name(c) == "newname"
+
+
+def test_rename_retry_is_idempotent_and_keeps_previous_on_flash_cut(client):
+    c = client
+    original = nam.pack(model(), "previous")
+    assert c.lib.namstore_write(1, staging(original)) == 0
+    old = latest(c.lib)
+    c.lib.fake_cut(4097)
+    request = bytes([1, 9]) + struct.pack("<H", next(c.ids)) + b"\x01" + b"next".ljust(24, b"\0")
+    c.call(9, request=request, status=4)
+    assert latest(c.lib) == old
+    # The cached failure replays without touching flash; the client recovers
+    # by list/refresh and issuing a new request id.
+    c.call(9, request=request, status=4)
+    c.lib.fake_cut(-1)
+    c.call(9, b"\x01" + b"next".ljust(24, b"\0"))
+    assert slot_name(c) == "next" and latest(c.lib)[64:] == original[64:]
+
+
+def test_rename_blocked_during_transfer(client):
+    c = client
+    packet = nam.pack(model(), "keep")
+    c.upload(packet, 1)
+    token = c.begin(nam.pack(model(), "other"), 2)
+    c.call(9, b"\x01" + b"zzz".ljust(24, b"\0"), status=2)
+    c.call(5, token)
 
 
 def test_unsupported_and_capacity(client):

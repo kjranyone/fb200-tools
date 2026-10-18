@@ -42,9 +42,9 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         out[11]=NAMSTORE_SLOTS; out[12]=64;
         wr(out+13,NAMSTORE_BYTES,2);
 #ifdef NAM_UTILITIES
-        wr(out+15,15,2);
+        wr(out+15,15|16,2);
 #else
-        wr(out+15,7,2);
+        wr(out+15,7|16,2);   /* bit 4: in-place rename (op 9), both profiles */
 #endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
     case 1:
@@ -90,6 +90,12 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         if(len!=1 || a[0]<1 || a[0]>3) { out[4]=1; break; }
         if(namstore_active()) { out[4]=2; break; }
         out[4]=namrpc_delete(a[0])?4:0; break;
+    case 9: /* rename: [slot][name 24, NUL padded] */
+        if(len!=25 || a[0]<1 || a[0]>3) { out[4]=1; break; }
+        if(namstore_active()) { out[4]=2; break; }
+        { int r=namstore_rename(a[0],a+1);
+          out[4]=r==0?0:(r==-2||r==-3)?4:1; }
+        break;
     case 8:
         if(len) { out[4]=1; break; }
         { uint32_t count=namrpc_tuner(out+5);
