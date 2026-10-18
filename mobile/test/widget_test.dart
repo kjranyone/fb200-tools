@@ -13,6 +13,7 @@ void main() {
       await tester.pumpWidget(const MainApp());
       expect(find.text('接続せず試す'), findsOneWidget);
       expect(find.text('DEMO'), findsNothing);
+      await tester.ensureVisible(find.text('接続せず試す'));
       await tester.tap(find.text('接続せず試す'));
       await tester.pumpAndSettle();
       expect(find.text('DEMO'), findsOneWidget);
@@ -26,6 +27,7 @@ void main() {
         matching: find.widgetWithText(OutlinedButton, '選択'),
       );
       await tester.ensureVisible(select);
+      await tester.pumpAndSettle();
       await tester.tap(select);
       await tester.pumpAndSettle();
       expect(

@@ -11,4 +11,5 @@ void namrpc_task(void);
 unsigned namrpc_selected(void);
 int namrpc_select(unsigned slot, int save);
 int namrpc_delete(unsigned slot);
+uint32_t namrpc_tuner(uint8_t *out);
 #endif

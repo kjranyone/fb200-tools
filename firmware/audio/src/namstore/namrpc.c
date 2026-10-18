@@ -12,6 +12,7 @@ static uint8_t cached[128];
 static uint32_t cached_n, cached_hash;
 static uint16_t cached_id;
 static uint8_t cached_source;
+__attribute__((weak)) uint32_t namrpc_tuner(uint8_t *out) { (void)out; return 0; }
 
 void namrpc_task(void)
 {
@@ -39,7 +40,12 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         if(len) { out[4]=1; break; }
         wr(out+5,NAM_A2_RATE,4); wr(out+9,NAM_A2_WEIGHTS,2);
         out[11]=NAMSTORE_SLOTS; out[12]=64;
-        wr(out+13,NAMSTORE_BYTES,2); wr(out+15,7,2);
+        wr(out+13,NAMSTORE_BYTES,2);
+#ifdef NAM_UTILITIES
+        wr(out+15,15,2);
+#else
+        wr(out+15,7,2);
+#endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
     case 1:
         if(len) { out[4]=1; break; }
@@ -84,6 +90,11 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         if(len!=1 || a[0]<1 || a[0]>3) { out[4]=1; break; }
         if(namstore_active()) { out[4]=2; break; }
         out[4]=namrpc_delete(a[0])?4:0; break;
+    case 8:
+        if(len) { out[4]=1; break; }
+        { uint32_t count=namrpc_tuner(out+5);
+          if(count) size+=count; else out[4]=5; }
+        break;
     default: out[4]=5; break;
     }
 done:

@@ -16,6 +16,8 @@
 #define YIN_THR     0.1f
 #define YIN_REJECT  0.2f
 
+__attribute__((weak)) void tuner_service(void) {}
+
 /* Octave bounds (stock 0x20016fd4) and the A2..A#3 note table (0x20016ff8). */
 static const float oct_tab[9] = {27.5f, 32.703f, 65.406f, 130.813f, 261.626f,
                                  523.251f, 1046.505f, 2093.004f, 4186.009f};
@@ -106,6 +108,7 @@ COLD float tuner_yin(tuner_t *t, const float *x, float fs, float *confidence)
     float e0 = 0.0f;
     for (int j = 0; j < TUNER_WIN; j++) e0 += x[j] * x[j];
     for (int tau = 0; tau < TUNER_WIN - 2; tau++) {
+        if ((tau & 7) == 0) tuner_service();
         float s = 0.0f;
         for (int m = tau; m < tau + TUNER_WIN; m++) s += x[m] * x[m - tau];
         acf[tau] = s;

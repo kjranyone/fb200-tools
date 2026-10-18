@@ -3,6 +3,13 @@
 Prepared 2026-10-18. Repository: `kjranyone/fb200-tools`, upstream:
 `w1ne/fb200-tools`, branch: `feat/nam-a2-lite-foundation`.
 
+Later physical-session update: the user explicitly authorized firmware
+installation, which was completed. Android app installation, measured BT201 UART
+endpoints and read-only capabilities/slot listing are now verified. The app
+automatically selects FFF0 / TX FFF1 / RX FFF2. No physical model/preset write
+has been performed. See [current evidence](NAM_HARDWARE_2026-10-18.md); historical
+no-install/no-endpoint statements below describe the earlier handover only.
+
 ## Objective and authorization
 
 Run user-supplied NAM A2-Lite captures on FLAMMA FB200 (i.MX RT1052) with model

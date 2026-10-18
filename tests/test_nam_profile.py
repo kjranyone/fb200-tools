@@ -24,7 +24,12 @@ _Static_assert(AUDIO_MCLK_HZ == 256u * AUDIO_FS, "MCLK");
 _Static_assert(24000000ull * (AUDIO_PLL_LOOP * AUDIO_PLL_DENOM + AUDIO_PLL_NUM)
                == 64ull * AUDIO_MCLK_HZ * AUDIO_PLL_DENOM, "PLL4 divider");
 _Static_assert(DELAY_FS_MAX == AUDIO_FS, "delay capacity");
-_Static_assert(CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX >= (AUDIO_FS+999)/1000*4, "USB packet");
+/* Adaptive capture is handled as asynchronous by Windows: capacity must
+ * include one stereo frame above the nominal full-speed packet. */
+_Static_assert(CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX >= ((AUDIO_FS+999)/1000+1)*4, "USB IN packet");
+_Static_assert(CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX >= ((AUDIO_FS+999)/1000+1)*4, "USB OUT packet");
+_Static_assert(CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ >= 4*CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX, "USB IN FIFO");
+_Static_assert(CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ >= 4*CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX, "USB OUT FIFO");
 int main(void) { return 0; }
 ''')
     subprocess.run(["cc", "-Werror", f"-DAUDIO_FS={rate}", "-I", str(FW / "src"),
@@ -71,8 +76,9 @@ def test_probe_reserves_real_ram():
 
 @pytest.mark.skipif(any(shutil.which(t) is None for t in ("arm-none-eabi-gcc", "make", "curl")),
                     reason="ARM toolchain not installed")
-def test_runtime_image_and_flash_busy_safety():
-    out = probe_build("nam-runtime")
+@pytest.mark.parametrize("profile", ["nam-runtime", "nam-manager"])
+def test_runtime_image_and_flash_busy_safety(profile):
+    out = probe_build(profile)
     elf = out / "fb200-app.elf"
     subprocess.run(["python3", str(ROOT / "firmware/tools/hot_path.py"), str(elf),
                     "--nam-runtime"], check=True)
@@ -85,7 +91,8 @@ def test_runtime_image_and_flash_busy_safety():
     address, size = syms["staging"]
     assert size == 8192 and 0x20200000 <= address < address+size <= 0x20208000
     assert "s_rev" not in syms  # restricted runtime profile frees reverb ITCM
-    assert "tuner_poll" not in syms and "tuner_yin" not in syms
+    assert ("tuner_poll" in syms) == (profile == "nam-manager")
+    assert ("tuner_yin" in syms) == (profile == "nam-manager")
     assert "nam_a2_process" in syms and syms["nam_a2_process"][0] < 0x20000
     # This profile must not silently weaken the stock image's required checks.
     result = subprocess.run(["python3", str(ROOT / "firmware/tools/hot_path.py"),

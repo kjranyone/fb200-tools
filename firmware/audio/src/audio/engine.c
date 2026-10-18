@@ -76,6 +76,7 @@ static bool s_fault_mute;    /* SAI FIFO fault: short mute, then release */
 static uint32_t s_fault_ms;
 static bool s_meters;
 static tuner_t s_tuner;
+static tuner_result_t s_tuner_result;
 static drums_t s_drums;
 static bool s_tuner_on;
 static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
@@ -238,6 +239,7 @@ COLD void engine_init(void)
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
+    (void)drums_set_output_rate(&s_drums, AUDIO_FS);
     s_ready = true;
 }
 
@@ -251,7 +253,7 @@ void engine_pump(void)
 }
 
 void engine_set_tuner(bool on) {
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     s_tuner_on = on;
 #else
     (void)on;
@@ -452,15 +454,19 @@ float engine_input_peak(void)
 
 bool engine_tuner_poll(tuner_result_t *out)
 {
-#ifdef NAM_RUNTIME
+#if defined(NAM_RUNTIME) && !defined(NAM_UTILITIES)
     /* This profile has no tuner. Keep its cold DSP out of every callback path,
      * independently of compiler inlining/dead-code decisions. */
     (void)out;
     return false;
 #else
-    return tuner_poll(&s_tuner, out) != 0;
+    if (!tuner_poll(&s_tuner, &s_tuner_result)) return false;
+    if (out) *out = s_tuner_result;
+    return true;
 #endif
 }
+void engine_tuner_latest(tuner_result_t *out) { *out = s_tuner_result; }
+void tuner_service(void) { flash_pump(); }
 drums_t *engine_drums(void) { return &s_drums; }
 struct eq_s *engine_eq(void) { return &s_eq; }
 
@@ -635,7 +641,7 @@ void engine_task(void)
     }
     s_in_peak = pk;
     PROF(P_IN);
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     tuner_feed(&s_tuner, x, n);
 #endif
     PROF(P_TUNER);
@@ -727,7 +733,7 @@ void engine_task(void)
 
     /* Drums before the capture tap: the stock leaves them out of the USB
      * recording; a user playing along wants them in (better than stock). */
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (!s_tuner_on) drums_process_stereo(&s_drums, s_block.data[0], s_block.data[1], n);
 #endif
     PROF(P_DRUMS);

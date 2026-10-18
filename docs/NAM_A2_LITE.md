@@ -175,8 +175,9 @@ current CI evidence and the remaining hardware gates.
 
 The [Flutter manager](../mobile/README.md) now implements model import, BLE slot
 transfer and preset binding with the matching [RPC extension](NAM_BLE_PROTOCOL.md).
-It is a host-tested prototype; measured BT201 endpoints and real phone/pedal
-tests remain outstanding. The USB console workflow is still available.
+Measured BT201 endpoints and read-only Android capabilities/slot listing are
+verified; physical model transfer and audio tests remain outstanding. See
+[hardware evidence](NAM_HARDWARE_2026-10-18.md). The USB console workflow is still available.
 
 - Measure worst-case Cortex-M7 cycles and underruns. The complete 32-frame
   48 kHz path has 400,000 cycles; this scalar kernel may require optimization.

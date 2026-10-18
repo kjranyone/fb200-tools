@@ -1,12 +1,30 @@
 # FB200 NAM mobile manager
 
 Flutter prototype for Android / iOS. Web provides the same explicit offline demo;
-web Bluetooth is not implemented. **Physical FB200 Bluetooth and audio behavior
-remain unverified.** This app has no firmware-update action. Review it through
+web Bluetooth is not implemented. **Physical FB200 Bluetooth model transfer
+remains unverified.** Physical Android BLE capabilities and empty-slot listing,
+firmware installation and Windows USB capture were checked separately.
+This app has no firmware-update action. Review it through
 the demo without connecting a pedal.
 
 ## Features
 
+- Bank/preset editor: ten banks / forty presets, read/select, rename/copy,
+  explicit overwrite, lossless binary fields in JSON backup, CRC validation and
+  verified restore. Unknown bytes and NAM bindings are retained; copying a
+  non-NAM preset explicitly clears a destination NAM binding on NAM firmware.
+- Legacy effect/settings controls and front-panel notification refresh share
+  the same BLE connection with NAM. Stock firmware can use the editor without
+  satisfying the NAM handshake. A base NAM runtime disables unsupported effects.
+- Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
+  Availability is gated by firmware capabilities. Full stock/NAM effect parity
+  is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
+- Android: **TONE3000から探す** opens the official A2 catalog/sign-in flow,
+  downloads a chosen variant and validates A2-Lite before the existing slot upload.
+  Configure a public client ID once; no Secret Key is used. Setup and current
+  boundaries: [TONE3000_ANDROID.md](../docs/TONE3000_ANDROID.md).
+- **QRコードから入力** reads a QR containing the raw Publishable Key with the
+  Android camera. It validates before filling the field and does not start OAuth.
 - Import user-supplied `.nam`: standalone fixed A2-Lite or packed A2 with a unique
   3-channel submodel; validate 48 kHz/exact supported shape and convert locally
   to the same FBNM bytes as the PC tool.
@@ -60,9 +78,9 @@ No background transfer mode is enabled; keep the app foreground during upload.
 2. Close other FB200 editors, enable Bluetooth and connect. Android requests
    nearby-device permissions (12+) or location for older BLE scans; iOS requests
    Bluetooth permission. If denied, change the phone's settings.
-3. The BT201 Service/TX/RX UUIDs have not been measured. Multiple discovered pairs
-   require a confirmed selection; do not choose arbitrarily. The initial reads
-   check capabilities and slots before enabling model controls.
+3. The measured BT201 UART route (FFF0 / TX FFF1 / RX FFF2) is selected
+   automatically. The initial reads check capabilities and slots before enabling
+   model controls. Unsupported devices show a message without a UUID picker.
 4. Choose `.namファイルを選択`, then `ここへ転送`. Replacement is confirmed because
    other presets may use the same slot.
 5. Select the slot, or `再読み込み` after replacing the selected slot. Upload keeps
@@ -81,7 +99,10 @@ not physical power-cut tests.
 
 - `lib/nam_model.dart`: strict parser, float32 conversion, FBNM CRCs.
 - `lib/protocol.dart`: stock framing and stop-and-wait RPC.
-- `lib/ble_link.dart`: permissions, discovery, GATT; no invented fixed UUIDs.
+- `lib/ble_link.dart`: permissions, discovery, GATT.
+- `lib/ble_profile.dart`: measured FB200 UART selection; excludes module control.
+- `lib/pedal_client.dart`, `lib/pedal_page.dart`: legacy editor, tools, backup.
+- `lib/tone_key_scanner.dart`: camera QR input with lifecycle/permission handling.
 - `lib/nam_client.dart`: operations and explicit simulated transport.
 - `lib/main.dart`: Japanese UI, narrow-screen demo tested at 360 px.
 - `test/fixtures`: synthetic weights only, not a musical capture. `.fbnm` is

@@ -108,8 +108,19 @@ class WireTransport implements RpcTransport {
   late final StreamSubscription<List<int>> _subscription;
   final _decoder = FrameDecoder();
   Completer<Uint8List>? _pending;
+  Completer<Frame>? _legacyPending;
+  bool Function(Frame)? _legacyAccept;
+  bool _legacyWriting = false;
+  final _frames = StreamController<Frame>.broadcast();
+  Stream<Frame> get frames => _frames.stream;
   int _id = Random().nextInt(65536), _operation = 0;
   bool _closed = false;
+  bool get isClosed => _closed;
+  Future<void> waitIdle() async {
+    await _pending?.future;
+    await _legacyPending?.future;
+  }
+
   void Function()? onDisconnected;
   WireTransport(
     this.link, {
@@ -119,6 +130,12 @@ class WireTransport implements RpcTransport {
     _subscription = link.bytes.listen(
       (bytes) {
         for (final incoming in _decoder.add(bytes)) {
+          _frames.add(incoming);
+          if (_legacyPending != null &&
+              !_legacyPending!.isCompleted &&
+              _legacyAccept!(incoming)) {
+            _legacyPending!.complete(incoming);
+          }
           final p = incoming.payload;
           if (incoming.command != 0xe1 ||
               p.length < 5 ||
@@ -149,12 +166,55 @@ class WireTransport implements RpcTransport {
     if (_pending != null && !_pending!.isCompleted) {
       _pending!.completeError(DeviceError(text));
     }
+    if (_legacyPending != null && !_legacyPending!.isCompleted) {
+      _legacyPending!.completeError(DeviceError(text));
+    }
+  }
+
+  void _checkAvailable() {
+    if (_closed) throw DeviceError('再接続してください。');
+    if (_pending != null || _legacyPending != null || _legacyWriting) {
+      throw DeviceError('別の操作の完了を待ってください。');
+    }
+  }
+
+  /// Legacy commands have no request ID. Serialize them with NAM RPC and never
+  /// automatically retry mutations whose acknowledgement may have been lost.
+  Future<void> sendCommand(int command, List<int> payload) async {
+    _checkAvailable();
+    _legacyWriting = true;
+    try {
+      await link.write(frame(command, payload));
+    } finally {
+      _legacyWriting = false;
+    }
+  }
+
+  Future<Frame> exchange(
+    int command,
+    List<int> payload,
+    int reply, {
+    bool Function(Frame)? accept,
+  }) async {
+    _checkAvailable();
+    final pending = Completer<Frame>();
+    unawaited(pending.future.then<void>((_) {}, onError: (Object _) {}));
+    _legacyPending = pending;
+    _legacyAccept = (f) => f.command == reply && (accept?.call(f) ?? true);
+    try {
+      await link.write(frame(command, payload));
+      return await pending.future.timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      throw DeviceError('本体から応答がありません。一覧を更新して操作結果を確認してください。');
+    } finally {
+      _legacyPending = null;
+      _legacyAccept = null;
+    }
   }
 
   @override
   Future<Uint8List> request(int operation, List<int> arguments) async {
-    if (_closed) throw DeviceError('再接続してください。');
-    if (_pending != null) throw DeviceError('別の操作の完了を待ってください。');
+    _checkAvailable();
     _id = (_id + 1) & 65535;
     _operation = operation;
     final pending = Completer<Uint8List>();
@@ -200,5 +260,6 @@ class WireTransport implements RpcTransport {
     _fail('接続を終了しました。');
     await _subscription.cancel();
     await link.close();
+    if (!_frames.isClosed) await _frames.close();
   }
 }

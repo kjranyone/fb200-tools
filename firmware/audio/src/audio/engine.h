@@ -102,6 +102,7 @@ void engine_ir_release(void);
  * record or a dub is writing (flash_store waits; RAM code).
  * engine_loop_arm: start erasing ahead (looper mode on). */
 #include "dsp/looper.h"
+void engine_tuner_latest(tuner_result_t *out);
 #include "loopstore/loopstore.h"
 int engine_loop(int action);
 /* loop save / load, record n = 0 or 1 (console slots 1 and 2). */

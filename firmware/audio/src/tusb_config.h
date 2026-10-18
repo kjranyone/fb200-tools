@@ -34,8 +34,11 @@
 #define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX 16
 #define CFG_TUD_AUDIO_ENABLE_EP_IN 1
 #define CFG_TUD_AUDIO_ENABLE_EP_OUT 1
-/* Full speed: 48 frames * 2 ch * 2 B = 192 B per 1 ms packet. */
-#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX 192
-#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ 768
-#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX 192
-#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ 768
+/* Full speed: reserve one additional stereo frame for clock variation,
+ * as in TinyUSB's TUD_AUDIO_EP_SIZE(false, ...). At 48 kHz, 192 bytes
+ * holds only the nominal 48 frames; the endpoint must allow 49 (196 B). */
+#define FB200_USB_AUDIO_EP_SIZE (((AUDIO_FS + 999u) / 1000u + 1u) * 4u)
+#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX FB200_USB_AUDIO_EP_SIZE
+#define CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ (4u * CFG_TUD_AUDIO_FUNC_1_EP_IN_SZ_MAX)
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX FB200_USB_AUDIO_EP_SIZE
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ (4u * CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX)

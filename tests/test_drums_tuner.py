@@ -91,6 +91,15 @@ def test_selftest_without_stock_data():
     assert "drums tuner host tests OK" in r.stdout
 
 
+@pytest.mark.parametrize("rate", [44100, 48000])
+def test_manager_rates(rate, tmp_path):
+    exe = tmp_path / "manager_rate_test"
+    subprocess.run(["cc", *CFLAGS, f"-DAUDIO_FS={rate}",
+                    str(FW / "tests/manager_rate_host_test.c"),
+                    *[str(p) for p in SRC[1:]], "-lm", "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
+
+
 def test_blob_reads_the_stock_image(stock_blob):
     blob = stock_blob.read_bytes()
     stockdata.verify(blob)

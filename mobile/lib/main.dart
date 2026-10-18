@@ -8,7 +8,11 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'ble_link.dart';
 import 'nam_client.dart';
 import 'nam_model.dart';
+import 'pedal_client.dart';
+import 'pedal_page.dart';
 import 'protocol.dart';
+import 'tone3000.dart';
+import 'tone3000_page.dart';
 
 void main() => runApp(const MainApp());
 
@@ -39,7 +43,8 @@ class MainApp extends StatelessWidget {
 }
 
 class ModelPage extends StatefulWidget {
-  const ModelPage({super.key});
+  final Future<ImportedTone?> Function(BuildContext)? pickTone;
+  const ModelPage({super.key, this.pickTone});
   @override
   State<ModelPage> createState() => _ModelPageState();
 }
@@ -47,8 +52,11 @@ class ModelPage extends StatefulWidget {
 class _ModelPageState extends State<ModelPage> {
   final _connector = BleConnector();
   NamClient? _client;
+  WireTransport? _wire;
   DeviceState? _state;
   NamModel? _model;
+  ImportedTone? _toneSource;
+  final _slotSources = <int, ImportedTone>{};
   bool _demo = false, _busy = false, _cancel = false, _committing = false;
   String _deviceName = '', _operation = '', _message = '', _error = '';
   double? _progress;
@@ -88,17 +96,32 @@ class _ModelPageState extends State<ModelPage> {
   Future<void> _attach(RpcTransport transport, String name, bool demo) async {
     final client = NamClient(transport);
     try {
-      await client.handshake();
-      final state = await client.readState();
+      if (transport is WireTransport) {
+        final pedal = PedalClient(transport);
+        try {
+          await pedal.initialize();
+        } finally {
+          pedal.dispose();
+        }
+      }
+      DeviceState? state;
+      try {
+        await client.handshake();
+        state = await client.readState();
+      } on DeviceError {
+        if (transport is! WireTransport || transport.isClosed) rethrow;
+        // Stock firmware supports the legacy editor but not NAM RPC.
+      }
       if (!mounted) {
         await client.close();
         return;
       }
       if (transport is WireTransport) {
         transport.onDisconnected = () {
-          if (mounted && _client == client) {
+          if (mounted && _wire == transport) {
             setState(() {
               _client = null;
+              _wire = null;
               _state = null;
               _error = '接続が切れました。再接続して本体の一覧を確認してください。';
             });
@@ -107,10 +130,14 @@ class _ModelPageState extends State<ModelPage> {
         };
       }
       setState(() {
-        _client = client;
+        _client = state == null ? null : client;
+        _wire = transport is WireTransport ? transport : null;
         _state = state;
         _demo = demo;
         _deviceName = name;
+        if (state == null) {
+          _message = '本体コントロールを利用できます。NAMモデル管理には対応ファームウェアが必要です。';
+        }
       });
     } catch (_) {
       await client.close();
@@ -126,26 +153,7 @@ class _ModelPageState extends State<ModelPage> {
     );
     if (device == null || !mounted) return;
     await _run('本体の対応状況を確認中', () async {
-      final transport = await _connector.connect(device.id, (pairs) async {
-        if (!mounted) return null;
-        return showDialog<ChannelPair>(
-          context: context,
-          builder: (context) => SimpleDialog(
-            title: const Text('通信経路を選択'),
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(20),
-                child: Text('この本体の通信経路は未検証です。確認済みのService / TX / RXを選んでください。'),
-              ),
-              for (final pair in pairs)
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, pair),
-                  child: Text(pair.description),
-                ),
-            ],
-          ),
-        );
-      });
+      final transport = await _connector.connect(device.id);
       await _attach(
         transport,
         device.name.isEmpty ? 'FB200' : device.name,
@@ -156,13 +164,17 @@ class _ModelPageState extends State<ModelPage> {
 
   Future<void> _disconnect() async {
     final client = _client;
+    final wire = _wire;
     setState(() {
       _client = null;
+      _wire = null;
       _state = null;
       _message = '';
       _error = '';
     });
     await client?.close();
+    if (client == null) await wire?.close();
+    _slotSources.clear();
   }
 
   Future<void> _import() => _run('モデルを確認中', () async {
@@ -183,9 +195,24 @@ class _ModelPageState extends State<ModelPage> {
     if (mounted) {
       setState(() {
         _model = model;
+        _toneSource = null;
         _message = 'モデルを確認しました。転送先を選んでください。';
       });
     }
+  });
+  Future<void> _importTone() => _run('TONE3000からモデルを取り込み中', () async {
+    final imported =
+        await (widget.pickTone?.call(context) ??
+            Navigator.push<ImportedTone>(
+              context,
+              MaterialPageRoute(builder: (_) => const Tone3000Page()),
+            ));
+    if (imported == null || !mounted) return;
+    setState(() {
+      _model = imported.model;
+      _toneSource = imported;
+      _message = 'A2-Lite対応を確認しました。転送先を選んでください。';
+    });
   });
   Future<bool> _confirm(String title, String text) async =>
       await showDialog<bool>(
@@ -236,6 +263,12 @@ class _ModelPageState extends State<ModelPage> {
           }
         },
       );
+      final source = _toneSource;
+      if (source == null) {
+        _slotSources.remove(slot.number);
+      } else {
+        _slotSources[slot.number] = source;
+      }
       await _refresh();
       if (mounted) {
         setState(() => _message = '転送が完了しました。「選択」または「再読み込み」で使用できます。');
@@ -264,13 +297,14 @@ class _ModelPageState extends State<ModelPage> {
     if (!mounted || client == null || _client != client) return;
     await _run('削除中', () async {
       await client.delete(slot.number);
+      _slotSources.remove(slot.number);
       await _refresh();
     });
   }
 
   @override
   void dispose() {
-    unawaited(_client?.close());
+    unawaited(_client?.close() ?? _wire?.close());
     super.dispose();
   }
 
@@ -279,7 +313,7 @@ class _ModelPageState extends State<ModelPage> {
     appBar: AppBar(
       title: const Text('FB200 NAM'),
       actions: [
-        if (_client != null) ...[
+        if (_client != null || _wire != null) ...[
           IconButton(
             tooltip: '一覧を更新',
             onPressed: _busy ? null : () => _run('一覧を更新中', _refresh),
@@ -308,7 +342,9 @@ class _ModelPageState extends State<ModelPage> {
               const SizedBox(height: 12),
               const Text('A2-Lite モデルマネージャー  /  48 kHz'),
               const SizedBox(height: 24),
-              if (_client == null)
+              _modelCard(),
+              const SizedBox(height: 20),
+              if (_client == null && _wire == null)
                 _card([
                   const Icon(Icons.bluetooth, size: 36),
                   const SizedBox(height: 12),
@@ -317,7 +353,9 @@ class _ModelPageState extends State<ModelPage> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text('モデル転送に対応するカスタムファームウェアが必要です。公式アプリは転送中に閉じてください。'),
+                  const Text(
+                    '本体の操作とモデル管理を利用できます。接続中は公式アプリを閉じてください。NAM転送には対応ファームウェアが必要です。',
+                  ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: !_busy && _connector.supported ? _connect : null,
@@ -359,48 +397,51 @@ class _ModelPageState extends State<ModelPage> {
                     ],
                   ),
                   if (_demo) const Text('画面の体験用です。本体への転送・音声処理は行いません。'),
-                ]),
-                const SizedBox(height: 20),
-                _card([
-                  const Text(
-                    'モデルを読み込む',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('対応形式：48 kHz・3チャンネルのA2-Lite .nam'),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _import,
-                    icon: const Icon(Icons.file_open_outlined),
-                    label: const Text('.namファイルを選択'),
-                  ),
-                  if (_model != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        '${_model!.name}\nA2-Lite · 48 kHz · 1,871 weights',
-                      ),
+                  if (_wire != null)
+                    FilledButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () => _run('本体を操作中', () async {
+                              await Navigator.push<void>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PedalPage(
+                                    transport: _wire!,
+                                    restrictedNam: _client != null,
+                                    toolsAvailable:
+                                        _client == null ||
+                                        (_client!.capabilityFlags & 8) != 0,
+                                  ),
+                                ),
+                              );
+                              await _wire?.waitIdle();
+                              if (_client != null && mounted) await _refresh();
+                            }),
+                      icon: const Icon(Icons.dashboard_customize_outlined),
+                      label: const Text('プリセット・エフェクト・ツール'),
                     ),
                 ]),
-                const SizedBox(height: 24),
-                Text('本体のモデル', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                for (final slot in _state!.slots) ...[
-                  _slotCard(slot),
-                  const SizedBox(height: 10),
+                if (_state != null) ...[
+                  const SizedBox(height: 24),
+                  Text('本体のモデル', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  for (final slot in _state!.slots) ...[
+                    _slotCard(slot),
+                    const SizedBox(height: 10),
+                  ],
+                  TextButton(
+                    onPressed: _busy || _state!.selected == 0
+                        ? null
+                        : () => _select(0),
+                    child: const Text('NAMをバイパス'),
+                  ),
+                  FilledButton.tonal(
+                    onPressed: _busy
+                        ? null
+                        : () => _select(_state!.selected, save: true),
+                    child: const Text('現在の選択をプリセットに保存'),
+                  ),
                 ],
-                TextButton(
-                  onPressed: _busy || _state!.selected == 0
-                      ? null
-                      : () => _select(0),
-                  child: const Text('NAMをバイパス'),
-                ),
-                FilledButton.tonal(
-                  onPressed: _busy
-                      ? null
-                      : () => _select(_state!.selected, save: true),
-                  child: const Text('現在の選択をプリセットに保存'),
-                ),
               ],
               if (_busy) ...[
                 const SizedBox(height: 20),
@@ -441,7 +482,7 @@ class _ModelPageState extends State<ModelPage> {
                 ),
               const SizedBox(height: 28),
               Text(
-                '試作版・実機未検証\nNAM内部のGAINやトーンは変更できません。音色の異なるキャプチャを切り替えて使用します。',
+                '試作版・Bluetooth転送は実機検証中\nNAM内部のGAINやトーンは変更できません。音色の異なるキャプチャを切り替えて使用します。',
                 style: Theme.of(context).textTheme.bodySmall
                     ?.copyWith(color: Colors.white54),
               ),
@@ -451,6 +492,37 @@ class _ModelPageState extends State<ModelPage> {
       ),
     ),
   );
+
+  Widget _modelCard() => _card([
+    const Text(
+      'モデルを読み込む',
+      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    ),
+    const SizedBox(height: 8),
+    const Text('対応形式：48 kHz・3チャンネルのA2-Lite .nam'),
+    const SizedBox(height: 16),
+    const Tone3000Logo(),
+    const SizedBox(height: 12),
+    FilledButton.tonalIcon(
+      onPressed: _busy ? null : _importTone,
+      icon: const Icon(Icons.travel_explore),
+      label: const Text('TONE3000から探す'),
+    ),
+    OutlinedButton.icon(
+      onPressed: _busy ? null : _import,
+      icon: const Icon(Icons.file_open_outlined),
+      label: const Text('.namファイルを選択'),
+    ),
+    if (_toneSource != null) ...[
+      const SizedBox(height: 12),
+      ToneAttribution(_toneSource!.tone),
+    ],
+    if (_model != null)
+      Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text('${_model!.name}\nA2-Lite · 48 kHz · 本体への転送待ち'),
+      ),
+  ]);
 
   Widget _card(List<Widget> children) => Card(
     child: Padding(
@@ -487,6 +559,12 @@ class _ModelPageState extends State<ModelPage> {
           ),
       ],
     ),
+    if (_slotSources[slot.number] case final source?
+        when source.model.name == slot.name) ...[
+      const SizedBox(height: 12),
+      const Text('TONE3000', style: TextStyle(fontWeight: FontWeight.bold)),
+      ToneAttribution(source.tone),
+    ],
     const SizedBox(height: 10),
     Wrap(
       spacing: 10,

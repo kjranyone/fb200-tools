@@ -6,13 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'ble_profile.dart';
 import 'protocol.dart';
 
-class ChannelPair {
+class _ChannelPair {
   final Characteristic writer, reader;
-  ChannelPair(this.writer, this.reader);
-  String get description =>
-      'Service ${writer.service.id}\nTX ${writer.id}\nRX ${reader.id}';
+  _ChannelPair(this.writer, this.reader);
 }
 
 class BleConnector {
@@ -56,13 +55,10 @@ class BleConnector {
     yield* ble.scanForDevices(withServices: [], scanMode: ScanMode.lowLatency);
   }
 
-  Future<WireTransport> connect(
-    String id,
-    Future<ChannelPair?> Function(List<ChannelPair>) choose,
-  ) async {
+  Future<WireTransport> connect(String id) async {
     await prepare();
     final connected = Completer<void>();
-    BleFrameLink? link;
+    _BleFrameLink? link;
     late final StreamSubscription<ConnectionStateUpdate> subscription;
     subscription = ble
         .connectToDevice(id: id, connectionTimeout: const Duration(seconds: 12))
@@ -90,28 +86,24 @@ class BleConnector {
       await connected.future.timeout(const Duration(seconds: 15));
       await ble.discoverAllServices(id);
       final services = await ble.getDiscoveredServices(id);
-      final candidates = <ChannelPair>[];
-      for (final service in services) {
-        final writers = service.characteristics.where(
-          (c) => c.isWritableWithResponse || c.isWritableWithoutResponse,
-        );
-        final readers = service.characteristics.where(
-          (c) => c.isNotifiable || c.isIndicatable,
-        );
-        for (final writer in writers) {
-          for (final reader in readers) {
-            candidates.add(ChannelPair(writer, reader));
-          }
-        }
+      final route = selectFb200Uart([
+        for (final service in services)
+          for (final c in service.characteristics)
+            BleEndpoint(
+              handle: c,
+              service: service.id.toString(),
+              characteristic: c.id.toString(),
+              writable: c.isWritableWithResponse || c.isWritableWithoutResponse,
+              notifiable: c.isNotifiable || c.isIndicatable,
+            ),
+      ]);
+      if (route == null) {
+        throw DeviceError('FB200のモデル転送用Bluetooth通信が見つかりませんでした。FB200を選んでください。');
       }
-      if (candidates.isEmpty) throw DeviceError('モデル管理に使える通信経路が見つかりませんでした。');
-      // UUIDs on this physical BT201 module are not yet measured. Never guess
-      // among ambiguous GATT endpoints or pretend an unverified UUID is known.
-      final channel = candidates.length == 1
-          ? candidates.single
-          : await choose(candidates);
-      if (channel == null) throw DeviceError('接続をキャンセルしました。');
-      link = BleFrameLink(channel, subscription);
+      link = _BleFrameLink(
+        _ChannelPair(route.writer, route.reader),
+        subscription,
+      );
       final transport = WireTransport(link);
       link.start();
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -124,13 +116,13 @@ class BleConnector {
   }
 }
 
-class BleFrameLink implements FrameLink {
-  final ChannelPair channel;
+class _BleFrameLink implements FrameLink {
+  final _ChannelPair channel;
   final StreamSubscription<ConnectionStateUpdate> connection;
   final _bytes = StreamController<List<int>>();
   StreamSubscription<List<int>>? _notifications;
   bool _closed = false;
-  BleFrameLink(this.channel, this.connection);
+  _BleFrameLink(this.channel, this.connection);
   void start() {
     _notifications = channel.reader.subscribe().listen(
       (value) {

@@ -22,6 +22,7 @@ class TransferCancelled implements Exception {}
 class NamClient {
   final RpcTransport transport;
   int _chunkSize = 64;
+  int capabilityFlags = 0;
   NamClient(this.transport);
   Future<void> handshake() async {
     final p = await transport.request(0, []);
@@ -36,6 +37,7 @@ class NamClient {
       throw DeviceError('本体のモデル管理形式に対応していません。対応ファームウェアを確認してください。');
     }
     _chunkSize = p[7];
+    capabilityFlags = read16(p, 10);
   }
 
   Future<DeviceState> readState() async {

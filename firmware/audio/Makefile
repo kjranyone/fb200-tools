@@ -25,6 +25,12 @@ $(error nam-runtime is app-only)
 endif
 BUILD        ?= build/nam-runtime
 PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_RUNTIME
+else ifeq ($(PROFILE),nam-manager)
+ifneq ($(VARIANT),app)
+$(error nam-manager is app-only)
+endif
+BUILD        ?= build/nam-manager
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_RUNTIME -DNAM_UTILITIES
 else ifneq ($(PROFILE),stock)
 $(error unknown PROFILE $(PROFILE))
 endif
@@ -147,7 +153,7 @@ SRC_C := \
   $(MCUX_CORE)/drivers/flexio/fsl_flexio.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
-ifeq ($(PROFILE),nam-runtime)
+ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
 SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
 endif
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
@@ -213,7 +219,7 @@ COLD_SRC := \
   $(MCUX_CORE)/drivers/dmamux/fsl_dmamux.c
 # tests/test_audio_image.py: negative controls of hot_path.py
 COLD_SRC += $(COLD_EXTRA)
-ifeq ($(PROFILE),nam-runtime)
+ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
 COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
 endif
 ifeq ($(VARIANT),recovery)

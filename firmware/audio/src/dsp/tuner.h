@@ -24,10 +24,11 @@
  * neighbour; `cents` below is the true log value for our own UI. */
 #include <stddef.h>
 #include <stdint.h>
+#include "audio/audio_config.h"
 
 #define TUNER_BUF       1024
 #define TUNER_WIN       500
-#define TUNER_FS        11025.0f
+#define TUNER_FS        ((float)AUDIO_FS / 4.0f)
 #define TUNER_CAL_MIN   430
 #define TUNER_CAL_MAX   450
 
@@ -60,6 +61,8 @@ typedef struct {
 
 void tuner_init(tuner_t *t, int a4_hz);                  /* 430..450, 440 default */
 void tuner_set_a4(tuner_t *t, int a4_hz);
+/* Optional main-loop service between YIN lag groups; never an audio callback. */
+void tuner_service(void);
 /* x = the tuner input (the stock feeds L + R of the instrument ADC). */
 void tuner_feed(tuner_t *t, const float *x, size_t n);
 /* Runs at most one analysis; returns 1 when `out` was updated. */

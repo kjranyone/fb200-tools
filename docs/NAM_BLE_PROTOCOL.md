@@ -2,7 +2,8 @@
 
 Experimental extension of the existing FB200 app framing, implemented only by
 `PROFILE=nam-runtime`. No firmware update action or embedded capture is added.
-No physical BLE link has been verified.
+Read-only capabilities and slot listing were verified over physical Android BLE
+on 2026-10-18. Model transfer remains unverified.
 
 ## Link and framing
 
@@ -10,12 +11,15 @@ The existing BT201 UART path and `proto_feed(PROTO_BLE, ...)` handle the extensi
 USB HID can carry it too. USB CDC keeps its existing `namput` binary upload.
 Both paths share one 8192-byte staging buffer and exclude each other during upload.
 
-The app discovers GATT and uses a writable characteristic plus a notification/
-indication characteristic in the same service. **Physical FB200 Service/TX/RX
-UUIDs have not been measured.** With multiple candidates, this prototype asks
-for the confirmed pair. It does not invent a UUID. Pin confirmed endpoints in the
-consumer app after physical inspection. Capabilities and list reads must succeed
-before any mutation; stock firmware cannot satisfy the NAM handshake.
+The app discovers GATT and selects the measured FB200 BT201 UART route:
+service `0000fff0-0000-1000-8000-00805f9b34fb`, TX `0000fff1-0000-1000-8000-00805f9b34fb`,
+RX `0000fff2-0000-1000-8000-00805f9b34fb`. TX is phone-to-pedal; RX notifications
+are pedal-to-phone. FFF1 also advertises notifications but did not return NAM
+replies in the physical test. FFF3 is the module's own control endpoint and is
+excluded from all pedal writes. Unknown/missing/ambiguous routes fail with a
+user-facing unsupported-device message; there is no UUID picker.
+Capabilities and list reads must succeed before any mutation; stock firmware
+cannot satisfy the NAM handshake. See [physical evidence](NAM_HARDWARE_2026-10-18.md).
 
 Frame: `AA 55 | length:u16LE | command:u8 | payload | CRC16:u16BE`.
 Length includes command, excludes framing/CRC, maximum 1018. CRC covers length,
@@ -42,8 +46,14 @@ Multi-byte fields below are little endian. Maximum request payload is 80 bytes.
 | 5 abort | token:u32 | empty |
 | 6 select | slot:u8 (0=bypass, 1..3), save:u8 (0/1) | empty |
 | 7 delete | slot:u8 (1..3) | empty |
+| 8 tuner snapshot (`nam-manager`) | empty | enabled:u8, valid:u8, note:u8 (1..12 A#..A), octave:i8, frequency:f32, cents:f32, confidence:f32 |
 
-Flags: bit 0 framed upload, bit 1 select/preset save, bit 2 delete. Status:
+Flags: bit 0 framed upload, bit 1 select/preset save, bit 2 delete,
+bit 3 drum machine + live tuner (`PROFILE=nam-manager`). Op 8 is read-only;
+the existing B8/BA commands still control tuner/rhythm. Its floats are little
+endian IEEE-754; invalid/silent readings must not be displayed as a pitch.
+The base restricted `nam-runtime` still reports flags 7; `nam-manager` reports 15.
+Status:
 0 success, 1 invalid args/incomplete packet, 2 staging busy, 3 CRC/model validation
 failure, 4 storage/selection failure or insufficient capacity, 5 unsupported
 version/operation, 6 unknown/expired token or wrong source.
@@ -93,7 +103,8 @@ total OCRAM allocation is 21,596 of 32,768 bytes. Actual compiled flash-busy
 call-graph checks passed. The Makefile's multi-output objcopy rule was split into
 separate targets after reproducing concurrent writers under parallel build.
 
-Still required: actual GATT endpoint/notification timing, flash erase latency,
+Still required: notification timing under load, flash erase latency,
 radio interruptions, Android/iOS/pedal interoperability, physical power cuts,
-Cortex-M7 deadline and audio tests. No pedal connection, firmware update, physical
-model write or phone install was performed in this development session.
+Cortex-M7 deadline and audio tests. The original development session did not
+connect hardware; subsequent installation and read-only BLE checks are recorded
+in [NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md).

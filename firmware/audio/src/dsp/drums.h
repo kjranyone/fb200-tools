@@ -55,6 +55,9 @@ typedef struct {
 
 typedef struct {
     /* sample bank (parsed header) */
+    uint32_t output_rate, resample_phase;
+    float resample_previous, resample_next;
+    uint8_t resample_ready;
     const float *smp[DRUMS_MAX_SAMPLES];
     uint32_t smp_len[DRUMS_MAX_SAMPLES];
     uint32_t n_samples;
@@ -89,6 +92,8 @@ typedef struct {
  * tables (drums_data_from_stock) or NULL. Returns 0, or -1 if the
  * bank header or the rhythm data is missing (the module then stays silent). */
 int drums_init(drums_t *d, const void *bank, const drums_data_t *data);
+/* Source samples/sequencer remain 44.1 kHz; output may be 44.1 or 48 kHz. */
+int drums_set_output_rate(drums_t *d, uint32_t rate);
 void drums_start(drums_t *d);
 void drums_stop(drums_t *d);
 void drums_set_tempo(drums_t *d, unsigned bpm);          /* clamped 40..260 */
