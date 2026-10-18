@@ -228,6 +228,31 @@ After pushing a fix, inspect that revision's **NAM validation** run. A queued
 or partially completed job is not a passed check. Artifacts expire; the run
 URL, commit, tool versions and relevant summaries should also be recorded here.
 
+Final NAM validation on 2026-10-18 at **`017b885a3c3f7833f594d1fff732799b09ec581e`**:
+[run 39101134166](https://github.com/kjranyone/fb200-tools/actions/runs/39101134166)
+completed successfully, all three jobs passed:
+
+| Job | Result |
+| --- | --- |
+| host-and-arm | 493 passed, 14 skipped; Core oracle, ARM build and strict flash-busy/RAM checks passed |
+| android-and-web | 27 Flutter tests, analyze/format, locked dependencies, Android debug APK and web build passed |
+| ios-compile | unsigned iOS device-target build passed on macOS; no signing/installation |
+
+The extra passing host case versus local WSL is the Node-based parity test;
+Node was available on the runner. Vendor-input/optional-package skips remained.
+The run offers `nam-host-evidence` (JUnit/layout) and
+`nam-android-debug-and-web-demo` artifacts for seven days. The CI APK is a debug
+build, not a signed store release. No hardware write was performed by these jobs.
+
+The separate inherited [CI run 39101134190](https://github.com/kjranyone/fb200-tools/actions/runs/39101134190)
+also passed at the same revision, including the Python 3.10..3.14 matrix on
+Linux/macOS/Windows, stock firmware builds and the timed LabWired open-firmware
+emulator gate. The emulator is a simulated board, not physical pedal evidence.
+
+The final evidence-only documentation commit may carry `[skip ci]`: the tested
+implementation/workflow revision is the full hash above. Documentation-only
+recording does not change that source and does not rerun the same build matrix.
+
 ## Next work
 
 Before hardware work, prioritize these gates:
