@@ -251,6 +251,28 @@ The run offers `nam-host-evidence` (JUnit/layout) and
 `nam-android-debug-and-web-demo` artifacts for seven days. The CI APK is a debug
 build, not a signed store release. No hardware write was performed by these jobs.
 
+## Session additions on 2026-10-18 (branch `fix/nam-windows-usb-audio`)
+
+Two app-focused commits, both fully validated in CI and none flashed:
+
+| Commit | Work | NAM validation | Inherited CI |
+| --- | --- | --- | --- |
+| `a957120` | app 0.4.0+7: user IR slots (`61`/`65`/`67`) with a byte-identical Dart WAV conversion, Bluetooth naming (`B3`) | [run 39130513446](https://github.com/kjranyone/fb200-tools/actions/runs/39130513446) success | [run 39130476425](https://github.com/kjranyone/fb200-tools/actions/runs/39130476425) success |
+| `1f91163` | model rename RPC op 9 (capability bit 4) in firmware + capability-gated app dialog | [run 39132289539](https://github.com/kjranyone/fb200-tools/actions/runs/39132289539) success | [run 39132281033](https://github.com/kjranyone/fb200-tools/actions/runs/39132281033) success |
+
+The 1f91163 NAM validation passed all three jobs (host-and-arm incl. the new
+op 9 tests and both NAM profiles' strict RAM/flash-busy checks, android-and-web
+with 85 Flutter tests, ios-compile). Local development moved to Windows:
+Flutter 3.47.7 at `%LOCALAPPDATA%\flutter-sdk` and a WSL Ubuntu `.venv` with
+`gcc-arm-none-eabi` 10.3. One checker self-test
+(`test_hot_path_check_catches_cold_flash_writes`) fails under the local 10.3
+toolchain while passing in CI's newer compiler; verified unrelated to these
+commits by re-running with the changes stashed. Evidence log:
+[NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The pedal still runs
+the earlier `nam-manager` image: IR transfer over BLE, model rename and
+Bluetooth naming need a separately authorized app install / firmware update
+before they can be used physically.
+
 The separate inherited [CI run 39101134190](https://github.com/kjranyone/fb200-tools/actions/runs/39101134190)
 also passed at the same revision, including the Python 3.10..3.14 matrix on
 Linux/macOS/Windows, stock firmware builds and the timed LabWired open-firmware
