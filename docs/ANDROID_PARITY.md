@@ -38,7 +38,7 @@ or transmitted by the scanner. 57 Flutter tests and analysis passed before the
 legacy editor work. Camera startup/return were checked on Lenovo TB-J716F;
 physical scanning of a real public-key QR remains to be checked.
 
-## Current implementation: 0.3.1+6 / nam-manager
+## Current implementation: 0.4.0+7 / nam-manager
 
 The integrated app now implements bank/preset read/select/save/rename/copy,
 whole-bank backup/restore, legacy effect and global-setting controls,
@@ -49,6 +49,16 @@ restore validates all records/CRCs before writing, explicitly confirms the whole
 overwrite and restores the original selected preset after successful completion.
 Backups contain preset records, not NAM weights or IR sample data.
 
+0.4.0 adds user IR management (stock `61`/`65`/`67` protocol): slot list,
+WAV import converted locally with a Dart port of the PC `wav.py` conversion
+(byte-identical output on shared fixtures), rename and delete with explicit
+acknowledgement checks. Upload sends one name frame plus eight 512-byte data
+frames; nothing is committed unless all frames are acknowledged in order.
+The NAM runtime has no cabinet stage, so the IR tab states that stored IRs are
+played by the stock firmware. A Bluetooth device-name control (`B3`, 20 bytes,
+no reply) is also included; the name cannot be read back, so the app asks the
+user to verify after reconnecting.
+
 `PROFILE=nam-manager` restores the drum machine and tuner to the 48 kHz NAM
 engine. Drums retain a 44.1 kHz source sequencer/sample clock and interpolate to
 48 kHz; the tuner uses the actual input rate. YIN analysis services audio/USB
@@ -56,16 +66,19 @@ between lag groups. Feature flag 8 enables these tools and read-only RPC op 8.
 This is still a restricted NAM audio chain: stock amp/cab/MOD/reverb, Bluetooth
 audio and the looper are not restored. Unsupported controls stay disabled.
 
-65 Flutter tests and analyze pass. ARM build, RAM placement, flash-busy checks,
-44.1/48 kHz pitch and drum-rate host tests pass. The manager firmware and app were
-installed. Physical USB verified flags 15, tuner on/off/no-signal, forty preset
-reads, no crash dump and unchanged preset/settings/NAM flash CRCs. The tablet's
-USB connection disappeared immediately after 0.3.0 installation; the new legacy
-editor/BLE controls therefore still require physical UI validation.
-0.3.1+6 corrects bank labels to the pedal's BANK 0–9 / presets 0A–9D; the
-eight targeted editor/client tests pass again. That APK has not been installed
-because the tablet remains disconnected.
+83 Flutter tests and analyze pass (WAV decode/resampler parity against shared
+Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name
+validation, IR tab and dialog flows). ARM build, RAM placement, flash-busy
+checks, 44.1/48 kHz pitch and drum-rate host tests pass. The manager firmware
+and the previous app were installed. Physical USB verified flags 15, tuner
+on/off/no-signal, forty preset reads, no crash dump and unchanged
+preset/settings/NAM flash CRCs. The tablet's USB connection disappeared
+immediately after 0.3.0 installation; the new legacy editor/BLE controls,
+physical IR transfer and Bluetooth naming therefore still require physical UI
+validation. 0.3.1+6 corrected bank labels to the pedal's BANK 0–9 / presets
+0A–9D; that APK was not installed because the tablet remained disconnected.
 
-Remaining parity work includes the complete NAM audio chain, user IR management,
-Bluetooth naming/audio, model labels and all advanced settings, physical stock
-firmware operation, musical audio/deadline checks and real TONE3000 OAuth/download.
+Remaining parity work includes the complete NAM audio chain, IR auditioning,
+Bluetooth naming/audio read-back, model labels and all advanced settings,
+physical stock firmware operation, musical audio/deadline checks and real
+TONE3000 OAuth/download.

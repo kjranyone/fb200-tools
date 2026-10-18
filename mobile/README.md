@@ -19,6 +19,13 @@ the demo without connecting a pedal.
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
+- User IR management: list the nine slots, import a WAV (converted locally to
+  the official 1024-sample 44.1 kHz float32 format, byte-identical to the PC
+  tool's conversion), rename and delete. IR storage is shared with the stock
+  firmware; the NAM runtime has no cabinet stage, which the UI states.
+- Bluetooth device-name change (`B3`): the name cannot be read back over the
+  protocol, so the app sends it once and asks the user to verify after
+  reconnecting.
 - Android: **TONE3000から探す** opens the official A2 catalog/sign-in flow,
   downloads a chosen variant and validates A2-Lite before the existing slot upload.
   Configure a public client ID once; no Secret Key is used. Setup and current
@@ -101,10 +108,15 @@ not physical power-cut tests.
 - `lib/protocol.dart`: stock framing and stop-and-wait RPC.
 - `lib/ble_link.dart`: permissions, discovery, GATT.
 - `lib/ble_profile.dart`: measured FB200 UART selection; excludes module control.
-- `lib/pedal_client.dart`, `lib/pedal_page.dart`: legacy editor, tools, backup.
+- `lib/pedal_client.dart`, `lib/pedal_page.dart`: legacy editor, tools, backup,
+  user-IR slots and Bluetooth naming.
+- `lib/ir_wav.dart`: WAV → user-IR conversion, a Dart port of `src/fb200/wav.py`
+  (RIFF/PCM 8-24 bit/float32/extensible, Kaiser windowed-sinc resampler).
 - `lib/tone_key_scanner.dart`: camera QR input with lifecycle/permission handling.
 - `lib/nam_client.dart`: operations and explicit simulated transport.
 - `lib/main.dart`: Japanese UI, narrow-screen demo tested at 360 px.
+- `tool/make_ir_fixtures.py`: regenerates the shared WAV/float32 fixtures with
+  the Python reference; `test/fixtures/ir*.f32` is compared byte-for-byte.
 - `test/fixtures`: synthetic weights only, not a musical capture. `.fbnm` is
   Python's reference output and Dart compares byte-for-byte; Python verifies it.
 

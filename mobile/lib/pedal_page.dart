@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import 'ir_wav.dart' show WavError, wavToIr;
 import 'pedal_client.dart';
 import 'protocol.dart';
 
@@ -30,6 +31,7 @@ class _PedalPageState extends State<PedalPage> {
   DateTime? _lastTap;
   Future<void>? _poll;
   String _pitch = '—';
+  List<IrSlotInfo>? _irs;
 
   @override
   void initState() {
@@ -131,11 +133,15 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
-  Future<bool> _confirm(String text) async =>
+  Future<bool> _confirm(
+    String text, {
+    String title = '本体へ保存',
+    String accept = '保存する',
+  }) async =>
       await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('本体へ保存'),
+          title: Text(title),
           content: Text(text),
           actions: [
             TextButton(
@@ -144,7 +150,7 @@ class _PedalPageState extends State<PedalPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('保存する'),
+              child: Text(accept),
             ),
           ],
         ),
@@ -249,6 +255,126 @@ class _PedalPageState extends State<PedalPage> {
     });
   }
 
+  // ---- user IR slots ----
+
+  Future<void> _irReload() async {
+    final slots = await _pedal.irList();
+    if (mounted) setState(() => _irs = slots);
+  }
+
+  Future<String?> _askName(String title, String initial, int maxLength) async {
+    final controller = TextEditingController(text: initial);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          maxLength: maxLength,
+          decoration: const InputDecoration(helperText: '半角英数字・記号'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('次へ'),
+          ),
+        ],
+      ),
+    );
+    // The dialog route is still animating out when its Future completes.
+    Future<void>.delayed(const Duration(milliseconds: 500), controller.dispose);
+    return name;
+  }
+
+  Future<void> _irImport(IrSlotInfo slot) async {
+    final file = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: ['wav'],
+    );
+    if (file == null || !mounted) return;
+    final bytes = BytesBuilder();
+    await for (final chunk in file.readAsByteStream()) {
+      if (bytes.length + chunk.length > 8 * 1024 * 1024) {
+        throw DeviceError('8MB以下のWAVファイルを選択してください。');
+      }
+      bytes.add(chunk);
+    }
+    final samples = _guardWav(bytes.takeBytes());
+    if (!mounted) return;
+    final stem = file.name.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final name = await _askName('IR${slot.slot} の名前', stem, 50);
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    if (slot.used &&
+        !await _confirm(
+          'IR${slot.slot} 「${slot.name}」を「${PedalClient.sanitizeIrName(name)}」で上書きします。',
+          title: 'IRを上書き',
+          accept: '上書きする',
+        )) {
+      return;
+    }
+    await _run('IRを転送中', () async {
+      await _pedal.irUpload(
+        slot.slot,
+        name,
+        samples,
+        progress: (sent, total) {
+          if (mounted) setState(() => _status = 'IRを転送中 ($sent/$total)');
+        },
+      );
+      await _irReload();
+    });
+  }
+
+  Float32List _guardWav(List<int> raw) {
+    try {
+      return wavToIr(Uint8List.fromList(raw));
+    } on WavError catch (e) {
+      throw DeviceError(e.message);
+    }
+  }
+
+  Future<void> _irRename(IrSlotInfo slot) async {
+    final name = await _askName('IR${slot.slot} の名前', slot.name, 50);
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    await _run('IR名を変更中', () async {
+      await _pedal.irRename(slot.slot, name);
+      await _irReload();
+    });
+  }
+
+  Future<void> _irDelete(IrSlotInfo slot) async {
+    if (!await _confirm(
+      'IR${slot.slot} 「${slot.name}」を削除します。このIRを使うプリセットの音が変わります。',
+      title: 'IRを削除',
+      accept: '削除する',
+    )) {
+      return;
+    }
+    await _run('IRを削除中', () async {
+      await _pedal.irDelete(slot.slot);
+      await _irReload();
+    });
+  }
+
+  Future<void> _btName() async {
+    final name = await _askName('Bluetooth名', '', 20);
+    if (name == null || name.isEmpty || !mounted) return;
+    await _run('Bluetooth名を送信中', () async {
+      await _pedal.setBtName(name);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bluetooth名を送信しました。反映を確認するには再接続してください。'),
+          ),
+        );
+      }
+    });
+  }
+
   Future<void> _rhythm({bool? on, int? pattern, int? level, int? bpm}) =>
       _run('ドラムを設定中', () async {
         final r = _pedal.rhythm!;
@@ -292,6 +418,7 @@ class _PedalPageState extends State<PedalPage> {
               : () => _run('同期中', () async {
                   await _pedal.refresh();
                   await _pedal.loadBank(_bank);
+                  if (_irs != null) await _irReload();
                 }),
           icon: const Icon(Icons.refresh),
         ),
@@ -299,11 +426,17 @@ class _PedalPageState extends State<PedalPage> {
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _tab,
-      onDestinationSelected: (v) => setState(() => _tab = v),
+      onDestinationSelected: (v) {
+        setState(() => _tab = v);
+        if (v == 3 && _irs == null && !_busy) {
+          _run('IR一覧を読み込み中', _irReload);
+        }
+      },
       destinations: const [
         NavigationDestination(icon: Icon(Icons.grid_view), label: 'プリセット'),
         NavigationDestination(icon: Icon(Icons.tune), label: 'エフェクト'),
         NavigationDestination(icon: Icon(Icons.music_note), label: 'ツール'),
+        NavigationDestination(icon: Icon(Icons.graphic_eq), label: 'IR'),
         NavigationDestination(icon: Icon(Icons.settings), label: '設定'),
       ],
     ),
@@ -333,6 +466,7 @@ class _PedalPageState extends State<PedalPage> {
                   0 => _banks(),
                   1 => _effects(),
                   2 => _tools(),
+                  3 => _ir(),
                   _ => _settings(),
                 },
               ],
@@ -566,6 +700,66 @@ class _PedalPageState extends State<PedalPage> {
     ];
   }
 
+  List<Widget> _ir() {
+    final slots = _irs;
+    return [
+      if (widget.restrictedNam)
+        const Text(
+          '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
+        ),
+      Text('ユーザーIR', style: Theme.of(context).textTheme.titleLarge),
+      const Text('WAVを読み込んでスロットへ転送します。変換は公式エディタと同じ44.1 kHz・チャンネル0・1024サンプルです。'),
+      const SizedBox(height: 8),
+      if (slots == null)
+        OutlinedButton.icon(
+          onPressed: _busy ? null : () => _run('IR一覧を読み込み中', _irReload),
+          icon: const Icon(Icons.refresh),
+          label: const Text('IR一覧を読み込む'),
+        )
+      else
+        for (final s in slots)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'IR${s.slot}  ${s.used ? s.name : '空き'}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      FilledButton.tonal(
+                        onPressed: _busy
+                            ? null
+                            : () => _guard(() => _irImport(s)),
+                        child: const Text('WAVから取り込み'),
+                      ),
+                      if (s.used) ...[
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _guard(() => _irRename(s)),
+                          child: const Text('名前'),
+                        ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _guard(() => _irDelete(s)),
+                          child: const Text('削除'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+    ];
+  }
+
   List<Widget> _settings() {
     final s = _pedal.settings!;
     return [
@@ -586,6 +780,17 @@ class _PedalPageState extends State<PedalPage> {
       ),
       _value('現在のスロットのLED色', s[11], 0, 9, (v) => _setting(11, v)),
       _value('現在のスロットのLED明るさ', s[12], 0, 100, (v) => _setting(12, v)),
+      const SizedBox(height: 20),
+      Text('Bluetooth', style: Theme.of(context).textTheme.titleLarge),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Bluetooth名の変更'),
+        subtitle: const Text(
+          '半角英数字・記号で1〜20文字。現在の名前は本体から読み取れないため、変更は再接続後に本体側で確認してください。',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _busy ? null : () => _guard(_btName),
+      ),
     ];
   }
 }

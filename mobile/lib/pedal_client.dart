@@ -1,9 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import 'ir_wav.dart' show irBytes, irLength;
+import 'nam_client.dart' show TransferCancelled;
 import 'protocol.dart';
+
+/// One user-IR slot record as listed by the `65` command.
+class IrSlotInfo {
+  final int slot; // 1..9
+  final bool used;
+  final String name;
+  const IrSlotInfo(this.slot, this.used, this.name);
+}
 
 class PedalPreset {
   final Uint8List bytes;
@@ -221,6 +232,168 @@ class PedalClient extends ChangeNotifier {
     if (values.length != 13) throw ArgumentError('settings');
     await transport.sendCommand(0xb0, values);
     await refresh();
+  }
+
+  // ---- user IR slots (stock protocol 61..68) ----
+
+  static const irSlotCount = 9;
+  static const _irNameLen = 50;
+  static const _irChunk = 512;
+
+  static String sanitizeIrName(String name) {
+    final cleaned = name.split('').map((c) {
+      final code = c.codeUnitAt(0);
+      return code >= 0x20 && code <= 0x7e ? c : ' ';
+    }).join();
+    final collapsed = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final trimmed = collapsed.isEmpty ? 'untitled' : collapsed;
+    return trimmed.length > _irNameLen
+        ? trimmed.substring(0, _irNameLen)
+        : trimmed;
+  }
+
+  void _irSlotCheck(int slot) {
+    if (slot < 1 || slot > irSlotCount) {
+      throw ArgumentError.value(slot, 'IR slot', 'must be 1..$irSlotCount');
+    }
+  }
+
+  /// List the nine user-IR slots (`65`). Read-only.
+  Future<List<IrSlotInfo>> irList() async {
+    final f = await transport.exchange(
+      0x65,
+      [1, ...u16(1), ...u16(irSlotCount)],
+      0x66,
+      accept: (f) => f.payload.length == irSlotCount * 59,
+    );
+    final p = f.payload;
+    final result = <IrSlotInfo>[];
+    for (var s = 0; s < irSlotCount; s++) {
+      final o = s * 59;
+      if (p[o] != 1 || read16(p, o + 1) != s + 1) {
+        throw DeviceError('IRスロット一覧の形式が不正です。');
+      }
+      final used = p[o + 3] == 1;
+      result.add(
+        IrSlotInfo(
+          s + 1,
+          used,
+          used
+              ? latin1
+                    .decode(p.sublist(o + 5, o + 5 + _irNameLen))
+                    .split('\x00')
+                    .first
+              : '',
+        ),
+      );
+    }
+    return result;
+  }
+
+  /// Rename a used IR slot (`67` op 2).
+  Future<void> irRename(int slot, String name) async {
+    _irSlotCheck(slot);
+    final bytes = latin1.encode(sanitizeIrName(name));
+    final f = await transport.exchange(
+      0x67,
+      [
+        1,
+        ...u16(slot),
+        2,
+        ...bytes,
+        ...List.filled(_irNameLen - bytes.length, 0),
+      ],
+      0x68,
+      accept: (f) =>
+          f.payload.length == 4 &&
+          f.payload[0] == 1 &&
+          read16(f.payload, 1) == slot,
+    );
+    if (f.payload[3] == 0) {
+      throw DeviceError('このIRスロットは空のため、名前を変更できません。');
+    }
+  }
+
+  /// Delete an IR slot (`67` op 1): clears the used flag, name becomes Empty.
+  Future<void> irDelete(int slot) async {
+    _irSlotCheck(slot);
+    final f = await transport.exchange(
+      0x67,
+      [1, ...u16(slot), 1, ...List.filled(_irNameLen, 0)],
+      0x68,
+      accept: (f) =>
+          f.payload.length == 4 &&
+          f.payload[0] == 1 &&
+          read16(f.payload, 1) == slot,
+    );
+    if (f.payload[3] == 0) {
+      throw DeviceError('IRスロットを削除できませんでした。');
+    }
+  }
+
+  /// Upload one IR (`61`): frame 0 carries the name, frames 1..8 carry the
+  /// 4096 bytes of 1024 float32 samples. Nothing is committed unless every
+  /// frame is acknowledged in order, so a failed upload is simply retried
+  /// from frame 0 by the caller.
+  Future<void> irUpload(
+    int slot,
+    String name,
+    List<double> samples, {
+    void Function(int sent, int total)? progress,
+    bool Function()? cancelled,
+  }) async {
+    _irSlotCheck(slot);
+    if (samples.length != irLength) throw ArgumentError('IR samples');
+    for (final v in samples) {
+      if (!v.isFinite) {
+        throw DeviceError('IRに異常な値が含まれています。変換を確認してください。');
+      }
+    }
+    final nameBytes = latin1.encode(sanitizeIrName(name));
+    final data = irBytes(Float32List.fromList(samples));
+    final frames = data.length ~/ _irChunk;
+    final total = frames + 1;
+    Future<void> sendFrame(int index, List<int> chunk) async {
+      await transport.exchange(
+        0x61,
+        [1, ...u16(slot), total, index, ...u16(chunk.length), ...chunk],
+        0x62,
+        accept: (f) =>
+            f.payload.length == 4 &&
+            f.payload[0] == 1 &&
+            read16(f.payload, 1) == slot &&
+            f.payload[2] == 0 &&
+            f.payload[3] == index,
+      );
+      progress?.call(index + 1, total);
+    }
+
+    await sendFrame(0, nameBytes);
+    for (var index = 1; index < total; index++) {
+      if (cancelled?.call() ?? false) throw TransferCancelled();
+      await sendFrame(
+        index,
+        data.sublist(
+          (index - 1) * _irChunk,
+          math.min(index * _irChunk, data.length),
+        ),
+      );
+    }
+  }
+
+  /// Change the Bluetooth device name (`B3`, 20 bytes, no reply). The module
+  /// applies it after the Bluetooth link reconnects.
+  Future<void> setBtName(String name) async {
+    final codes = name.codeUnits;
+    if (name.isEmpty ||
+        codes.length > 20 ||
+        codes.any((c) => c < 0x20 || c > 0x7e)) {
+      throw DeviceError('Bluetooth名は半角英数字・記号で1〜20文字にしてください。');
+    }
+    await transport.sendCommand(0xb3, [
+      ...codes,
+      ...List.filled(20 - codes.length, 0),
+    ]);
   }
 
   Future<Uint8List> backup() async {
