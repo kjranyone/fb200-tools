@@ -63,6 +63,8 @@ jobs:
           FB200_NAM_CORE_REFERENCE: /tmp/nam-core-reference
         run: |
           ruff check src app tests tools firmware
+          # All pytest workers share fetched SDK trees. Fetch once before -n 4.
+          make -C firmware/audio deps
           pytest -q -rs -n 4 --junitxml=nam-tests.xml
       - name: Build and check the restricted runtime image
         run: |
@@ -103,7 +105,7 @@ jobs:
           flutter analyze
           flutter test
       - name: Prepare the Android compile SDK
-        run: sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0"'
       - name: Build Android debug APK and web demo
         run: |
           flutter build apk --debug

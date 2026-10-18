@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add three persistent, two-bank model slots with validated USB CDC and framed
   BLE/HID upload, explicit model selection/reload, deletion and preset binding.
 - Add a Flutter manager with a local `.nam` validator and an explicit offline
-  demo; Android debug APK and web builds pass. iOS has not been compiled.
+  demo; Android debug APK and web builds pass. An unsigned iOS compile on a
+  GitHub macOS runner also passed on 2026-10-18; phone operation remains unverified.
 - Preserve NAM binding on legacy full-preset writes and fix parallel objcopy
   targets. Add host numerical, fake-NOR, RPC, compatibility and mobile tests.
 - Document the fork's scope, upstream attribution, reproducible handover and

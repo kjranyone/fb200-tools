@@ -30,7 +30,8 @@ firmware for each capture. No musical capture is bundled.
 - Only the documented fixed A2-Lite architecture is accepted; arbitrary NAM
   models are unsupported.
 - Physical Bluetooth endpoints and Android/iOS interoperability remain
-  unverified. The Android debug APK builds; iOS has not been built or signed.
+  unverified. Android debug and unsigned iOS builds pass; iOS signing and phone
+  installation/operation have not been verified.
 - The NAM profile uses 48 kHz, 16-bit audio. Stock amp/tone, cabinet IRs,
   modulation, reverb, tuner, drums, looper and Bluetooth audio processing are
   disabled. BLE control is separate from Bluetooth audio.
@@ -56,6 +57,11 @@ Validation snapshot, **2026-10-17**, at implementation commit `969f833`:
 No pedal connection or physical firmware/model write was performed during this
 development work. Host storage tests and a UI demo do not establish physical
 Bluetooth operation, real-time performance or audio quality.
+
+On 2026-10-18, the same 492/15 host and 27 Flutter results were reproduced locally.
+The iOS compile step also passed on a GitHub macOS runner without signing or
+installing. See [handover evidence](docs/NAM_HANDOVER.md#ci-and-handover-verification)
+for CI details and remaining checks.
 
 ## NAM documentation and handover
 

@@ -41,7 +41,10 @@ template assets in this first version.
 
 iOS source includes Bluetooth purpose keys and targets iOS 15+. Compile/sign on
 macOS/Xcode (`flutter build ios --no-codesign` for a compile check, then configure
-signing for a phone). iOS compilation/signing cannot be validated on Windows.
+signing for a phone). iOS cannot be compiled locally on Windows; on 2026-10-18,
+`flutter build ios --no-codesign` passed on a GitHub macOS runner. Signing,
+installation and physical Bluetooth operation are still unverified. See
+[handover evidence](../docs/NAM_HANDOVER.md#ci-and-handover-verification).
 Permission-handler's Swift package enables Bluetooth from the Info.plist key.
 No background transfer mode is enabled; keep the app foreground during upload.
 

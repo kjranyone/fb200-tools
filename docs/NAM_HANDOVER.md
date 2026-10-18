@@ -76,8 +76,9 @@ guessed UUID or claim that a demo upload verified radio transport.
 
 The app does not synchronize unsolicited front-panel preset changes; refresh
 is explicit. Keep it foreground during transfer and close other FB200 editors.
-Android debug build passes. iOS 15+ source/purpose keys exist, but iOS has not
-been compiled or signed. Launch icons remain Flutter template assets.
+Android debug build passes. iOS 15+ source/purpose keys exist and an unsigned
+macOS CI compile passed on 2026-10-18. Signing, installation and physical phone
+operation are unverified. Launch icons remain Flutter template assets.
 
 ## Implementation map
 
@@ -123,6 +124,7 @@ the optional official Core oracle. No vendor image/capture is needed for NAM tes
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]' pytest-xdist
 .venv/bin/ruff check .
+make -C firmware/audio deps
 .venv/bin/pytest -q -rs -n 4
 make -C firmware/audio PROFILE=nam-runtime -j4 build layout
 .venv/bin/python firmware/tools/hot_path.py \
@@ -141,6 +143,10 @@ Core commit `0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842` and set
 `FB200_NAM_CORE_REFERENCE` to the executable. Exact C++20/Eigen commands are in
 [NAM_A2_LITE_INITIAL.md](NAM_A2_LITE_INITIAL.md#optional-official-core-comparison).
 Do not distribute user-supplied captures or generated weights with the fork.
+
+Fetch dependencies once with `make -C firmware/audio deps` before parallel
+pytest on a fresh checkout. Workers otherwise race while populating the shared
+SDK/CMSIS trees. A warm local dependency cache can hide this failure.
 
 Keep build directories separate between `stock`, `nam-probe`, `nam-runtime`
 and recovery. The Makefile's independent objcopy targets avoid concurrent
@@ -164,9 +170,9 @@ not a store release. To review the UI, use `flutter run -d chrome` and select
 **接続せず試す**. Web Bluetooth is not implemented. Import the synthetic fixture
 only in demo mode; it is not intended as a musical model.
 
-On a Mac with Xcode, `flutter build ios --no-codesign` is the next compile-only
-check. Device signing is separate. Do not report iOS support as verified until
-the build and phone tests have actually been performed.
+On a Mac with Xcode, `flutter build ios --no-codesign` reproduces the compile-only
+check. Device signing is separate. Do not infer phone/BLE operation from a
+successful unsigned build.
 
 ## Evidence and next work
 
@@ -176,6 +182,34 @@ Ruff, Flutter analyze, Android APK, web and compiled RAM/flash-busy checks passe
 The web demo was exercised through import -> upload -> select -> preset save.
 All transfer/storage tests used host fakes. Prior results are snapshots, not a
 claim that CI or hardware passed at every later revision.
+
+## CI and handover verification
+
+On 2026-10-18 the local environment again passed **492 host/C/ARM tests, 15
+skipped**, **27 Flutter tests**, locked dependency resolution, Flutter analyze,
+Ruff and the compiled runtime RAM/flash-busy checks. The skipped cases require
+optional MCP, Unicorn, Node or vendor firmware inputs; no ARM/NAM test was skipped.
+Documentation-relative links and `nam-validation.yml` passed local link checks
+and actionlint.
+
+The added [.github/workflows/nam-validation.yml](../.github/workflows/nam-validation.yml)
+provides host/ARM/Core-oracle checks, Android debug/web builds with artifacts,
+and a macOS unsigned iOS compile. It uses read-only repository permissions,
+per-run timeouts, no signing secrets, no device access and seven-day artifacts.
+
+The first complete attempt at `fcf4534` was
+[run 39100395366](https://github.com/kjranyone/fb200-tools/actions/runs/39100395366).
+Its iOS compile step passed; Android preparation failed because `sdkmanager`
+was not in PATH, and host tests exposed parallel extraction of shared SDK trees
+on a fresh checkout. The follow-up workflow uses the full SDK tool path and
+fetches dependencies before parallel pytest. These are CI bootstrap corrections;
+do not describe the initial overall run as successful.
+
+After pushing a fix, inspect that revision's **NAM validation** run. A queued
+or partially completed job is not a passed check. Artifacts expire; the run
+URL, commit, tool versions and relevant summaries should also be recorded here.
+
+## Next work
 
 Before hardware work, prioritize these gates:
 
@@ -210,6 +244,7 @@ Do not turn the upstream stock firmware's CPU figures into NAM performance claim
 > runtime model-loading requirement and explicit demo. Do not flash firmware,
 > write/delete a physical model or save a pedal preset without a new explicit
 > user instruction. Physical BLE endpoints, Cortex-M7 deadlines/audio and iOS
-> build/signing are still unverified. Use measurements to choose the next change;
+> signing/phone operation are still unverified; unsigned iOS compilation passed
+> in CI. Use measurements to choose the next change;
 > never mark a host fake or demo as hardware validation. Keep changes on this
 > branch and document results and remaining work.

@@ -167,8 +167,9 @@ Hardware/stock/fuzz markers retain their existing default exclusions.
 After the mobile/RPC implementation at `969f833`, the full suite passed
 **492 tests / 15 skipped**, and Flutter passed **27 tests**. Android debug APK
 and web builds, Flutter analyze, Ruff and the ARM image/safety checks passed.
-iOS remains unbuilt. See [NAM_HANDOVER.md](NAM_HANDOVER.md) for reproducible
-checks and the remaining hardware gates.
+iOS was unbuilt at that milestone; its unsigned macOS CI compile passed on
+2026-10-18. See [NAM_HANDOVER.md](NAM_HANDOVER.md) for reproducible checks,
+current CI evidence and the remaining hardware gates.
 
 ## Remaining before pedal use
 
