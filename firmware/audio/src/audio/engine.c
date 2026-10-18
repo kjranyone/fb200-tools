@@ -450,7 +450,17 @@ float engine_input_peak(void)
     return p;
 }
 
-bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
+bool engine_tuner_poll(tuner_result_t *out)
+{
+#ifdef NAM_RUNTIME
+    /* This profile has no tuner. Keep its cold DSP out of every callback path,
+     * independently of compiler inlining/dead-code decisions. */
+    (void)out;
+    return false;
+#else
+    return tuner_poll(&s_tuner, out) != 0;
+#endif
+}
 drums_t *engine_drums(void) { return &s_drums; }
 struct eq_s *engine_eq(void) { return &s_eq; }
 

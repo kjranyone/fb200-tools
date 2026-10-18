@@ -24,6 +24,11 @@ pre/post gain or EQ could be added later but are not included in this version.
 Validated toolchain: Flutter 3.47.7 / Dart 3.13.5, compile SDK 37, AGP 9.1.1,
 Gradle 9.3.1, Java 17+. Check in `pubspec.lock`.
 
+The SDK manager publishes API 37 as `platforms;android-37.0`. Current AGP/plugin
+lookup can still request the `platforms/android-37` directory. The Linux CI
+installs the published package and, when needed, aliases `android-37` to
+`android-37.0`. It uses the actual API 37 platform, without lowering compileSdk.
+
 ```sh
 cd mobile
 flutter pub get

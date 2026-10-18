@@ -105,7 +105,12 @@ jobs:
           flutter analyze
           flutter test
       - name: Prepare the Android compile SDK
-        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0"'
+        run: |
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0'
+          # AGP/plugins request integer 37; the SDK repository publishes 37.0.
+          if [ ! -e "${ANDROID_HOME}/platforms/android-37" ]; then
+            ln -s android-37.0 "${ANDROID_HOME}/platforms/android-37"
+          fi
       - name: Build Android debug APK and web demo
         run: |
           flutter build apk --debug

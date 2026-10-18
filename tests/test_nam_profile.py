@@ -85,6 +85,7 @@ def test_runtime_image_and_flash_busy_safety():
     address, size = syms["staging"]
     assert size == 8192 and 0x20200000 <= address < address+size <= 0x20208000
     assert "s_rev" not in syms  # restricted runtime profile frees reverb ITCM
+    assert "tuner_poll" not in syms and "tuner_yin" not in syms
     assert "nam_a2_process" in syms and syms["nam_a2_process"][0] < 0x20000
     # This profile must not silently weaken the stock image's required checks.
     result = subprocess.run(["python3", str(ROOT / "firmware/tools/hot_path.py"),

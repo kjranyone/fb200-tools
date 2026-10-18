@@ -170,6 +170,13 @@ not a store release. To review the UI, use `flutter run -d chrome` and select
 **接続せず試す**. Web Bluetooth is not implemented. Import the synthetic fixture
 only in demo mode; it is not intended as a musical model.
 
+For a clean Linux Android SDK, install `platforms;android-37.0` (the repository's
+published package name) and build-tools 36.0.0. The workflow conditionally aliases
+`platforms/android-37` to `android-37.0` for integer-37 AGP/plugin lookup. Existing
+Windows SDK directories may already provide both names. Do not downgrade the
+compile SDK to hide the dependency requirement. The mismatch is also tracked by
+[GitHub's runner-images project](https://github.com/actions/runner-images/issues/13859).
+
 On a Mac with Xcode, `flutter build ios --no-codesign` reproduces the compile-only
 check. Device signing is separate. Do not infer phone/BLE operation from a
 successful unsigned build.
@@ -204,6 +211,18 @@ was not in PATH, and host tests exposed parallel extraction of shared SDK trees
 on a fresh checkout. The follow-up workflow uses the full SDK tool path and
 fetches dependencies before parallel pytest. These are CI bootstrap corrections;
 do not describe the initial overall run as successful.
+
+A subsequent clean run found the API-37 package/directory naming mismatch noted
+above. The inherited stock emulator job also restored `target-cpu=native` build
+artifacts on a different runner CPU and failed with SIGILL. Its cache now uses a
+fresh namespace and caches registry sources only, retaining native optimization
+for the timed emulator gate. Do not reuse compiled native artifacts across
+different CI CPUs. Neither correction changes pedal firmware behavior.
+
+The newer ARM compiler also retained a tuner callback's path to cold tuner DSP
+in the NAM image. `engine_tuner_poll` now explicitly returns false in NAM mode,
+matching the already-disabled tuner. The runtime image test asserts that the
+tuner DSP entry points are absent; the safety checker was not weakened.
 
 After pushing a fix, inspect that revision's **NAM validation** run. A queued
 or partially completed job is not a passed check. Artifacts expire; the run
