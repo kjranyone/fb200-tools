@@ -29,15 +29,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('0A  PRESET'), findsWidgets);
     expect(h.writes, 0);
-    await tester.tap(find.text('ツール'));
+    await tester.tap(find.text('チューナー'));
     await tester.pumpAndSettle();
-    expect(find.text('ドラムとチューナーは本体の更新後に利用できます。'), findsOneWidget);
-    expect(
-      tester
-          .widget<SwitchListTile>(find.byType(SwitchListTile).first)
-          .onChanged,
-      isNull,
-    );
+    expect(find.text('チューナーは本体の更新後に利用できます。'), findsOneWidget);
+    // Gated tools render no interactive controls.
+    expect(find.byType(Switch), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(h.close);
     expect(tester.takeException(), isNull);
@@ -59,7 +55,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('ツール'));
+    await tester.tap(find.text('チューナー'));
     await tester.pumpAndSettle();
     expect(
       tester
@@ -67,7 +63,7 @@ void main() {
           .onChanged,
       isNotNull,
     );
-    expect(find.text('ドラムとチューナーは本体の更新後に利用できます。'), findsNothing);
+    expect(find.text('チューナーは本体の更新後に利用できます。'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(h.close);
     expect(h.writes, 0);
@@ -91,22 +87,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('IR'));
     await tester.pumpAndSettle();
-    expect(find.text('IR3  Cab IR'), findsOneWidget);
-    expect(find.text('IR1  空き'), findsOneWidget);
+    expect(find.text('IR3'), findsOneWidget);
+    expect(find.text('Cab IR'), findsOneWidget);
+    expect(find.text('空き'), findsWidgets);
     expect(
       find.text(
         '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
       ),
       findsOneWidget,
     );
-    // Renaming IR3 through the dialog updates the slot name.
-    final rename = find.descendant(
-      of: find.widgetWithText(Card, 'IR3  Cab IR'),
-      matching: find.text('名前'),
-    );
-    await tester.ensureVisible(rename);
+    // Renaming IR3 through the sheet menu updates the slot name.
+    await tester.tap(find.text('Cab IR'));
     await tester.pumpAndSettle();
-    await tester.tap(rename);
+    await tester.tap(find.text('名前の変更'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Cab IR v2');
     await tester.tap(find.text('次へ'));
@@ -136,19 +129,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('IR'));
     await tester.pumpAndSettle();
-    expect(find.text('IR3  Cab IR'), findsOneWidget);
+    expect(find.text('IR3'), findsOneWidget);
+    expect(find.text('Cab IR'), findsOneWidget);
     expect(
       find.text(
         '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
       ),
       findsNothing,
     );
-    await tester.tap(
-      find.descendant(
-        of: find.widgetWithText(Card, 'IR3  Cab IR'),
-        matching: find.text('削除'),
-      ),
-    );
+    await tester.tap(find.text('Cab IR'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('削除'));
     await tester.pumpAndSettle();
     expect(find.text('IRを削除'), findsOneWidget);
     await tester.tap(find.text('削除する'));
@@ -177,13 +168,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('設定'));
     await tester.pumpAndSettle();
-    // The Bluetooth section is below the fold of the settings ListView.
-    await tester.scrollUntilVisible(
-      find.text('Bluetooth名の変更'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
+    // The settings tab is a fixed layout; the entry is always visible.
     await tester.tap(find.text('Bluetooth名の変更'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'FB200 KJ');
@@ -214,22 +199,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('ツール'));
+    await tester.tap(find.text('ルーパー'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('ルーパー'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
-    // The looper controls sit below the heading; scroll a bit further.
-    await tester.scrollUntilVisible(
-      find.text('タップ'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('ルーパー'), findsOneWidget);
     expect(find.text('タップ'), findsOneWidget);
+    expect(find.text('録音'), findsOneWidget);
     expect(h.writes, 0);
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(h.close);

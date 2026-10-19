@@ -103,7 +103,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: name);
-      for (final tab in ['エフェクト', 'ツール', 'IR', '設定']) {
+      for (final tab in ['エフェクト', 'ドラム', 'チューナー', 'ルーパー', 'IR', '設定']) {
         await tester.tap(find.text(tab));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: '$name on $tab');
@@ -198,11 +198,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // The first preset card's 名前 button opens the rename dialog.
-      if (find.text('名前').evaluate().isEmpty) {
-        await bringIntoView(tester, find.text('名前').first);
+      // The preset row's 名前の変更 button opens the rename dialog.
+      if (find.text('名前の変更').evaluate().isEmpty) {
+        await bringIntoView(tester, find.text('名前の変更').first);
       }
-      await tester.tap(find.text('名前').first, warnIfMissed: false);
+      await tester.tap(find.text('名前の変更').first, warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: name);
       final cancel = find.text('キャンセル');

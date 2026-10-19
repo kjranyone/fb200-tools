@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import 'ir_wav.dart' show WavError, wavToIr;
+import 'nam_client.dart' show DeviceState, NamClient;
 import 'pedal_client.dart';
 import 'protocol.dart';
 import 'widgets/chain_strip.dart';
@@ -17,6 +18,10 @@ class PedalPage extends StatefulWidget {
   final bool effectsAvailable;
   final bool btAudioAvailable;
   final String? namModel;
+  /// The NAM client for model selection within the controller; null when the
+  /// connected firmware has no NAM RPC (stock vendor firmware).
+  final NamClient? namClient;
+  final DeviceState? namState;
   const PedalPage({
     super.key,
     required this.transport,
@@ -25,6 +30,8 @@ class PedalPage extends StatefulWidget {
     required this.effectsAvailable,
     required this.btAudioAvailable,
     this.namModel,
+    this.namClient,
+    this.namState,
   });
   @override
   State<PedalPage> createState() => _PedalPageState();
@@ -40,12 +47,14 @@ class _PedalPageState extends State<PedalPage> {
   Future<void>? _poll;
   String _pitch = '—';
   List<IrSlotInfo>? _irs;
+  DeviceState? _namState;
 
   @override
   void initState() {
     super.initState();
     _pedal = PedalClient(widget.transport, namAware: widget.restrictedNam)
       ..addListener(_changed);
+    _namState = widget.namState;
     unawaited(
       _run('本体を読み込み中', () async {
         await _pedal.initialize();
@@ -61,7 +70,7 @@ class _PedalPageState extends State<PedalPage> {
       } else if (_ready &&
           !_busy &&
           _poll == null &&
-          _tab == 2 &&
+          _tab == 3 &&
           widget.toolsAvailable &&
           widget.restrictedNam &&
           _pedal.settings![8] != 0) {
@@ -69,7 +78,7 @@ class _PedalPageState extends State<PedalPage> {
       } else if (_ready &&
           !_busy &&
           _poll == null &&
-          _tab == 2 &&
+          _tab == 4 &&
           _looperAvailable) {
         _poll = _refreshLoop().whenComplete(() => _poll = null);
       }
@@ -420,61 +429,83 @@ class _PedalPageState extends State<PedalPage> {
   LooperStatus? _loop;
 
   Future<void> _editModuleOrder() async {
+    // Real presets can carry a stale/unknown sequence; repair it into a full
+    // permutation (keep the valid prefix, append missing modules in default
+    // order) instead of refusing to edit.
     final bytes = _pedal.edit!.bytes.sublist(0xbc, 0xc3);
-    var order = List<int>.of(bytes);
-    var valid =
-        order.length == 7 &&
-        Set.of(order).containsAll(const [0, 1, 2, 3, 4, 5, 6]);
+    final order = <int>[];
+    final used = <int>{};
+    for (final v in bytes) {
+      if (v < 0 || v > 6 || used.contains(v)) break;
+      order.add(v);
+      used.add(v);
+    }
+    for (var m = 0; m <= 6; m++) {
+      if (!used.contains(m)) order.add(m);
+    }
+    var matches = order.length == bytes.length;
+    for (var i = 0; matches && i < order.length; i++) {
+      matches = order[i] == bytes[i];
+    }
+    final repaired = !matches;
     final changed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
           title: const Text('モジュールの接続順'),
-          content: valid
-              ? SizedBox(
-                  width: 320,
-                  child: ListBody(
-                    children: [
-                      for (var i = 0; i < order.length; i++)
-                        Row(
-                          children: [
-                            Expanded(child: Text(moduleName(order[i]))),
-                            IconButton(
-                              icon: const Icon(Icons.arrow_upward),
-                              onPressed: i == 0
-                                  ? null
-                                  : () => setDialog(() {
-                                      final t = order[i - 1];
-                                      order[i - 1] = order[i];
-                                      order[i] = t;
-                                    }),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.arrow_downward),
-                              onPressed: i == order.length - 1
-                                  ? null
-                                  : () => setDialog(() {
-                                      final t = order[i + 1];
-                                      order[i + 1] = order[i];
-                                      order[i] = t;
-                                    }),
-                            ),
-                          ],
+          content: SizedBox(
+            width: 320,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (repaired)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'プリセットの順序データが壊れていたため、標準順で補いました。',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  for (var i = 0; i < order.length; i++)
+                    Row(
+                      children: [
+                        Expanded(child: Text(moduleName(order[i]))),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_upward),
+                          onPressed: i == 0
+                              ? null
+                              : () => setDialog(() {
+                                  final t = order[i - 1];
+                                  order[i - 1] = order[i];
+                                  order[i] = t;
+                                }),
                         ),
-                    ],
-                  ),
-                )
-              : const Text('このプリセットのモジュール順序が未知の値です。変更できません。'),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_downward),
+                          onPressed: i == order.length - 1
+                              ? null
+                              : () => setDialog(() {
+                                  final t = order[i + 1];
+                                  order[i + 1] = order[i];
+                                  order[i] = t;
+                                }),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('キャンセル'),
             ),
-            if (valid)
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('変更'),
-              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('変更'),
+            ),
           ],
         ),
       ),
@@ -567,14 +598,16 @@ class _PedalPageState extends State<PedalPage> {
       selectedIndex: _tab,
       onDestinationSelected: (v) {
         setState(() => _tab = v);
-        if (v == 3 && _irs == null && !_busy) {
+        if (v == 5 && _irs == null && !_busy) {
           _run('IR一覧を読み込み中', _irReload);
         }
       },
       destinations: const [
-        NavigationDestination(icon: Icon(Icons.grid_view), label: 'プリセット'),
+        NavigationDestination(icon: Icon(Icons.grid_view), label: 'プリ'),
         NavigationDestination(icon: Icon(Icons.tune), label: 'エフェクト'),
-        NavigationDestination(icon: Icon(Icons.music_note), label: 'ツール'),
+        NavigationDestination(icon: Icon(Icons.music_note), label: 'ドラム'),
+        NavigationDestination(icon: Icon(Icons.straighten), label: 'チューナー'),
+        NavigationDestination(icon: Icon(Icons.loop), label: 'ルーパー'),
         NavigationDestination(icon: Icon(Icons.graphic_eq), label: 'IR'),
         NavigationDestination(icon: Icon(Icons.settings), label: '設定'),
       ],
@@ -583,31 +616,78 @@ class _PedalPageState extends State<PedalPage> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView(
-            padding: const EdgeInsets.all(20),
+          // Fixed (non-scrolling) layout: everything visible at once, like
+          // a hardware controller. Overflow-prone content goes into dialogs,
+          // and progress is a modal overlay so it never shifts the layout.
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              if (_busy) ...[const LinearProgressIndicator(), Text(_status)],
-              if (_error.isNotEmpty)
-                Text(
-                  _error,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 4),
+                        child: Text(
+                          _error,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    if (_ready) ...[
+                      Text(
+                        '${PedalClient.address(_pedal.selected)}  ${_pedal.edit!.name}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        '${_pedal.version}  ·  電池 ${_pedal.battery}%${_pedal.charging ? '（充電中）' : ''}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: switch (_tab) {
+                          0 => _fillOrScroll(_banks()),
+                          1 => _fillOrScroll(_effects()),
+                          2 => _fillOrScroll(_drums()),
+                          3 => _fillOrScroll(_tunerTab()),
+                          4 => _fillOrScroll(_looper()),
+                          5 => _fillOrScroll(_ir()),
+                          _ => _fillOrScroll(_settings()),
+                        },
+                      ),
+                    ],
+                  ],
                 ),
-              if (_ready) ...[
-                Text(
-                  '${PedalClient.address(_pedal.selected)}  ${_pedal.edit!.name}',
-                  style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              if (_busy) ...[
+                ModalBarrier(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.scrim.withValues(alpha: 0.45),
+                  dismissible: false,
                 ),
-                Text(
-                  '${_pedal.version}  ·  電池 ${_pedal.battery}%${_pedal.charging ? '（充電中）' : ''}',
+                Center(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(strokeWidth: 3),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(_status, textAlign: TextAlign.center),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 20),
-                ...switch (_tab) {
-                  0 => _banks(),
-                  1 => _effects(),
-                  2 => _tools(),
-                  3 => _ir(),
-                  _ => _settings(),
-                },
               ],
             ],
           ),
@@ -616,71 +696,144 @@ class _PedalPageState extends State<PedalPage> {
     ),
   );
 
-  List<Widget> _banks() => [
-    DropdownButtonFormField<int>(
-      initialValue: _bank,
-      decoration: const InputDecoration(labelText: 'バンク'),
-      items: [
-        for (var i = 0; i < 10; i++)
-          DropdownMenuItem(value: i, child: Text('BANK $i')),
-      ],
-      onChanged: _busy
-          ? null
-          : (v) => _run('バンクを読み込み中', () async {
-              _bank = v!;
-              await _pedal.loadBank(_bank);
-            }),
+  /// Fixed-layout tab body: fills the screen when the content fits (the
+  /// normal case on portrait tablets), and only scrolls when the screen is
+  /// too short (landscape phones). Knobs still win the gesture arena over
+  /// this scroll view, so drag control keeps working either way.
+  Widget _fillOrScroll(Widget child) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: child,
+      ),
     ),
-    const SizedBox(height: 12),
-    for (var i = _bank * 4; i < _bank * 4 + 4; i++)
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '${PedalClient.address(i)}  ${_pedal.presets[i]?.name ?? '読み込み前'}',
-                style: Theme.of(context).textTheme.titleMedium,
+  );
+
+  Widget _banks() {
+    final selected = _pedal.selected;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: _bank,
+                decoration: const InputDecoration(labelText: 'バンク'),
+                isExpanded: true,
+                items: [
+                  for (var i = 0; i < 10; i++)
+                    DropdownMenuItem(value: i, child: Text('BANK $i')),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (v) => _run('バンクを読み込み中', () async {
+                        _bank = v!;
+                        await _pedal.loadBank(_bank);
+                      }),
               ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: _busy
+            ),
+            const SizedBox(width: 8),
+            PopupMenuButton<String>(
+              enabled: !_busy,
+              onSelected: (v) => v == 'backup'
+                  ? _run('バックアップ中', _backup)
+                  : _guard(_restore),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'backup',
+                  child: Text('全プリセットをファイルへ保存'),
+                ),
+                PopupMenuItem(
+                  value: 'restore',
+                  child: Text('バックアップから復元'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        GridView.count(
+          crossAxisCount: 2,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 2.6,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+            children: [
+              for (var i = _bank * 4; i < _bank * 4 + 4; i++)
+                Card(
+                  margin: EdgeInsets.zero,
+                  color: i == selected
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : null,
+                  child: InkWell(
+                    onTap: _busy
                         ? null
                         : () => _run('プリセットを選択中', () => _pedal.select(i)),
-                    child: Text(i == _pedal.selected ? '再読み込み' : '選択'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                PedalClient.address(i),
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                              const Spacer(),
+                              if (i == selected)
+                                Icon(
+                                  Icons.check_circle,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                            ],
+                          ),
+                          Text(
+                            _pedal.presets[i]?.name ?? '読み込み前',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  TextButton(
-                    onPressed: _busy ? null : () => _save(i, _pedal.edit!),
-                    child: const Text('編集内容を保存'),
-                  ),
-                  TextButton(
-                    onPressed: _busy ? null : () => _guard(() => _rename(i)),
-                    child: const Text('名前'),
-                  ),
-                  TextButton(
-                    onPressed: _busy ? null : () => _guard(() => _copy(i)),
-                    child: const Text('コピー'),
-                  ),
-                ],
-              ),
+                ),
             ],
-          ),
         ),
-      ),
-    const SizedBox(height: 12),
-    OutlinedButton.icon(
-      onPressed: _busy ? null : _backup,
-      icon: const Icon(Icons.download),
-      label: const Text('全プリセットをファイルへ保存'),
-    ),
-    TextButton(
-      onPressed: _busy ? null : () => _guard(_restore),
-      child: const Text('バックアップから復元'),
-    ),
-  ];
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            TextButton(
+              onPressed: _busy ? null : () => _save(_pedal.selected, _pedal.edit!),
+              child: const Text('編集内容を保存'),
+            ),
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => _guard(() => _rename(_presetMenuTarget())),
+              child: const Text('名前の変更'),
+            ),
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => _guard(() => _copy(_presetMenuTarget())),
+              child: const Text('コピー'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  int _presetMenuTarget() => _pedal.selected;
 
   Future<void> _guard(Future<void> Function() action) async {
     try {
@@ -710,7 +863,7 @@ class _PedalPageState extends State<PedalPage> {
       if (_pedal.edit!.word(pedalModules[i].offset) != 0) i,
   };
 
-  List<Widget> _effects() {
+  Widget _effects() {
     final order = _chainOrder;
     // Selecting a chain block opens that module; the strip order maps to
     // module indexes, delay hidden on stock firmware like the list was.
@@ -724,98 +877,143 @@ class _PedalPageState extends State<PedalPage> {
         ? order[_selectedChain!]
         : null;
     final module = sel == null ? null : pedalModules[sel];
-    return [
-      if (widget.restrictedNam && !widget.effectsAvailable)
-        const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブは本体の更新後に利用できます。'),
-      if (widget.restrictedNam && widget.effectsAvailable)
-        const Text(
-          'NAMモデルがアンプを置き換えています。アンプブロックのノブはNAMの音質制御（ドライブ/EQ/レベル）として動作します。',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ChainStrip(
+          order: visible,
+          enabled: _chainEnabled,
+          selected: _selectedChain,
+          restrictedNam: widget.restrictedNam,
+          namModel: widget.namModel,
+          onTap: (i) =>
+              setState(() => _selectedChain = _selectedChain == i ? null : i),
         ),
-      ChainStrip(
-        order: visible,
-        enabled: _chainEnabled,
-        selected: _selectedChain,
-        restrictedNam: widget.restrictedNam,
-        namModel: widget.namModel,
-        onTap: (i) =>
-            setState(() => _selectedChain = _selectedChain == i ? null : i),
-      ),
-      const SizedBox(height: 8),
-      if (module != null)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        module.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    if (module.fields.isNotEmpty && module.fields[0].max == 1)
-                      Switch(
-                        value: _pedal.edit!.word(module.offset) != 0,
-                        onChanged: _busy
-                            ? null
-                            : (v) => _run('エフェクトを更新中', () async {
-                                await _pedal.module(module, [
-                                  for (var k = 0; k < module.fields.length; k++)
-                                    k == 0
-                                        ? (v ? 1 : 0)
-                                        : _pedal.edit!.word(
-                                            module.offset + k * 2,
-                                          ),
-                                ]);
-                              }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 18,
-                  runSpacing: 18,
-                  children: [
-                    for (var i = 1; i < module.fields.length; i++)
-                      if (module.fields[i].max > 0)
-                        Knob(
-                          label: module.fields[i].label,
-                          value: _pedal.edit!
-                              .word(module.offset + i * 2)
-                              .clamp(
-                                module.fields[i].min,
-                                module.fields[i].max,
-                              ),
-                          min: module.fields[i].min,
-                          max: module.fields[i].max,
-                          enabled: !_moduleDisabled(module, i),
-                          onChanged: (value) => _run(
-                            'エフェクトを更新中',
-                            () => _pedal.module(module, [
-                              for (var k = 0; k < module.fields.length; k++)
-                                k == i
-                                    ? value
-                                    : _pedal.edit!.word(module.offset + k * 2),
-                            ]),
-                          ),
+        const SizedBox(height: 8),
+        if (module != null)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          module.name,
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
+                      ),
+                      if (module.fields.isNotEmpty && module.fields[0].max == 1)
+                        Switch(
+                          value: _pedal.edit!.word(module.offset) != 0,
+                          onChanged: _busy
+                              ? null
+                              : (v) => _run('エフェクトを更新中', () async {
+                                  await _pedal.module(module, [
+                                    for (var k = 0; k < module.fields.length; k++)
+                                      k == 0
+                                          ? (v ? 1 : 0)
+                                          : _pedal.edit!.word(
+                                              module.offset + k * 2,
+                                            ),
+                                  ]);
+                                }),
+                        ),
+                    ],
+                  ),
+                  if (widget.restrictedNam && module.command == 0x82) ...[
+                    const SizedBox(height: 4),
+                    _namModelSelector(),
                   ],
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 18,
+                    runSpacing: 18,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (var i = 1; i < module.fields.length; i++)
+                        if (module.fields[i].max > 0)
+                          Knob(
+                            label: module.fields[i].label,
+                            value: _pedal.edit!
+                                .word(module.offset + i * 2)
+                                .clamp(
+                                  module.fields[i].min,
+                                  module.fields[i].max,
+                                ),
+                            min: module.fields[i].min,
+                            max: module.fields[i].max,
+                            enabled: !_moduleDisabled(module, i),
+                            onChanged: (value) => _run(
+                              'エフェクトを更新中',
+                              () => _pedal.module(module, [
+                                for (var k = 0; k < module.fields.length; k++)
+                                  k == i
+                                      ? value
+                                      : _pedal.edit!.word(module.offset + k * 2),
+                              ]),
+                            ),
+                          ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
+        const SizedBox(height: 8),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('モジュールの接続順'),
+          subtitle: const Text('エフェクトチェーンの並び順を変更します（保存でプリセットに反映）。'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _busy ? null : () => _guard(_editModuleOrder),
         ),
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('モジュールの接続順'),
-        subtitle: const Text('エフェクトチェーンの並び順を変更します（保存で プリセットに反映）。'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: _busy ? null : () => _guard(_editModuleOrder),
-      ),
+      ],
+    );
+  }
+
+  /// Model picker for the NAM (amp) block: choosing a slot rebinds the model
+  /// for the current preset (RPC op 6 with save).
+  Widget _namModelSelector() {
+    final client = widget.namClient;
+    final state = _namState;
+    if (client == null || state == null) {
+      return const Text(
+        'モデルの変更は「モデル管理」ページから行えます。',
+        style: TextStyle(fontStyle: FontStyle.italic),
+      );
+    }
+    final items = [
+      for (final slot in state.slots)
+        if (slot.name != null)
+          DropdownMenuItem(
+            value: slot.number,
+            child: Text('${slot.number}: ${slot.name}'),
+          ),
     ];
+    if (items.isEmpty) {
+      return const Text('保存済みのモデルがありません。「モデル管理」で転送してください。');
+    }
+    return DropdownButtonFormField<int>(
+      initialValue: _namState!.selected,
+      decoration: const InputDecoration(
+        labelText: 'NAMモデル（このプリセットで使用）',
+      ),
+      items: items,
+      onChanged: _busy
+          ? null
+          : (v) {
+              if (v == null || v == state.selected) return;
+              _run('モデルを切替中', () async {
+                await client.select(v, save: true);
+                final fresh = await client.readState();
+                if (mounted) setState(() => _namState = fresh);
+              });
+            },
+    );
   }
 
   bool _moduleDisabled(PedalModule module, int field) {
@@ -847,104 +1045,132 @@ class _PedalPageState extends State<PedalPage> {
     );
   }
 
-  List<Widget> _tools() {
-    final r = _pedal.rhythm!, s = _pedal.settings!;
-    return [
-      if (!widget.toolsAvailable) const Text('ドラムとチューナーは本体の更新後に利用できます。'),
-      Text('ドラムマシン', style: Theme.of(context).textTheme.titleLarge),
-      SwitchListTile(
-        title: const Text('再生'),
-        value: r[0] != 0,
-        onChanged: _busy || !widget.toolsAvailable
-            ? null
-            : (v) => _rhythm(on: v),
-      ),
-      _value(
-        'パターン',
-        r[2] + 1,
-        1,
-        40,
-        (v) => _rhythm(pattern: v - 1),
-        disabled: !widget.toolsAvailable,
-      ),
-      _value(
-        'テンポ (BPM)',
-        read16(r, 4),
-        40,
-        260,
-        (v) => _rhythm(bpm: v),
-        disabled: !widget.toolsAvailable,
-      ),
-      _value(
-        '音量',
-        r[3],
-        0,
-        100,
-        (v) => _rhythm(level: v),
-        disabled: !widget.toolsAvailable,
-      ),
-      OutlinedButton(
-        onPressed: _busy || !widget.toolsAvailable
-            ? null
-            : () {
-                final now = DateTime.now(), previous = _lastTap;
-                _lastTap = now;
-                if (previous != null) {
-                  final dt = now.difference(previous).inMilliseconds;
-                  if (dt > 0 && dt <= 3000) {
-                    _rhythm(bpm: (60000 / dt).round().clamp(40, 260));
-                  }
-                }
-              },
-        child: const Text('タップテンポ'),
-      ),
-      const SizedBox(height: 28),
-      Text('チューナー', style: Theme.of(context).textTheme.titleLarge),
-      SwitchListTile(
-        title: const Text('チューナーを起動'),
-        value: s[8] != 0,
-        onChanged: _busy || !widget.toolsAvailable
-            ? null
-            : (v) => _tuner(on: v),
-      ),
-      SwitchListTile(
-        title: const Text('チューニング中はミュート'),
-        value: s[9] != 0,
-        onChanged: _busy || !widget.toolsAvailable
-            ? null
-            : (v) => _tuner(mute: v),
-      ),
-      _value(
-        '基準 A4 (Hz)',
-        435 + s[7],
-        435,
-        450,
-        (v) => _tuner(a4: v),
-        disabled: !widget.toolsAvailable,
-      ),
-      if (widget.toolsAvailable && widget.restrictedNam)
-        Text(_pitch, style: Theme.of(context).textTheme.headlineMedium)
-      else
-        const Text('音程は本体のディスプレイで確認できます。'),
-      const SizedBox(height: 28),
-      Text('ルーパー', style: Theme.of(context).textTheme.titleLarge),
-      if (!_looperAvailable)
-        const Text('ルーパーはこのファームウェアでは利用できません。')
-      else ...[
-        Text(() {
-          final s = _loop;
-          if (s == null) return '状態を確認中…';
-          final undo = s.undo == 0
-              ? ''
-              : s.undo == 1
-              ? '・元に戻す可'
-              : '・やり直し可';
-          return '${PedalClient.looperStates[s.state.clamp(0, 5)]}'
-              '  長さ ${s.lenS}秒 / 最大 ${s.maxS}秒$undo'
-              '${s.storeBusy ? '・保存中' : ''}${s.writing ? '・書込中' : ''}';
-        }()),
-        const SizedBox(height: 8),
+  Widget _drums() {
+    final r = _pedal.rhythm!;
+    if (!widget.toolsAvailable) {
+      return Center(child: const Text('ドラムは本体の更新後に利用できます。'));
+    }
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _value('パターン', r[2] + 1, 1, 40, (v) => _rhythm(pattern: v - 1)),
+            _value('テンポ', read16(r, 4), 40, 260, (v) => _rhythm(bpm: v)),
+            _value('音量', r[3], 0, 100, (v) => _rhythm(level: v)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _rhythm(on: r[0] == 0),
+              child: Text(r[0] != 0 ? '停止' : '再生'),
+            ),
+            OutlinedButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      final now = DateTime.now(), previous = _lastTap;
+                      _lastTap = now;
+                      if (previous != null) {
+                        final dt = now.difference(previous).inMilliseconds;
+                        if (dt > 0 && dt <= 3000) {
+                          _rhythm(bpm: (60000 / dt).round().clamp(40, 260));
+                        }
+                      }
+                    },
+              child: const Text('タップテンポ'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _tunerTab() {
+    final s = _pedal.settings!;
+    if (!widget.toolsAvailable) {
+      return Center(child: const Text('チューナーは本体の更新後に利用できます。'));
+    }
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.restrictedNam)
+          Text(
+            _pitch,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.displayMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          )
+        else
+          Text(
+            '音程は本体のディスプレイで確認できます。',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Switch(
+                  value: s[8] != 0,
+                  onChanged: _busy ? null : (v) => _tuner(on: v),
+                ),
+                const Text('チューナー'),
+              ],
+            ),
+            _value('基準 A4', 435 + s[7], 435, 450, (v) => _tuner(a4: v)),
+          ],
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 48),
+          title: const Text('チューニング中はミュート'),
+          value: s[9] != 0,
+          onChanged: _busy ? null : (v) => _tuner(mute: v),
+        ),
+      ],
+    );
+  }
+
+  Widget _looper() {
+    if (!_looperAvailable) {
+      return const Center(child: Text('ルーパーはこのファームウェアでは利用できません。'));
+    }
+    final s = _loop;
+    final status = () {
+      if (s == null) return '状態を確認中…';
+      final undo = s.undo == 0
+          ? ''
+          : s.undo == 1
+          ? '・元に戻す可'
+          : '・やり直し可';
+      return '${PedalClient.looperStates[s.state.clamp(0, 5)]}'
+          '  長さ ${s.lenS}秒 / 最大 ${s.maxS}秒$undo'
+          '${s.storeBusy ? '・保存中' : ''}${s.writing ? '・書込中' : ''}';
+    }();
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          status,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
         Wrap(
+          alignment: WrapAlignment.center,
           spacing: 8,
           runSpacing: 8,
           children: [
@@ -978,17 +1204,22 @@ class _PedalPageState extends State<PedalPage> {
             ),
           ],
         ),
-        _value(
-          'ループの音量',
-          _loop?.level ?? 100,
-          0,
-          100,
-          (v) => _run('ループ音量を変更中', () async {
-            await _pedal.looperLevel(v);
-            await _refreshLoop();
-          }),
+        const SizedBox(height: 8),
+        Center(
+          child: _value(
+            'ループの音量',
+            s?.level ?? 100,
+            0,
+            100,
+            (v) => _run('ループ音量を変更中', () async {
+              await _pedal.looperLevel(v);
+              await _refreshLoop();
+            }),
+          ),
         ),
+        const SizedBox(height: 4),
         Wrap(
+          alignment: WrapAlignment.center,
           spacing: 8,
           children: [
             for (var slot = 1; slot <= 2; slot++) ...[
@@ -996,7 +1227,7 @@ class _PedalPageState extends State<PedalPage> {
                 onPressed: _busy
                     ? null
                     : () => _run('ループ$slotを保存中', () => _pedal.looperSave(slot)),
-                child: Text('スロット$slotへ保存'),
+                child: Text('$slotへ保存'),
               ),
               TextButton(
                 onPressed: _busy
@@ -1005,109 +1236,174 @@ class _PedalPageState extends State<PedalPage> {
                         await _pedal.looperLoad(slot);
                         await _refreshLoop();
                       }),
-                child: Text('スロット$slotから読込'),
+                child: Text('$slotから読込'),
               ),
             ],
           ],
         ),
-        const Text(
-          '保存は2スロット。電源を切ってもループが残ります。本体のフットスイッチ（D+C長押しでルーパーモード）でも操作できます。',
-        ),
       ],
-    ];
+    );
   }
 
-  List<Widget> _ir() {
+  Widget _ir() {
     final slots = _irs;
-    return [
-      if (widget.restrictedNam && !widget.effectsAvailable)
-        const Text(
-          '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
-        ),
-      Text('ユーザーIR', style: Theme.of(context).textTheme.titleLarge),
-      const Text('WAVを読み込んでスロットへ転送します。変換は公式エディタと同じ44.1 kHz・チャンネル0・1024サンプルです。'),
-      const SizedBox(height: 8),
-      if (slots == null)
-        OutlinedButton.icon(
+    if (slots == null) {
+      return Center(
+        child: OutlinedButton.icon(
           onPressed: _busy ? null : () => _run('IR一覧を読み込み中', _irReload),
           icon: const Icon(Icons.refresh),
           label: const Text('IR一覧を読み込む'),
-        )
-      else
-        for (final s in slots)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'IR${s.slot}  ${s.used ? s.name : '空き'}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      FilledButton.tonal(
-                        onPressed: _busy
-                            ? null
-                            : () => _guard(() => _irImport(s)),
-                        child: const Text('WAVから取り込み'),
-                      ),
-                      if (s.used) ...[
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _guard(() => _irRename(s)),
-                          child: const Text('名前'),
-                        ),
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _guard(() => _irDelete(s)),
-                          child: const Text('削除'),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.restrictedNam && !widget.effectsAvailable)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12),
             ),
           ),
-    ];
+        GridView.count(
+          crossAxisCount: 3,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.9,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            for (final s in slots)
+              Card(
+                margin: EdgeInsets.zero,
+                child: InkWell(
+                  onTap: _busy ? null : () => _guard(() => _irSlotMenu(s)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'IR${s.slot}',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                        Text(
+                          s.used ? s.name : '空き',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: s.used
+                                    ? null
+                                    : Theme.of(context).colorScheme.outline,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const Text(
+          'スロットをタップしてWAV取り込み・名前変更・削除。変換は公式エディタと同じ44.1 kHz・チャンネル0・1024サンプルです。',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12),
+        ),
+      ],
+    );
   }
 
-  List<Widget> _settings() {
-    final s = _pedal.settings!;
-    return [
-      _value('入力ゲイン', s[2], 0, 25, (v) => _setting(2, v)),
-      SwitchListTile(
-        title: const Text('グローバル・キャビネット'),
-        value: s[1] != 0,
-        onChanged: _busy || (widget.restrictedNam && !widget.effectsAvailable)
-            ? null
-            : (v) => _setting(1, v ? 1 : 0),
-      ),
-      SwitchListTile(
-        title: const Text('Bluetoothオーディオ'),
-        value: s[10] != 0,
-        onChanged: _busy || (widget.restrictedNam && !widget.btAudioAvailable)
-            ? null
-            : (v) => _setting(10, v ? 1 : 0),
-      ),
-      _value('現在のスロットのLED色', s[11], 0, 9, (v) => _setting(11, v)),
-      _value('現在のスロットのLED明るさ', s[12], 0, 100, (v) => _setting(12, v)),
-      const SizedBox(height: 20),
-      Text('Bluetooth', style: Theme.of(context).textTheme.titleLarge),
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Bluetooth名の変更'),
-        subtitle: const Text(
-          '半角英数字・記号で1〜20文字。現在の名前は本体から読み取れないため、変更は再接続後に本体側で確認してください。',
+  Future<void> _irSlotMenu(IrSlotInfo s) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'IR${s.slot}  ${s.used ? s.name : '空き'}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file),
+              title: const Text('WAVから取り込み'),
+              onTap: () => Navigator.pop(context, 'import'),
+            ),
+            if (s.used) ...[
+              ListTile(
+                leading: const Icon(Icons.text_fields),
+                title: const Text('名前の変更'),
+                onTap: () => Navigator.pop(context, 'rename'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('削除'),
+                onTap: () => Navigator.pop(context, 'delete'),
+              ),
+            ],
+          ],
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: _busy ? null : () => _guard(_btName),
       ),
-    ];
+    );
+    switch (action) {
+      case 'import':
+        await _irImport(s);
+      case 'rename':
+        await _irRename(s);
+      case 'delete':
+        await _irDelete(s);
+    }
+  }
+
+  Widget _settings() {
+    final s = _pedal.settings!;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _value('入力ゲイン', s[2], 0, 25, (v) => _setting(2, v)),
+            _value('LED色', s[11], 0, 9, (v) => _setting(11, v)),
+            _value('LED明るさ', s[12], 0, 100, (v) => _setting(12, v)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          dense: true,
+          title: const Text('グローバル・キャビネット'),
+          value: s[1] != 0,
+          onChanged: _busy || (widget.restrictedNam && !widget.effectsAvailable)
+              ? null
+              : (v) => _setting(1, v ? 1 : 0),
+        ),
+        SwitchListTile(
+          dense: true,
+          title: const Text('Bluetoothオーディオ'),
+          value: s[10] != 0,
+          onChanged: _busy || (widget.restrictedNam && !widget.btAudioAvailable)
+              ? null
+              : (v) => _setting(10, v ? 1 : 0),
+        ),
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Bluetooth名の変更'),
+          subtitle: const Text('半角英数字・記号で1〜20文字。変更は再接続後に本体側で確認してください。'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _busy ? null : () => _guard(_btName),
+        ),
+      ],
+    );
   }
 }

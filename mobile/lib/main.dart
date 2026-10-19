@@ -481,6 +481,8 @@ class _ModelPageState extends State<ModelPage> {
                           btAudioAvailable:
                               _client == null ||
                               (_client!.capabilityFlags & 256) != 0,
+                          namClient: _client,
+                          namState: _state,
                           namModel: _state?.slots
                               .where((s) => s.number == _state!.selected)
                               .map((s) => s.name)
