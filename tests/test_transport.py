@@ -87,7 +87,11 @@ def test_open_opens_device_and_io_works(monkeypatch):
     assert dev.opened_path == b"dev-1"
     assert dev.nonblocking == 0
     transport.write_report(b"\x01abc")
-    assert dev.writes == [[1, 97, 98, 99]]
+    if sys.platform == "win32":
+        # Windows prefixes the unnumbered report ID 0 (see write_report).
+        assert dev.writes == [[0, 1, 97, 98, 99]]
+    else:
+        assert dev.writes == [[1, 97, 98, 99]]
     dev.reads.append(b"\x01xyz")
     assert transport.read_report() == b"\x01xyz"
     assert transport.read_report() is None
