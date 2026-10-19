@@ -290,8 +290,12 @@ including the first hardware CPU measurement: the restored chain costs
 weight repack + -O3, bit-identical via a committed golden fixture; NAM
 validation [run 39200249372](https://github.com/kjranyone/fb200-tools/actions/runs/39200249372)
 and inherited CI run 39200238631 both success) to 262k, bringing the
-everything-on total to 321k = 80.4% of budget, flashed and verified. A
-Windows HID report-ID fix makes the PC tools work on Windows. See
+everything-on total to 321k = 80.4% of budget, flashed and verified.
+Bluetooth audio returned last (`bd00b0d`, capability bit 8, flags 511;
+NAM validation [run 39206298935](https://github.com/kjranyone/fb200-tools/actions/runs/39206298935)
+and inherited CI run 39206287245 both success), flashed and verified
+read-only (the DMA ring fills; no A2DP source was paired for listening).
+A Windows HID report-ID fix makes the PC tools work on Windows. See
 [NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The
 pedal's slots were empty when the layout changed, so no migration was needed;
 older app versions cannot manage this firmware.
