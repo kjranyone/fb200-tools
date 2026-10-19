@@ -21,6 +21,7 @@ void main() {
           transport: h.wire,
           restrictedNam: true,
           toolsAvailable: false,
+          effectsAvailable: false,
         ),
       ),
     );
@@ -51,6 +52,7 @@ void main() {
           transport: h.wire,
           restrictedNam: false,
           toolsAvailable: true,
+          effectsAvailable: true,
         ),
       ),
     );
@@ -79,6 +81,7 @@ void main() {
           transport: h.wire,
           restrictedNam: true,
           toolsAvailable: false,
+          effectsAvailable: false,
         ),
       ),
     );
@@ -122,6 +125,7 @@ void main() {
           transport: h.wire,
           restrictedNam: false,
           toolsAvailable: true,
+          effectsAvailable: true,
         ),
       ),
     );
@@ -161,6 +165,7 @@ void main() {
           transport: h.wire,
           restrictedNam: false,
           toolsAvailable: true,
+          effectsAvailable: true,
         ),
       ),
     );
@@ -198,6 +203,7 @@ void main() {
           transport: h.wire,
           restrictedNam: false,
           toolsAvailable: true,
+          effectsAvailable: true,
         ),
       ),
     );

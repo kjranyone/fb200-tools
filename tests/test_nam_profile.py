@@ -90,7 +90,10 @@ def test_runtime_image_and_flash_busy_safety(profile):
     assert size == 83976 and 0x20000000 <= address < address+size <= 0x20018A00
     address, size = syms["staging"]
     assert size == 8192 and 0x20200000 <= address < address+size <= 0x20208000
-    assert "s_rev" not in syms  # restricted runtime profile frees reverb ITCM
+    assert "s_rev" not in syms or profile == "nam-manager"  # reverb ITCM: manager only
+    assert ("reverb_process" in syms) == (profile == "nam-manager")
+    assert ("cab_process" in syms) == (profile == "nam-manager")
+    assert ("mod_process" in syms) == (profile == "nam-manager")
     assert ("tuner_poll" in syms) == (profile == "nam-manager")
     assert ("tuner_yin" in syms) == (profile == "nam-manager")
     assert ("looper_process" in syms) == (profile == "nam-manager")

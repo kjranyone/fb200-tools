@@ -103,7 +103,7 @@ static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
 static reverb_t s_rev __attribute__((section(".itcm_bss")));
 #endif
 /* Our bass delay (docs/PARITY.md M4). Its line (DELAY_LEN int16, 88 kB for
@@ -225,7 +225,7 @@ COLD void engine_init(void)
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     reverb_init(&s_rev, (float)AUDIO_FS);
 #endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
@@ -276,9 +276,10 @@ void engine_dsp_reset(void)
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     reverb_init(&s_rev, (float)AUDIO_FS);
-#else
+#endif
+#ifdef NAM_RUNTIME
     nam_a2_reset(&s_nam);
 #endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
@@ -299,7 +300,8 @@ bool engine_needs_reapply(void)
  * The stock plays an empty slot as silence; that left users with a pedal
  * that "stopped working" (seen 2026-09-27: our first version even read the
  * erased flash as NaN taps and stayed silent for good). An empty slot now
- * bypasses the cab instead. */
+ * bypasses the cab instead. The stock gain rule runs on the 44.1 kHz taps;
+ * a 48 kHz build then resamples them in place. */
 static int load_user_ir(unsigned slot)
 {
     const volatile uint8_t *used = (const volatile uint8_t *)(0x60000000u + 0x88000u);
@@ -308,7 +310,11 @@ static int load_user_ir(unsigned slot)
     memcpy(s_ir, ir, CAB_TAPS * sizeof s_ir[0]);
     for (unsigned i = 0; i < CAB_TAPS; i++)
         if (!(s_ir[i] > -1e6f && s_ir[i] < 1e6f)) s_ir[i] = 0.0f;   /* NaN/inf -> 0 */
-    cab_set_ir(&s_cab, s_ir, cab_user_ir_gain(s_ir));
+    float gain = cab_user_ir_gain(s_ir);
+#if defined(NAM_RUNTIME) && defined(NAM_UTILITIES)
+    cab_ir_441_to_48(s_ir, CAB_TAPS);
+#endif
+    cab_set_ir(&s_cab, s_ir, gain);
     return 1;
 }
 
@@ -381,7 +387,18 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     int cab = pget(p, P_CAB_TYPE);
     if (cab != s_cab_type && !s_ir_busy) {   /* busy: engine_ir_release reapplies */
         s_cab_bypass = false;
-        if (cab >= 1 && cab <= 10) (void)cab_set_model(&s_cab, cab);
+        if (cab >= 1 && cab <= 10) {
+#if defined(NAM_RUNTIME) && defined(NAM_UTILITIES)
+            /* the stock cabs are 44.1 kHz designs: resample for 48 kHz */
+            if (g_stock) {
+                memcpy(s_ir, g_stock->cab_taps[cab - 1], CAB_TAPS * sizeof s_ir[0]);
+                cab_ir_441_to_48(s_ir, CAB_TAPS);
+                cab_set_ir(&s_cab, s_ir, g_stock->cab_gain[cab - 1]);
+            } else (void)cab_set_model(&s_cab, cab);
+#else
+            (void)cab_set_model(&s_cab, cab);
+#endif
+        }
         else if (cab >= 11 && cab <= 19) s_cab_bypass = !load_user_ir((unsigned)(cab - 11));
 #ifndef NAM_RUNTIME
         else if (irstore_slot_of((unsigned)cab) >= 0)
@@ -398,9 +415,9 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     mod_set_params(&s_mod, pget(p, P_MOD_TYPE), pget(p, P_MOD_P1), pget(p, P_MOD_P2),
                    pget(p, P_MOD_P3), pget(p, P_MOD_P4));
     s_rev_en = pget(p, P_REV_EN) != 0;
-#ifndef NAM_RUNTIME
-    reverb_set_params(&s_rev, pget(p, P_REV_TYPE), pget(p, P_REV_LEVEL), pget(p, P_REV_DECAY),
-                      pget(p, P_REV_AE), pget(p, P_REV_A8));
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
+    reverb_set_params(&s_rev, pget(p, P_REV_TYPE), pget(p, P_REV_LEVEL),
+                      pget(p, P_REV_DECAY), pget(p, P_REV_AE), pget(p, P_REV_A8));
 #endif
     /* Stock presets have the delay "on" but the stock never plays it: only
      * presets with our marker play (preset.h preset_delay_on). Switching it
@@ -680,20 +697,20 @@ void engine_task(void)
     if (s_amp_en) amp_process(&s_amp, x, (unsigned)n);
 #endif
     PROF(P_AMP);
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_cab_en && !s_cab_bypass) cab_process(&s_cab, x, (unsigned)n);
 #endif
     PROF(P_CAB);
     eq_process(&s_eq, x, (unsigned)n);   /* returns at once when off or flat */
     PROF(P_EQ);
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
 #endif
     PROF(P_MOD);
     if (s_dly_en) delay_process(&s_dly, x, (unsigned)n);
     PROF(P_DELAY);
     float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */
     else
 #endif

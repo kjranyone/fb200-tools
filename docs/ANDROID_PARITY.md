@@ -83,9 +83,18 @@ manage the new firmware and vice versa.
 
 0.6.0+9 restores the looper to `nam-manager` (the audio path, the panel's
 D+C looper mode and our new `D7` app control; capability bit 6) and adds the
-module-order editor (`A0`) to the app. The base restricted `nam-runtime`
-keeps its looper stubs; cab/MOD/reverb and Bluetooth audio remain excluded
-pending rate/CPU validation.
+module-order editor (`A0`) to the app. 0.7.0+10 returns the stock
+cab/MOD/reverb to the `nam-manager` chain after the NAM stage (capability
+bit 7): the reverb's 46.9 kB state back in ITCM (link ends 0x1FAE8 of the
+0x20000 limit), 44.1 kHz cab/user IRs linearly resampled to 48 kHz in place
+descending (`cab_ir_441_to_48`, host-tested against an independent
+computation), and the app enables those controls plus the global-cab switch
+on bit 7. The base restricted runtime keeps its stubs; Bluetooth audio
+remains excluded. Physical measurement: the restored chain costs ~43k
+cycles/block of the 400k budget (bypass total ~16%), but the NAM inference
+itself measured 719k cycles/block — 1.8x the whole budget — so
+NAM-with-effects is not yet glitch-free real time; kernel optimisation is
+the next gate (see NAM_HARDWARE_2026-10-18.md).
 
 85 Flutter tests and analyze pass (WAV decode/resampler parity against shared
 Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name
@@ -104,4 +113,6 @@ Remaining parity work includes the complete NAM audio chain, IR auditioning,
 Bluetooth naming/audio read-back, model labels on already-installed firmware
 (needs a separately authorized firmware update) and all advanced settings,
 physical stock firmware operation, musical audio/deadline checks and real
-TONE3000 OAuth/download.
+TONE3000 OAuth/download. The stock cab/MOD/reverb chain is restored in
+`nam-manager` (0.7.0+10); Bluetooth audio and a NAM-side cab stage before
+the model remain future work.

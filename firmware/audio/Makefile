@@ -116,7 +116,7 @@ SRC_C := \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
   src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loopcodec.c \
   src/loopstore/loopstore.c src/loopstore/lsio.c \
-  src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
+  src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/cab_rate.c src/dsp/stock_data.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \

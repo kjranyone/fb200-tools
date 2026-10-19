@@ -6,8 +6,36 @@
 #include "dsp/drums.h"
 #include "dsp/tuner.h"
 
+/* cab.h needs CMSIS; the standalone declaration lives in cab_rate.c. */
+void cab_ir_441_to_48(float *ir, unsigned taps);
+
 static unsigned services;
 void tuner_service(void) { services++; }
+
+/* cab_ir_441_to_48 against an independent computation on a copy: the output
+ * must equal linear interpolation of the 44.1 kHz taps at 48 kHz positions,
+ * in place, truncating the shifted-out tail. */
+static void check_cab_resample(void)
+{
+    enum { TAPS = 512 };
+    static float ir[TAPS], ref[TAPS];
+    for (unsigned i = 0; i < TAPS; i++)
+        ref[i] = ir[i] = sinf(0.05f * i) * expf(-0.004f * i) + 0.1f * i;
+    cab_ir_441_to_48(ir, TAPS);
+    for (unsigned i = 0; i < TAPS; i++) {
+        unsigned num = i * 44100u;
+        unsigned idx = num / 48000u;
+        float frac = (float)(num % 48000u) / 48000.0f;
+        float expected = idx >= TAPS ? 0.0f
+            : ref[idx] + (idx + 1u < TAPS ? ref[idx + 1u] - ref[idx] : -ref[idx]) * frac;
+        /* a couple of ulps at the sample's magnitude */
+        assert(fabsf(ir[i] - expected) <= 1e-5f + 1e-6f * fabsf(expected));
+    }
+    /* The direct (b = 0.0) tail guard: a buffer shorter than the read. */
+    float one[1] = { 3.0f };
+    cab_ir_441_to_48(one, 1);
+    assert(one[0] == 3.0f);   /* i=0 reads itself, frac 0 */
+}
 
 static void pitch(float frequency)
 {
@@ -27,6 +55,7 @@ static void pitch(float frequency)
 
 int main(void)
 {
+    check_cab_resample();
     pitch(41.20344f); pitch(110.0f); pitch(440.0f);
     assert(services>0);
     enum { SAMPLES=44100 };

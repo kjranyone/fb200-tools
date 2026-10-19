@@ -263,3 +263,32 @@ No loop save/load was written to flash. APK 0.6.0+9 built
 (`out/fb200-manager-0.6.0-debug.apk`, SHA256
 `1a1efffc3953313867a1f2f1ccdd16fa3cda012b9990b3a46fc1eb75ba5f6728`), not
 installed: the tablet is still disconnected.
+
+## Chain restore + first real-time CPU measurement (2026-10-19, later)
+
+`nam-manager` (0.7.0+10 era) returns cab/MOD/reverb to the chain after the
+NAM stage (capability bit 7): reverb state back in ITCM (link ends
+0x1FAE8 / 0x20000), 44.1 kHz stock/user IRs resampled to 48 kHz in place
+descending (`cab_ir_441_to_48`, host-tested against an independent
+computation; an earlier ascending draft read its own output and was caught
+by exactly that test). Flashed: app slot 211008 bytes, CRC32 `fa179c22`,
+`fw done ok`. Physical: module frames over USB HID enable all three stages
+live; presets/settings CRCs unchanged. A Windows host needed a 0x00
+report-ID prefix on HID writes (Linux strips it) — fixed in
+`fb200.transport` so the PC tools now work on Windows too.
+
+Clean-window `prof` on the pedal (DWT cycles/block, budget 400,000 for
+32 frames @ 48 kHz @ 600 MHz): in ~1,013, tuner ~1,437, gate ~348,
+comp ~6,790, **cab 10,916, mod 10,053, reverb 22,479** (the restored chain
+costs ~43k, 10.8% of budget; with NAM bypassed the whole path is ~64k,
+16%), loop ~976, mix ~1,601, drums ~2,005, out ~4,131. **The NAM inference
+stage measured 719,152 cycles/block — 1.8x the entire budget — with the
+synthetic fixture model; the cost is data-independent (fixed-size loops).
+With a model selected the audio path exceeds real time (the engine's
+`skips` counter climbs; `dma_errs` stays 0 through the SAI ring).** This
+is the hardware measurement the handover deferred: the kernel
+(`dsp/nam_a2.c`, history-buffer recurrence over 1,871 weights x 3 channels
+x receptive field 6,347) needs optimisation (CMSIS-DSP/windowed form)
+before NAM-with-effects can run glitch-free. NAM bypass + the full stock
+chain, drums, tuner and looper are comfortably real-time. Logs:
+`out/nam64-flash/nam-cpu-isolated.log`, `chain-cpu-clean.log`.

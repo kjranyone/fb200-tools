@@ -33,7 +33,8 @@ pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compi
 
 FS = 44100
 SRC = [FW / "tests" / "drums_tuner_host_test.c", FW / "src" / "dsp" / "drums.c",
-       FW / "src" / "dsp" / "tuner.c", FW / "src" / "dsp" / "stock_data.c", FW / "src" / "crc32.c"]
+       FW / "src" / "dsp" / "tuner.c", FW / "src" / "dsp" / "stock_data.c",
+       FW / "src" / "dsp" / "cab_rate.c", FW / "src" / "crc32.c"]
 CFLAGS = ["-O2", "-Wall", "-Wextra", "-Werror", "-ffp-contract=off", "-I", str(FW / "src")]
 
 

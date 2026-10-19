@@ -15,7 +15,9 @@ the demo without connecting a pedal.
   non-NAM preset explicitly clears a destination NAM binding on NAM firmware.
 - Legacy effect/settings controls and front-panel notification refresh share
   the same BLE connection with NAM. Stock firmware can use the editor without
-  satisfying the NAM handshake. A base NAM runtime disables unsupported effects.
+  satisfying the NAM handshake. A base NAM runtime disables unsupported effects;
+  `nam-manager` restores cab/MOD/reverb after the NAM stage (capability bit 7)
+  with 44.1 kHz IRs resampled to 48 kHz.
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).

@@ -450,6 +450,9 @@ class _ModelPageState extends State<ModelPage> {
                                     toolsAvailable:
                                         _client == null ||
                                         (_client!.capabilityFlags & 8) != 0,
+                                    effectsAvailable:
+                                        _client == null ||
+                                        (_client!.capabilityFlags & 128) != 0,
                                   ),
                                 ),
                               );

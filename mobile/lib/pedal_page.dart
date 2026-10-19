@@ -12,11 +12,13 @@ class PedalPage extends StatefulWidget {
   final WireTransport transport;
   final bool restrictedNam;
   final bool toolsAvailable;
+  final bool effectsAvailable;
   const PedalPage({
     super.key,
     required this.transport,
     required this.restrictedNam,
     required this.toolsAvailable,
+    required this.effectsAvailable,
   });
   @override
   State<PedalPage> createState() => _PedalPageState();
@@ -687,8 +689,10 @@ class _PedalPageState extends State<PedalPage> {
   }
 
   List<Widget> _effects() => [
-    if (widget.restrictedNam)
+    if (widget.restrictedNam && !widget.effectsAvailable)
       const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブは本体の更新後に利用できます。'),
+    if (widget.restrictedNam && widget.effectsAvailable)
+      const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブはNAMの後段で動作します。'),
     ListTile(
       contentPadding: EdgeInsets.zero,
       title: const Text('モジュールの接続順'),
@@ -717,9 +721,10 @@ class _PedalPageState extends State<PedalPage> {
                   ]),
                 ),
                 disabled:
-                    widget.restrictedNam &&
-                    ([0x83, 0x84, 0x86].contains(module.command) ||
-                        (module.command == 0x82 && i != 0)),
+                    (widget.restrictedNam &&
+                        !widget.effectsAvailable &&
+                        [0x83, 0x84, 0x86].contains(module.command)) ||
+                    (widget.restrictedNam && module.command == 0x82 && i != 0),
               ),
         ],
       ),
@@ -929,7 +934,7 @@ class _PedalPageState extends State<PedalPage> {
   List<Widget> _ir() {
     final slots = _irs;
     return [
-      if (widget.restrictedNam)
+      if (widget.restrictedNam && !widget.effectsAvailable)
         const Text(
           '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
         ),
@@ -993,7 +998,7 @@ class _PedalPageState extends State<PedalPage> {
       SwitchListTile(
         title: const Text('グローバル・キャビネット'),
         value: s[1] != 0,
-        onChanged: _busy || widget.restrictedNam
+        onChanged: _busy || (widget.restrictedNam && !widget.effectsAvailable)
             ? null
             : (v) => _setting(1, v ? 1 : 0),
       ),

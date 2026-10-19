@@ -45,9 +45,10 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         wr(out+13,NAMSTORE_BYTES,2);
         /* bits: 0 framed upload, 1 select/save, 2 delete, 3 drums+tuner,
          * 4 rename (op 9), 5 paged list (op 1 takes a start index),
-         * 6 looper (0xD7 control, panel mode; `nam-manager`) */
+         * 6 looper (0xD7 control), 7 stock cab/MOD/reverb in the chain
+         * (`nam-manager`) */
 #ifdef NAM_UTILITIES
-        wr(out+15,15|16|32|64,2);
+        wr(out+15,15|16|32|64|128,2);
 #else
         wr(out+15,7|16|32,2);
 #endif
