@@ -12,6 +12,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "namstore/namstore.h"   /* NAMSTORE_SLOTS caps preset_nam_slot() */
+
 #define PRESET_COUNT 40            /* 10 banks x 4 slots */
 #define PRESET_FLASH 0x00071000u   /* + index * 0x200 */
 #define PRESET_STRIDE 0x200u
@@ -104,7 +106,7 @@ static inline bool preset_eq_on(const preset_t *p)
 static inline unsigned preset_nam_slot(const preset_t *p)
 {
     unsigned slot = pget(p, P_NAM_SLOT);
-    return pget(p, P_NAM_MARK) == NAM_MARK && slot <= 3u ? slot : 0u;
+    return pget(p, P_NAM_MARK) == NAM_MARK && slot <= NAMSTORE_SLOTS ? slot : 0u;
 }
 
 /* Checks of untrusted records (preset_check.c): an erased preset becomes

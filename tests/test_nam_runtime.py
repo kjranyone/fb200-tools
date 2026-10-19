@@ -196,7 +196,9 @@ int main(void) {
     assert(preset_nam_slot(&p)==0);
     pset(&p,P_NAM_SLOT,3); assert(preset_nam_slot(&p)==0);
     pset(&p,P_NAM_MARK,NAM_MARK); assert(preset_nam_slot(&p)==3);
-    pset(&p,P_NAM_SLOT,4); assert(preset_nam_slot(&p)==0);
+    pset(&p,P_NAM_SLOT,4); assert(preset_nam_slot(&p)==4);
+    pset(&p,P_NAM_SLOT,NAMSTORE_SLOTS); assert(preset_nam_slot(&p)==NAMSTORE_SLOTS);
+    pset(&p,P_NAM_SLOT,NAMSTORE_SLOTS+1u); assert(preset_nam_slot(&p)==0);
     memset(&p,0xff,sizeof p); assert(preset_nam_slot(&p)==0);
 }
 ''')

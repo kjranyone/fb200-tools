@@ -535,11 +535,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_nam = sub.add_parser("nam", help="runtime A2-Lite slots (nam-runtime firmware)")
     nam_sub = p_nam.add_subparsers(dest="nam_command", required=True)
+    from fb200.nam import SLOTS as _nam_slots
     for action in ("put", "list", "select", "delete"):
         p = nam_sub.add_parser(action)
         p.add_argument("--port", help="USB console port")
         if action != "list":
-            p.add_argument("slot", type=int, choices=range(0 if action == "select" else 1, 4))
+            p.add_argument("slot", type=int,
+                           choices=range(0 if action == "select" else 1, _nam_slots + 1))
         if action == "put":
             p.add_argument("model", help="48 kHz A2-Lite or packed A2 .nam")
             p.add_argument("--name")
