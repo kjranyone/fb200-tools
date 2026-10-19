@@ -280,7 +280,15 @@ persist/delete across high slots, region CRCs unchanged). The looper then
 returned to `nam-manager` with app control (`822d8ce`, style fix `db82d8f`;
 NAM validation [run 39189329465](https://github.com/kjranyone/fb200-tools/actions/runs/39189329465)
 and inherited CI run 39189318887 both success), flashed and physically
-verified. See [NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The
+verified. The stock cab/MOD/reverb chain followed (`1fe5ce7` + test fix
+`d5188eb`; NAM validation
+[run 39194683537](https://github.com/kjranyone/fb200-tools/actions/runs/39194683537)
+success, inherited CI run 39195558288 success), flashed and verified —
+including the first hardware CPU measurement: the restored chain costs
+~43k of the 400k cycles/block budget, but the NAM kernel measures 719k
+(1.8x the budget), so kernel optimisation is the next gate. A Windows HID
+report-ID fix makes the PC tools work on Windows. See
+[NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The
 pedal's slots were empty when the layout changed, so no migration was needed;
 older app versions cannot manage this firmware.
 
