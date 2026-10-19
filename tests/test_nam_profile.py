@@ -94,6 +94,7 @@ def test_runtime_image_and_flash_busy_safety(profile):
     assert ("reverb_process" in syms) == (profile == "nam-manager")
     assert ("cab_process" in syms) == (profile == "nam-manager")
     assert ("mod_process" in syms) == (profile == "nam-manager")
+    assert ("bt_audio_pull" in syms) == (profile == "nam-manager")
     assert ("tuner_poll" in syms) == (profile == "nam-manager")
     assert ("tuner_yin" in syms) == (profile == "nam-manager")
     assert ("looper_process" in syms) == (profile == "nam-manager")

@@ -453,6 +453,9 @@ class _ModelPageState extends State<ModelPage> {
                                     effectsAvailable:
                                         _client == null ||
                                         (_client!.capabilityFlags & 128) != 0,
+                                    btAudioAvailable:
+                                        _client == null ||
+                                        (_client!.capabilityFlags & 256) != 0,
                                   ),
                                 ),
                               );

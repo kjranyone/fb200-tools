@@ -13,12 +13,14 @@ class PedalPage extends StatefulWidget {
   final bool restrictedNam;
   final bool toolsAvailable;
   final bool effectsAvailable;
+  final bool btAudioAvailable;
   const PedalPage({
     super.key,
     required this.transport,
     required this.restrictedNam,
     required this.toolsAvailable,
     required this.effectsAvailable,
+    required this.btAudioAvailable,
   });
   @override
   State<PedalPage> createState() => _PedalPageState();
@@ -1005,7 +1007,7 @@ class _PedalPageState extends State<PedalPage> {
       SwitchListTile(
         title: const Text('Bluetoothオーディオ'),
         value: s[10] != 0,
-        onChanged: _busy || widget.restrictedNam
+        onChanged: _busy || (widget.restrictedNam && !widget.btAudioAvailable)
             ? null
             : (v) => _setting(10, v ? 1 : 0),
       ),

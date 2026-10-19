@@ -89,8 +89,11 @@ bit 7): the reverb's 46.9 kB state back in ITCM (link ends 0x1FAE8 of the
 0x20000 limit), 44.1 kHz cab/user IRs linearly resampled to 48 kHz in place
 descending (`cab_ir_441_to_48`, host-tested against an independent
 computation), and the app enables those controls plus the global-cab switch
-on bit 7. The base restricted runtime keeps its stubs; Bluetooth audio
-remains excluded. Physical measurement: the restored chain costs ~43k
+on bit 7. 0.7.1+11 mixes Bluetooth audio back in (capability bit 8): SAI3,
+the DMA ring and the AT-command on/off already ran in every profile — the
+module slaves to our I2S clock, so 48 kHz needs no resampling — so the
+restore is the pull into the output mix plus the app switch. The base
+restricted runtime keeps all of these stubs. Physical measurement: the restored chain costs ~43k
 cycles/block of the 400k budget (bypass total ~16%), while the NAM
 inference measured 719k cycles/block — 1.8x the whole budget. Optimised
 the same day to 262k (tap-major weight repack at init plus -O3,
@@ -98,6 +101,14 @@ bit-identical by a committed golden fixture): the everything-on total is
 321k = 80.4% of budget with `dma_errs=0`. Further kernel work (windowed
 form, CMSIS-DSP) is optional headroom, not a gate
 (see NAM_HARDWARE_2026-10-18.md).
+
+Bluetooth audio returned in the same session (0.7.1+11, capability bit 8):
+SAI3, its DMA ring and the AT-command on/off were already compiled and
+running in every profile — the module slaves to the MCU's I2S clock, so
+48 kHz needs no resampling — and the restore is the `bt_audio_pull` into
+the output mix (`nam-manager` only) plus the app's Bluetooth-audio switch
+on bit 8. No physical Bluetooth stream has been listened to yet; `btaudio`
+console stats and the mix path are the evidence so far.
 
 85 Flutter tests and analyze pass (WAV decode/resampler parity against shared
 Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name

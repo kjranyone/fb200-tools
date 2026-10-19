@@ -738,8 +738,11 @@ void engine_task(void)
     PROF(P_LOOP);
     float btl[ENGINE_FRAMES] = {0}, btr[ENGINE_FRAMES] = {0};
     size_t nbt = 0;
-#ifndef NAM_RUNTIME
-    nbt = bt_audio_pull(btl, btr, n);                 /* Bluetooth audio in */
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
+    /* Bluetooth audio in. SAI3 runs in every profile (the module slaves to
+     * our I2S clock, so 48 kHz needs no resampling); the base restricted
+     * runtime just never pulls the ring. */
+    nbt = bt_audio_pull(btl, btr, n);
 #endif
     for (size_t i = nbt; i < n; i++) btl[i] = btr[i] = 0.0f;
     for (size_t i = 0; i < n; i++) {

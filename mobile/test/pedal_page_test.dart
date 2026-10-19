@@ -22,6 +22,7 @@ void main() {
           restrictedNam: true,
           toolsAvailable: false,
           effectsAvailable: false,
+          btAudioAvailable: false,
         ),
       ),
     );
@@ -53,6 +54,7 @@ void main() {
           restrictedNam: false,
           toolsAvailable: true,
           effectsAvailable: true,
+          btAudioAvailable: true,
         ),
       ),
     );
@@ -82,6 +84,7 @@ void main() {
           restrictedNam: true,
           toolsAvailable: false,
           effectsAvailable: false,
+          btAudioAvailable: false,
         ),
       ),
     );
@@ -126,6 +129,7 @@ void main() {
           restrictedNam: false,
           toolsAvailable: true,
           effectsAvailable: true,
+          btAudioAvailable: true,
         ),
       ),
     );
@@ -166,6 +170,7 @@ void main() {
           restrictedNam: false,
           toolsAvailable: true,
           effectsAvailable: true,
+          btAudioAvailable: true,
         ),
       ),
     );
@@ -204,6 +209,7 @@ void main() {
           restrictedNam: false,
           toolsAvailable: true,
           effectsAvailable: true,
+          btAudioAvailable: true,
         ),
       ),
     );

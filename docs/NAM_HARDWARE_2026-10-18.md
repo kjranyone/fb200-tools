@@ -318,3 +318,19 @@ Measured with everything on (NAM + cab + MOD + reverb + tuner): total
 (`out/nam64-flash/full-chain-cpu.log`). NAM-only stage: 262k (65.5%).
 The looper adds ~1k only while looping. This closes the real-time gate
 for NAM-with-effects on this firmware; remaining margin ~20% per block.
+
+## Bluetooth audio restored (2026-10-19, same session)
+
+The last chain exclusion. SAI3, its DMA ring and the AT-command on/off
+were already compiled and running in every NAM profile — the BT201 slaves
+to the MCU-generated I2S clocks, so 48 kHz needs no resampling — the base
+restricted runtime simply never pulled the ring. The restore is the
+`bt_audio_pull` into the output mix (`nam-manager` only, capability bit 8,
+flags 511) plus the app's Bluetooth-audio switch on the same bit
+(0.7.1+11). Flashed: app slot 211008 bytes, CRC32 `3807fe9d`, `fw done ok`.
+Verified read-only on the pedal: `btaudio` reports the DMA ring filling
+(blocks 8844 after ~6 s, fill 64, peak 0 — no A2DP source was connected,
+so silence), the BT module is up (`bt: init step 4/4`, responding to AT),
+and the AT on/off hook was already wired. No physical Bluetooth stream has
+been listened to; that needs a phone pairing and remains a listening test,
+not a code gate.

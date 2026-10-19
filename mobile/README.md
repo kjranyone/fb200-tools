@@ -17,7 +17,8 @@ the demo without connecting a pedal.
   the same BLE connection with NAM. Stock firmware can use the editor without
   satisfying the NAM handshake. A base NAM runtime disables unsupported effects;
   `nam-manager` restores cab/MOD/reverb after the NAM stage (capability bit 7)
-  with 44.1 kHz IRs resampled to 48 kHz.
+  with 44.1 kHz IRs resampled to 48 kHz, and mixes Bluetooth audio in
+  (capability bit 8).
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
