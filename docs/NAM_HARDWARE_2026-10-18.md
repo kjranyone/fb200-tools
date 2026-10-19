@@ -208,3 +208,30 @@ toolchain emits `__proto_feed_veneer` and treats `tud_hid_set_report_cb` as
 an address-taken callback, dragging the XIP protocol tree into the hot set.
 `89e8af6` applies the existing runtime gates to the hot set as well (a
 checker fix; the flashed image is unaffected).
+
+## Physical model write test (2026-10-19, user authorized)
+
+The user authorized writing actual models. The committed synthetic fixture
+(not a musical model) was stored over the USB console with the PC tool and
+exercised end to end. The first run exposed a real bug: `namuse <slot>`
+succeeded but `namls` reported `nam active 0` — `preset_nam_slot()` still
+capped the binding slot at the old `slot <= 3`, so the edit-buffer reapply
+right after the selection reverted any slot above 3 to bypass.
+`9d8d6c4` caps it with `NAMSTORE_SLOTS` (host preset-tail test extended to
+4, 64 and 65). Fixed image re-flashed: app slot 208320 bytes, CRC32
+`f614c078`, SHA256
+`c2242630a6941e147a06463dc808d8d29926a61f763146104fc1c3c781f58151`,
+`fw done ok`.
+
+Verified on the pedal with the fixed image: `nam put` to slots 1, 42 and
+60 (names LowSlot/TrackTest/HighSlot appear in `namls`); select 60 →
+`nam use ok` and `nam active 60`; switch 1 → 60; selecting an empty slot
+fails and keeps the current model; the selection survives a `reset` of the
+*store* listing (models persist; the RAM selection itself resets to bypass
+on reboot as designed); `namuse 42` → `nam active 42` with the engine
+healthy (`dma_errs=0`, `resets=0`, no crash dump); bypass and `namdel`
+return the store to empty. Preset (`afc6cf54`), settings (`b43bc742`) and
+short-IR (`3dd74fc6`) CRCs were identical before and after every step. The
+preset-binding save path (`namuse <slot> save`) was not exercised on the
+pedal — a flash preset write — and remains covered by host tests. Logs:
+`out/nam64-flash/model-write-test.log` and the session transcript.
