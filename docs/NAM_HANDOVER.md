@@ -273,10 +273,16 @@ by applying the runtime gates to the hot set in `89e8af6`
 ([run 39137939017](https://github.com/kjranyone/fb200-tools/actions/runs/39137939017)
 success, all three jobs; inherited CI
 [run 39137929888](https://github.com/kjranyone/fb200-tools/actions/runs/39137929888)
-success — the checker fix does not change the flashed image). See
-[NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The pedal's
-slots were empty when the layout changed, so no migration was needed; older
-app versions cannot manage this firmware.
+success — the checker fix does not change the flashed image). A model-write
+session found `preset_nam_slot()` still capping bindings at three slots
+(fixed in `9d8d6c4`, re-flashed and physically verified: put/select/switch/
+persist/delete across high slots, region CRCs unchanged). The looper then
+returned to `nam-manager` with app control (`822d8ce`, style fix `db82d8f`;
+NAM validation [run 39189329465](https://github.com/kjranyone/fb200-tools/actions/runs/39189329465)
+and inherited CI run 39189318887 both success), flashed and physically
+verified. See [NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The
+pedal's slots were empty when the layout changed, so no migration was needed;
+older app versions cannot manage this firmware.
 
 The 1f91163 NAM validation passed all three jobs (host-and-arm incl. the new
 op 9 tests and both NAM profiles' strict RAM/flash-busy checks, android-and-web
