@@ -235,3 +235,31 @@ short-IR (`3dd74fc6`) CRCs were identical before and after every step. The
 preset-binding save path (`namuse <slot> save`) was not exercised on the
 pedal — a flash preset write — and remains covered by host tests. Logs:
 `out/nam64-flash/model-write-test.log` and the session transcript.
+
+## Looper restored and flashed (2026-10-19, `822d8ce`)
+
+The user asked for everything the session could deliver. The looper returned
+to `nam-manager` (audio path, panel D+C mode, the flash store at
+F:0x510000.. intact all along); the base restricted runtime keeps its stubs
+(`engine_loop` there answers code 2). New `D7`/`D8` protocol commands
+expose status (state/level/length/undo/busy), the seven actions, level and
+the two save slots; capability bit 6 advertises it. The app (0.6.0+9) gains
+a looper section on the tools tab and a module-order editor (`A0`). The
+fuzz harness needed the new engine symbols; the profile test asserts
+`looper_process`/`lsio_program` presence per profile, and the stock-mode
+hot-path negative control is now profile-dependent (nam-manager passes
+outright; the restricted runtime still fails on the missing lsio writers).
+
+Flashed (app slot only): 210368 bytes, CRC32 `0713e35a`, SHA256
+`c8b1c56ae21554575ef1a64f0799a79b33f4d62c2b9d627e5d0683da3f98281c`,
+`fw done ok`. Physical verification over the console: erase-ahead prepares
+flash (prep_ms grows to 108 s worth), `loop rec` records (len 4.2 s over
+3 s wall), `play` closes and cycles, `dub` layers with undo available,
+`undo`/redo works, `clear` empties; presets CRC `afc6cf54` unchanged and
+the stack stable throughout (log: `out/nam64-flash/looper-physical.log`).
+The first record attempt answered "not ready" while erase-ahead was still
+preparing — that is the documented retry path (code 3), not a defect.
+No loop save/load was written to flash. APK 0.6.0+9 built
+(`out/fb200-manager-0.6.0-debug.apk`, SHA256
+`1a1efffc3953313867a1f2f1ccdd16fa3cda012b9990b3a46fc1eb75ba5f6728`), not
+installed: the tablet is still disconnected.

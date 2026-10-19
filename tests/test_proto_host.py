@@ -772,9 +772,9 @@ def test_looper_app_commands(h):
     assert looper_action(h, 7) == 0 and looper_status(h)[0] == 1            # clear
     # Malformed requests answer 0xFE; unknown ops too.
     assert looper_action(h, 11) == 0xFE
-    assert looper_action(h, 8) == 0xFE                                       # level without a byte
-    assert looper_action(h, 9, 3) == 0xFE                                    # slot out of range
-    [(fn, payload)] = [(f, p) for _, f, p in h.send(0xD7, b"") if f == 0xD8]
+    assert looper_action(h, 8) == 0xFE  # level without a byte
+    assert looper_action(h, 9, 3) == 0xFE  # slot out of range
+    [(_, payload)] = [(f, p) for _, f, p in h.send(0xD7, b"") if f == 0xD8]
     assert payload == b"\xfe"
 
 
