@@ -90,12 +90,17 @@ class _KnobState extends State<Knob> {
 
   Drag? _startDrag(Offset position) {
     if (!widget.enabled) return null;
+    // MultiDrag's Drag.update only fills globalPosition (localPosition
+    // defaults to it), so convert via this render box for correct angles.
+    final box = context.findRenderObject() as RenderBox?;
+    Offset toLocal(Offset global) =>
+        box == null ? global : box.globalToLocal(global);
     _lastAngle = null;
     setState(() => _dragging = true);
     return _KnobDrag(
       onMove: (details) {
         if (!mounted) return;
-        _updateFromPosition(details.localPosition);
+        _updateFromPosition(toLocal(details.globalPosition));
       },
       onDone: () {
         if (!mounted) return;

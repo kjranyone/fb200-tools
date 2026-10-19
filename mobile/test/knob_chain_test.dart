@@ -34,11 +34,16 @@ void main() {
         ),
       ),
     );
-    final center = tester.getCenter(find.byType(Knob));
-    final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(20, 10));
-    await gesture.moveBy(const Offset(10, 18));
-    await gesture.moveBy(const Offset(-4, 20));
+    final knob = tester.getCenter(
+      find.descendant(
+        of: find.byType(Knob),
+        matching: find.byType(RawGestureDetector),
+      ),
+    );
+    // Clockwise arc: start at the 9 o'clock edge and drag up along the rim.
+    final gesture = await tester.startGesture(Offset(knob.dx - 20, knob.dy));
+    await gesture.moveBy(const Offset(5, -20));
+    await gesture.moveBy(const Offset(8, -15));
     await gesture.up();
     await tester.pumpAndSettle();
     expect(committed, greaterThan(50));
