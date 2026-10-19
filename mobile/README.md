@@ -22,6 +22,13 @@ the demo without connecting a pedal.
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
+- **Quad Cortex-style editor (0.8.0+12)**: the effects tab opens with the
+  signal chain as a horizontal strip of module blocks in the edit buffer's
+  own order (`0xBC` bytes; NAM firmware shows the running model on the amp
+  block); tap a block to edit it with rotary **knobs** — drag around the
+  knob, radius tapers the rate, release to commit, arc glow shows activity.
+  Every previous slider (drums, tuner, LED, looper level, effect params)
+  is now a knob. Dark near-black theme with mint accents throughout.
 - Looper control (`D7`, our extension) on `nam-manager` and the stock open
   profile: tap/record/play/dub/stop/undo/clear, level, two save slots and a
   live status line. The base restricted runtime and the vendor firmware have

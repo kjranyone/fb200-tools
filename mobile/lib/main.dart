@@ -25,18 +25,35 @@ class MainApp extends StatelessWidget {
     theme: ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: const Color(0xff0d151b),
+      scaffoldBackgroundColor: const Color(0xff090d10),
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(0xff74e5bd),
         brightness: Brightness.dark,
+        surface: const Color(0xff10171c),
       ),
       cardTheme: const CardThemeData(
-        color: Color(0xff17232c),
+        color: Color(0xff121c21),
         margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+          side: BorderSide(color: Color(0x1a74e5bd)),
+        ),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xff0b1114),
+        centerTitle: false,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: const Color(0xff0b1114),
+        indicatorColor: const Color(0x2674e5bd),
+        labelTextStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+        ),
       ),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
       ),
+      listTileTheme: const ListTileThemeData(iconColor: Color(0xff74e5bd)),
     ),
     home: const ModelPage(),
   );
@@ -456,6 +473,12 @@ class _ModelPageState extends State<ModelPage> {
                                     btAudioAvailable:
                                         _client == null ||
                                         (_client!.capabilityFlags & 256) != 0,
+                                    namModel: _state?.slots
+                                        .where(
+                                          (s) => s.number == _state!.selected,
+                                        )
+                                        .map((s) => s.name)
+                                        .firstOrNull,
                                   ),
                                 ),
                               );

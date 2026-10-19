@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'ir_wav.dart' show WavError, wavToIr;
 import 'pedal_client.dart';
 import 'protocol.dart';
+import 'widgets/chain_strip.dart';
+import 'widgets/knob.dart';
 
 class PedalPage extends StatefulWidget {
   final WireTransport transport;
@@ -14,6 +16,7 @@ class PedalPage extends StatefulWidget {
   final bool toolsAvailable;
   final bool effectsAvailable;
   final bool btAudioAvailable;
+  final String? namModel;
   const PedalPage({
     super.key,
     required this.transport,
@@ -21,6 +24,7 @@ class PedalPage extends StatefulWidget {
     required this.toolsAvailable,
     required this.effectsAvailable,
     required this.btAudioAvailable,
+    this.namModel,
   });
   @override
   State<PedalPage> createState() => _PedalPageState();
@@ -690,47 +694,137 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
-  List<Widget> _effects() => [
-    if (widget.restrictedNam && !widget.effectsAvailable)
-      const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブは本体の更新後に利用できます。'),
-    if (widget.restrictedNam && widget.effectsAvailable)
-      const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブはNAMの後段で動作します。'),
-    ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: const Text('モジュールの接続順'),
-      subtitle: const Text('エフェクトチェーンの並び順を変更します（保存で プリセットに反映）。'),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: _busy ? null : () => _guard(_editModuleOrder),
-    ),
-    for (final module in pedalModules.where(
-      (m) => m.command != 0x85 || widget.restrictedNam,
-    ))
-      ExpansionTile(
-        title: Text(module.name),
-        children: [
-          for (var i = 0; i < module.fields.length; i++)
-            if (module.fields[i].max > 0)
-              _value(
-                module.fields[i].label,
-                _pedal.edit!.word(module.offset + i * 2),
-                module.fields[i].min,
-                module.fields[i].max,
-                (value) => _run(
-                  'エフェクトを更新中',
-                  () => _pedal.module(module, [
-                    for (var k = 0; k < module.fields.length; k++)
-                      k == i ? value : _pedal.edit!.word(module.offset + k * 2),
-                  ]),
-                ),
-                disabled:
-                    (widget.restrictedNam &&
-                        !widget.effectsAvailable &&
-                        [0x83, 0x84, 0x86].contains(module.command)) ||
-                    (widget.restrictedNam && module.command == 0x82 && i != 0),
-              ),
-        ],
+  int? _selectedChain;
+
+  List<int> get _chainOrder {
+    final bytes = _pedal.edit!.bytes.sublist(0xbc, 0xc3);
+    final order = List<int>.of(bytes);
+    final valid =
+        order.length == 7 &&
+        Set.of(order).containsAll(const [0, 1, 2, 3, 4, 5, 6]);
+    return valid ? order : const [0, 1, 2, 3, 4, 5, 6];
+  }
+
+  Set<int> get _chainEnabled => {
+    for (var i = 0; i < pedalModules.length; i++)
+      if (_pedal.edit!.word(pedalModules[i].offset) != 0) i,
+  };
+
+  List<Widget> _effects() {
+    final order = _chainOrder;
+    // Selecting a chain block opens that module; the strip order maps to
+    // module indexes, delay hidden on stock firmware like the list was.
+    final visible = [
+      for (final m in order)
+        if (pedalModules[m].command != 0x85 || widget.restrictedNam) m,
+    ];
+    final sel = _selectedChain == null
+        ? null
+        : visible.length > (_selectedChain ?? 0)
+        ? order[_selectedChain!]
+        : null;
+    final module = sel == null ? null : pedalModules[sel];
+    return [
+      if (widget.restrictedNam && !widget.effectsAvailable)
+        const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブは本体の更新後に利用できます。'),
+      if (widget.restrictedNam && widget.effectsAvailable)
+        const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブはNAMの後段で動作します。'),
+      ChainStrip(
+        order: visible,
+        enabled: _chainEnabled,
+        selected: _selectedChain,
+        restrictedNam: widget.restrictedNam,
+        namModel: widget.namModel,
+        onTap: (i) =>
+            setState(() => _selectedChain = _selectedChain == i ? null : i),
       ),
-  ];
+      const SizedBox(height: 8),
+      if (module != null)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        module.name,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    if (module.fields.isNotEmpty && module.fields[0].max == 1)
+                      Switch(
+                        value: _pedal.edit!.word(module.offset) != 0,
+                        onChanged: _busy
+                            ? null
+                            : (v) => _run('エフェクトを更新中', () async {
+                                await _pedal.module(module, [
+                                  for (var k = 0; k < module.fields.length; k++)
+                                    k == 0
+                                        ? (v ? 1 : 0)
+                                        : _pedal.edit!.word(
+                                            module.offset + k * 2,
+                                          ),
+                                ]);
+                              }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 18,
+                  runSpacing: 18,
+                  children: [
+                    for (var i = 1; i < module.fields.length; i++)
+                      if (module.fields[i].max > 0)
+                        Knob(
+                          label: module.fields[i].label,
+                          value: _pedal.edit!
+                              .word(module.offset + i * 2)
+                              .clamp(
+                                module.fields[i].min,
+                                module.fields[i].max,
+                              ),
+                          min: module.fields[i].min,
+                          max: module.fields[i].max,
+                          enabled: !_moduleDisabled(module, i),
+                          onChanged: (value) => _run(
+                            'エフェクトを更新中',
+                            () => _pedal.module(module, [
+                              for (var k = 0; k < module.fields.length; k++)
+                                k == i
+                                    ? value
+                                    : _pedal.edit!.word(module.offset + k * 2),
+                            ]),
+                          ),
+                        ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('モジュールの接続順'),
+        subtitle: const Text('エフェクトチェーンの並び順を変更します（保存で プリセットに反映）。'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _busy ? null : () => _guard(_editModuleOrder),
+      ),
+    ];
+  }
+
+  bool _moduleDisabled(PedalModule module, int field) {
+    if ((widget.restrictedNam &&
+        !widget.effectsAvailable &&
+        [0x83, 0x84, 0x86].contains(module.command))) {
+      return true;
+    }
+    return widget.restrictedNam && module.command == 0x82 && field != 0;
+  }
+
   Widget _value(
     String label,
     int value,
@@ -739,27 +833,13 @@ class _PedalPageState extends State<PedalPage> {
     void Function(int) change, {
     bool disabled = false,
   }) {
-    var draft = value.clamp(min, max);
-    return StatefulBuilder(
-      builder: (context, setLocal) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          children: [
-            Text('$label  $draft'),
-            Slider(
-              value: draft.toDouble(),
-              min: min.toDouble(),
-              max: max.toDouble(),
-              divisions: max - min <= 100 ? max - min : null,
-              label: '$draft',
-              onChanged: _busy || disabled
-                  ? null
-                  : (v) => setLocal(() => draft = v.round()),
-              onChangeEnd: _busy || disabled ? null : (v) => change(v.round()),
-            ),
-          ],
-        ),
-      ),
+    return Knob(
+      label: label,
+      value: value.clamp(min, max),
+      min: min,
+      max: max,
+      enabled: !_busy && !disabled,
+      onChanged: change,
     );
   }
 
