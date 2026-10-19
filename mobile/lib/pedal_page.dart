@@ -44,6 +44,7 @@ class _PedalPageState extends State<PedalPage> {
         _bank = _pedal.selected ~/ 4;
         await _pedal.loadBank(_bank);
         _ready = true;
+        await _probeLooper();
       }),
     );
     _timer = Timer.periodic(const Duration(milliseconds: 200), (_) {
@@ -57,6 +58,12 @@ class _PedalPageState extends State<PedalPage> {
           widget.restrictedNam &&
           _pedal.settings![8] != 0) {
         _poll = _readPitch().whenComplete(() => _poll = null);
+      } else if (_ready &&
+          !_busy &&
+          _poll == null &&
+          _tab == 2 &&
+          _looperAvailable) {
+        _poll = _refreshLoop().whenComplete(() => _poll = null);
       }
     });
   }
@@ -398,6 +405,130 @@ class _PedalPageState extends State<PedalPage> {
     final s = Uint8List.fromList(_pedal.settings!)..[index] = value;
     await _pedal.setSettings(s);
   });
+
+  // ---- looper ----
+
+  bool _looperAvailable = false;
+  LooperStatus? _loop;
+
+  Future<void> _editModuleOrder() async {
+    final bytes = _pedal.edit!.bytes.sublist(0xbc, 0xc3);
+    var order = List<int>.of(bytes);
+    var valid =
+        order.length == 7 &&
+        Set.of(order).containsAll(const [0, 1, 2, 3, 4, 5, 6]);
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('モジュールの接続順'),
+          content: valid
+              ? SizedBox(
+                  width: 320,
+                  child: ListBody(
+                    children: [
+                      for (var i = 0; i < order.length; i++)
+                        Row(
+                          children: [
+                            Expanded(child: Text(moduleName(order[i]))),
+                            IconButton(
+                              icon: const Icon(Icons.arrow_upward),
+                              onPressed: i == 0
+                                  ? null
+                                  : () => setDialog(() {
+                                      final t = order[i - 1];
+                                      order[i - 1] = order[i];
+                                      order[i] = t;
+                                    }),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.arrow_downward),
+                              onPressed: i == order.length - 1
+                                  ? null
+                                  : () => setDialog(() {
+                                      final t = order[i + 1];
+                                      order[i + 1] = order[i];
+                                      order[i] = t;
+                                    }),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                )
+              : const Text('このプリセットのモジュール順序が未知の値です。変更できません。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('キャンセル'),
+            ),
+            if (valid)
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('変更'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (changed != true || !mounted) return;
+    await _run('モジュール順序を変更中', () async {
+      await _pedal.setModuleOrder(order);
+      await _pedal.refresh();
+    });
+  }
+
+  static String moduleName(int index) {
+    const names = [
+      'コンプレッサー',
+      'ノイズゲート',
+      'アンプ',
+      'キャビネット / IR',
+      'モジュレーション',
+      'ディレイ',
+      'リバーブ',
+    ];
+    return names[index.clamp(0, 6)];
+  }
+
+  Future<void> _probeLooper() async {
+    try {
+      final s = await _pedal.looperStatus();
+      if (mounted) setState(() => _looperAvailable = s.available);
+      if (s.available) setState(() => _loop = s);
+    } catch (_) {
+      if (mounted) setState(() => _looperAvailable = false);
+    }
+  }
+
+  Future<void> _refreshLoop() async {
+    try {
+      final s = await _pedal.looperStatus();
+      if (mounted && s.available) setState(() => _loop = s);
+    } catch (_) {
+      /* polling */
+    }
+  }
+
+  Future<void> _looperAct(int op, String label) => _run(label, () async {
+    final code = await _pedal.looperAction(op);
+    if (code == 1) throw DeviceError('今は実行できません（録音中の確定待ちなど）。');
+    if (code == 2) throw DeviceError('ルーパー用のフラッシュ領域がありません。');
+    if (code == 3) throw DeviceError('フラッシュの準備中です。少し待って再試行してください。');
+    await _refreshLoop();
+  });
+
+  Future<void> _looperClear() async {
+    if (!await _confirm(
+      'ループを消去します。取り消せません。',
+      title: 'ループを消去',
+      accept: '消去する',
+    )) {
+      return;
+    }
+    await _looperAct(7, 'ループを消去中');
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -558,6 +689,13 @@ class _PedalPageState extends State<PedalPage> {
   List<Widget> _effects() => [
     if (widget.restrictedNam)
       const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブは本体の更新後に利用できます。'),
+    ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('モジュールの接続順'),
+      subtitle: const Text('エフェクトチェーンの並び順を変更します（保存で プリセットに反映）。'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: _busy ? null : () => _guard(_editModuleOrder),
+    ),
     for (final module in pedalModules.where(
       (m) => m.command != 0x85 || widget.restrictedNam,
     ))
@@ -697,6 +835,94 @@ class _PedalPageState extends State<PedalPage> {
         Text(_pitch, style: Theme.of(context).textTheme.headlineMedium)
       else
         const Text('音程は本体のディスプレイで確認できます。'),
+      const SizedBox(height: 28),
+      Text('ルーパー', style: Theme.of(context).textTheme.titleLarge),
+      if (!_looperAvailable)
+        const Text('ルーパーはこのファームウェアでは利用できません。')
+      else ...[
+        Text(() {
+          final s = _loop;
+          if (s == null) return '状態を確認中…';
+          final undo = s.undo == 0
+              ? ''
+              : s.undo == 1
+              ? '・元に戻す可'
+              : '・やり直し可';
+          return '${PedalClient.looperStates[s.state.clamp(0, 5)]}'
+              '  長さ ${s.lenS}秒 / 最大 ${s.maxS}秒$undo'
+              '${s.storeBusy ? '・保存中' : ''}${s.writing ? '・書込中' : ''}';
+        }()),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _looperAct(1, 'ルーパーを操作中'),
+              child: const Text('タップ'),
+            ),
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _looperAct(2, 'ルーパーを操作中'),
+              child: const Text('録音'),
+            ),
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _looperAct(3, 'ルーパーを操作中'),
+              child: const Text('再生'),
+            ),
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _looperAct(4, 'ルーパーを操作中'),
+              child: const Text('ダビング'),
+            ),
+            TextButton(
+              onPressed: _busy ? null : () => _looperAct(5, 'ルーパーを操作中'),
+              child: const Text('停止'),
+            ),
+            TextButton(
+              onPressed: _busy ? null : () => _looperAct(6, 'ルーパーを操作中'),
+              child: const Text('元に戻す'),
+            ),
+            TextButton(
+              onPressed: _busy ? null : _looperClear,
+              child: const Text('消去'),
+            ),
+          ],
+        ),
+        _value(
+          'ループの音量',
+          _loop?.level ?? 100,
+          0,
+          100,
+          (v) => _run('ループ音量を変更中', () async {
+            await _pedal.looperLevel(v);
+            await _refreshLoop();
+          }),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (var slot = 1; slot <= 2; slot++) ...[
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run('ループ$slotを保存中', () => _pedal.looperSave(slot)),
+                child: Text('スロット$slotへ保存'),
+              ),
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run('ループ$slotを読込中', () async {
+                        await _pedal.looperLoad(slot);
+                        await _refreshLoop();
+                      }),
+                child: Text('スロット$slotから読込'),
+              ),
+            ],
+          ],
+        ),
+        const Text(
+          '保存は2スロット。電源を切ってもループが残ります。本体のフットスイッチ（D+C長押しでルーパーモード）でも操作できます。',
+        ),
+      ],
     ];
   }
 

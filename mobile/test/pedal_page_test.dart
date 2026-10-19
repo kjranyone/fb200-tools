@@ -187,4 +187,39 @@ void main() {
     await tester.runAsync(h.close);
     expect(h.writes, 0);
   });
+
+  testWidgets('tools tab shows the looper when the probe answers', (
+    tester,
+  ) async {
+    final h = PedalHarness();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PedalPage(
+          transport: h.wire,
+          restrictedNam: false,
+          toolsAvailable: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ツール'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('ルーパー'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    // The looper controls sit below the heading; scroll a bit further.
+    await tester.scrollUntilVisible(
+      find.text('タップ'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('ルーパー'), findsOneWidget);
+    expect(find.text('タップ'), findsOneWidget);
+    expect(h.writes, 0);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(h.close);
+  });
 }

@@ -28,6 +28,10 @@ class PedalHarness {
   List<int>? irAssembled;
   List<int>? irUploadNameBytes;
   List<int>? btName;
+  List<int>? moduleOrder;
+  int looperState = 1; // LOOPER_EMPTY
+  int looperLevelValue = 100;
+  final looperLog = <String>[];
   PedalHarness() {
     irUsed[2] = true; // IR3 in use
     irNames[2].setRange(0, 6, 'Cab IR'.codeUnits);
@@ -114,6 +118,28 @@ class PedalHarness {
         case 0xb3:
           btName = f.payload;
         // No reply: the stock protocol has none for B3.
+        case 0xa0:
+          moduleOrder = f.payload;
+        case 0xd7:
+          final op = f.payload[0];
+          if (op == 0) {
+            final out = <int>[
+              looperState,
+              looperLevelValue,
+              1, 0, // len s
+              0, 0, // pos s
+              133, 0, // max s
+              7, 0, // prep s
+              0,
+              0,
+              0,
+            ];
+            reply(0xd8, out);
+          } else {
+            looperLog.add('op$op');
+            reply(0xd8, [looperState == 0 ? (op == 7 ? 2 : 1) : 0]);
+          }
+        // No reply: the stock protocol has none for B3/A0.
       }
     };
   }
@@ -309,4 +335,42 @@ void main() {
       await h.close();
     },
   );
+  test('module order validates a permutation and sends seven bytes', () async {
+    final h = PedalHarness();
+    await h.pedal.setModuleOrder([6, 5, 4, 3, 2, 1, 0]);
+    expect(h.moduleOrder, [6, 5, 4, 3, 2, 1, 0]);
+    for (final bad in [
+      [0, 1, 2, 3, 4, 5], // too short
+      [0, 1, 2, 3, 4, 5, 7], // out of range
+      [0, 0, 1, 2, 3, 4, 5], // duplicate
+    ]) {
+      await expectLater(
+        h.pedal.setModuleOrder(bad),
+        throwsA(isA<DeviceError>()),
+      );
+    }
+    expect(h.moduleOrder, [6, 5, 4, 3, 2, 1, 0]);
+    await h.close();
+  });
+  test('looper status parses and actions map codes to errors', () async {
+    final h = PedalHarness();
+    final s = await h.pedal.looperStatus();
+    expect(s.state, 1);
+    expect(s.level, 100);
+    expect(s.lenS, 1);
+    expect(s.maxS, 133);
+    expect(s.undo, 0);
+    expect(s.available, isTrue);
+    expect(await h.pedal.looperAction(1), 0);
+    expect(await h.pedal.looperAction(7), 0);
+    expect(h.looperLog, ['op1', 'op7']);
+    await expectLater(h.pedal.looperLevel(37), completes);
+    await expectLater(h.pedal.looperSave(1), completes);
+    await expectLater(h.pedal.looperLoad(2), completes);
+    expect(h.looperLog, ['op1', 'op7', 'op8', 'op9', 'op10']);
+    h.looperState = 0; // OFF: codes surface as device errors
+    expect(await h.pedal.looperAction(7), 2);
+    await expectLater(h.pedal.looperLevel(5), throwsA(isA<DeviceError>()));
+    await h.close();
+  });
 }

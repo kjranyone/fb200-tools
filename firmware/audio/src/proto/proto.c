@@ -11,6 +11,7 @@
 #include "proto/proto.h"
 #include "preset/preset.h"
 #include "ui/ui.h"
+#include "audio/engine.h"
 
 /* ---- CRC16 (table CRC-CCITT, init 0, final XOR 0xFFFF) ---------------- */
 static uint16_t crc_table[256];
@@ -65,6 +66,52 @@ static proto_send_fn senders[2];
 static uint8_t notify_mask = PROTO_BLE;
 static uint8_t tx[PROTO_MAX_FRAME];
 static uint8_t pl[PROTO_MAX_LEN];
+
+/* 0xD7 looper control (our extension; docs/PROTOCOL.md). Reply payload:
+ *   op 0 status -> [state][level][len_s u16][pos_s u16][max_s u16][prep_s u16]
+ *                  [undo][store busy][writing] (13 bytes)
+ *   op 1..7 action (tap/rec/play/dub/stop/undo/clear) -> [code] (0 ok,
+ *     1 not now, 2 no flash area, 3 not ready)
+ *   op 8 [level 0..100] -> [0]
+ *   op 9/10 [slot 1..2] save/load -> [0 ok][1 failed]
+ * Anything malformed answers [0xFE]. No looper in this build: state OFF
+ * (engine_loop_info reads a zeroed state) and every action answers 2. */
+static uint32_t looper_reply(const uint8_t *p, uint32_t n, uint8_t *out)
+{
+    if (n < 1u) { out[0] = 0xFE; return 1u; }
+    if (p[0] == 0u) {
+        looper_info_t i;
+        engine_loop_info(&i);
+        unsigned level = i.level > 100u ? 100u : i.level;
+        out[0] = (uint8_t)i.state;
+        out[1] = (uint8_t)level;
+        out[2] = (uint8_t)(i.len_ms / 1000u); out[3] = (uint8_t)((i.len_ms / 1000u) >> 8);
+        out[4] = (uint8_t)(i.pos_ms / 1000u); out[5] = (uint8_t)((i.pos_ms / 1000u) >> 8);
+        out[6] = (uint8_t)(i.max_ms / 1000u); out[7] = (uint8_t)((i.max_ms / 1000u) >> 8);
+        out[8] = (uint8_t)(i.prep_ms / 1000u); out[9] = (uint8_t)((i.prep_ms / 1000u) >> 8);
+        out[10] = (uint8_t)i.undo;
+        out[11] = (uint8_t)(engine_loop_busy() != 0);
+        out[12] = (uint8_t)(engine_loop_writing() != 0);
+        return 13u;
+    }
+    if (p[0] >= 1u && p[0] <= 7u) {
+        int r = engine_loop((int)p[0] - 1);
+        out[0] = r == 0 ? 0u : r == -1 ? 1u : r == -2 ? 2u : 3u;
+        return 1u;
+    }
+    if (p[0] == 8u && n >= 2u) {
+        engine_loop_level(p[1] > 100u ? 100u : p[1]);
+        out[0] = 0;
+        return 1u;
+    }
+    if ((p[0] == 9u || p[0] == 10u) && n >= 2u && p[1] >= 1u && p[1] <= 2u) {
+        int r = p[0] == 9u ? engine_loop_save(p[1]) : engine_loop_load(p[1]);
+        out[0] = r == 0 ? 0u : 1u;
+        return 1u;
+    }
+    out[0] = 0xFE;
+    return 1u;
+}
 
 static uint8_t aux[30];
 static uint8_t ir_names[IR_SLOTS * IR_NAME_LEN];
@@ -633,6 +680,12 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
     case 0xD6:
         if (n >= 1) d6_value = p[0];
         break;
+    case 0xD7:                        /* looper (ours): status/actions/level/save/load */
+    {
+        uint32_t k = looper_reply(p, n, pl);
+        send(src, 0xD8, pl, k);
+        break;
+    }
     case 0xD9:
         send(src, 0xDA, aux, sizeof aux);
         break;

@@ -216,6 +216,8 @@ int engine_loop(int a)
 }
 int engine_loop_save(unsigned n) { return looper_save(&loop, n); }
 int engine_loop_load(unsigned n) { return looper_load(&loop, n); }
+int engine_loop_busy(void) { return 0; }
+int engine_loop_writing(void) { return looper_writing(&loop); }
 void engine_loop_poll(void)
 {
     float l[DSP_BLOCK] = {0}, r[DSP_BLOCK] = {0};

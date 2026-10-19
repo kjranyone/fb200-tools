@@ -110,6 +110,11 @@ void engine_loop_poll(void)
 }
 void engine_loop_info(looper_info_t *out) { looper_info(&loop, out); }
 void engine_loop_arm(void) { ls_arm(sim_loop_store()); }
+int engine_loop_save(unsigned n) { return looper_save(&loop, n); }
+int engine_loop_load(unsigned n) { return looper_load(&loop, n); }
+void engine_loop_level(unsigned pct) { looper_set_level(&loop, pct); }
+int engine_loop_busy(void) { return ls_busy(sim_loop_store()); }
+int engine_loop_writing(void) { return looper_writing(&loop); }
 
 /* ---- preset layer over the fake flash ---- */
 void preset_read(unsigned index, preset_t *out)

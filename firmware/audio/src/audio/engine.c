@@ -230,12 +230,17 @@ COLD void engine_init(void)
 #endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_init(&s_eq, (float)AUDIO_FS);
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     /* the looper's area: the JEDEC ID sizes it (8 MB: F:0x510000..0x800000);
      * nothing in it is read before the looper writes it */
     (void)flash_probe();
     lsio_init(flash_suspend_ok());
     (void)ls_init(&s_ls, &s_lio, s_lmap[0], s_lmap[1], FLASH_LOOP_BASE, flash_loop_end());
     looper_init(&s_loop, &s_lio, &s_ls);
+#else
+    memset(&s_loop, 0, sizeof s_loop);   /* no looper: engine_loop_info stays sane */
+    memset(&s_ls, 0, sizeof s_ls);
+#endif
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
@@ -421,8 +426,8 @@ COLD void engine_apply_settings(const settings_t *s)
     s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
 }
 
-#ifdef NAM_RUNTIME
-COLD int engine_loop(int action) { (void)action; return -1; }
+#if defined(NAM_RUNTIME) && !defined(NAM_UTILITIES)
+COLD int engine_loop(int action) { (void)action; return -2; }
 COLD int engine_loop_save(unsigned n) { (void)n; return -1; }
 COLD int engine_loop_load(unsigned n) { (void)n; return -1; }
 COLD void engine_loop_poll(void) {}
@@ -710,7 +715,7 @@ void engine_task(void)
         }
     }
     /* the looper: records the chain (mono), plays into both sides */
-#ifndef NAM_RUNTIME
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     looper_process(&s_loop, xl, xr, (unsigned)n);
 #endif
     PROF(P_LOOP);

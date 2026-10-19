@@ -66,13 +66,13 @@ new id (and refresh) to retry.
 
 Flags: bit 0 framed upload, bit 1 select/preset save, bit 2 delete,
 bit 3 drum machine + live tuner (`PROFILE=nam-manager`), bit 4 rename (op 9,
-both profiles), bit 5 paged list (op 1 takes a start byte; 64 slots). Op 8 is
-read-only;
+both profiles), bit 5 paged list (op 1 takes a start byte; 64 slots), bit 6
+looper (`PROFILE=nam-manager`; `D7` control). Op 8 is read-only;
 the existing B8/BA commands still control tuner/rhythm. Its floats are little
 endian IEEE-754; invalid/silent readings must not be displayed as a pitch.
-The base restricted `nam-runtime` reports flags 7|16|32 = 55 (plus bit 3 for
-`nam-manager`: 63) and 64 slots; the earlier three-slot firmware reported 7
-(15 with utilities) without bits 4/5.
+The base restricted `nam-runtime` reports flags 7|16|32 = 55 (plus bits 3 and
+6 for `nam-manager`: 127) and 64 slots; the earlier three-slot firmware
+reported 7 (15 with utilities) without bits 4/5.
 Status:
 0 success, 1 invalid args/incomplete packet, 2 staging busy, 3 CRC/model validation
 failure, 4 storage/selection failure or insufficient capacity, 5 unsupported

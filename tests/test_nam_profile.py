@@ -93,8 +93,16 @@ def test_runtime_image_and_flash_busy_safety(profile):
     assert "s_rev" not in syms  # restricted runtime profile frees reverb ITCM
     assert ("tuner_poll" in syms) == (profile == "nam-manager")
     assert ("tuner_yin" in syms) == (profile == "nam-manager")
+    assert ("looper_process" in syms) == (profile == "nam-manager")
+    assert ("lsio_program" in syms) == (profile == "nam-manager")
     assert "nam_a2_process" in syms and syms["nam_a2_process"][0] < 0x20000
     # This profile must not silently weaken the stock image's required checks.
+    # nam-manager restores the looper, so its writers exist and the stock-mode
+    # checker passes outright; the restricted runtime removes them and the
+    # checker must still say so.
     result = subprocess.run(["python3", str(ROOT / "firmware/tools/hot_path.py"),
                              str(elf)], check=False, capture_output=True)
-    assert result.returncode != 0 and b"lsio_" in result.stdout
+    if profile == "nam-manager":
+        assert result.returncode == 0, result.stdout
+    else:
+        assert result.returncode != 0 and b"lsio_" in result.stdout

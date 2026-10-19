@@ -259,8 +259,8 @@ def check(elf: Path, cross: str = "arm-none-eabi-", *, nam_runtime: bool = False
     bad = _chains(img, reachable(img, roots, skip), roots, lambda f: f not in ITCM, "")
     wroots = flash_write_roots(img)
     for n in FLASH_WRITE_ENTRY:
-        if nam_runtime and n.startswith("lsio_"):
-            continue  # looper disabled; its writer is removed by the linker
+        if n not in img.addr and nam_runtime and n.startswith("lsio_"):
+            continue  # looper disabled in this image; its writer is removed by the linker
         if n not in img.addr:
             return bad + [f"flash-write entry {n} not found in {elf}"]
     bad += gate_bad
@@ -285,8 +285,8 @@ def check_flash_busy(img: Image, *, nam_runtime: bool = False) -> list[str]:
     bad += [f"flash busy: {', '.join(FLASH_BUSY_ENTRY)} does not reach {n}"
             for n in PUMP_MUST_REACH if n not in names]
     for caller in PUMP_CALLERS:
-        if nam_runtime and caller.startswith("lsio_"):
-            continue
+        if nam_runtime and caller.startswith("lsio_") and caller not in img.addr:
+            continue  # looper disabled in this image
         a = img.addr.get(caller)
         reach = {img.name(f) for f in reachable(img, {a: "caller"})} if a is not None else set()
         if not set(FLASH_BUSY_ENTRY) & reach:

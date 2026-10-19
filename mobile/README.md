@@ -19,6 +19,13 @@ the demo without connecting a pedal.
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
+- Looper control (`D7`, our extension) on `nam-manager` and the stock open
+  profile: tap/record/play/dub/stop/undo/clear, level, two save slots and a
+  live status line. The base restricted runtime and the vendor firmware have
+  no looper; the tab states that. The pedal's own looper mode (hold D+C) keeps
+  working alongside the app.
+- Module order (`A0`): reorder the effect chain of the edit buffer from the
+  effects tab; a permutation picker with per-row arrows.
 - User IR management: list the nine slots, import a WAV (converted locally to
   the official 1024-sample 44.1 kHz float32 format, byte-identical to the PC
   tool's conversion), rename and delete. IR storage is shared with the stock

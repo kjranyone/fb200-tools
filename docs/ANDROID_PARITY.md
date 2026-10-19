@@ -81,6 +81,12 @@ longer compile the long IR store (the stock open profile keeps it); the list
 RPC is paginated (op 1 start byte, capability bit 5). Older app builds cannot
 manage the new firmware and vice versa.
 
+0.6.0+9 restores the looper to `nam-manager` (the audio path, the panel's
+D+C looper mode and our new `D7` app control; capability bit 6) and adds the
+module-order editor (`A0`) to the app. The base restricted `nam-runtime`
+keeps its looper stubs; cab/MOD/reverb and Bluetooth audio remain excluded
+pending rate/CPU validation.
+
 85 Flutter tests and analyze pass (WAV decode/resampler parity against shared
 Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name
 validation, model-rename gating, IR tab and dialog flows). ARM build, RAM

@@ -16,6 +16,42 @@ class IrSlotInfo {
   const IrSlotInfo(this.slot, this.used, this.name);
 }
 
+/// The 0xD7 looper status reply.
+class LooperStatus {
+  final int state; // 0..5, dsp/looper.h LOOPER_*
+  final int level; // 0..100
+  final int lenS, posS, maxS, prepS; // seconds
+  final int undo; // 0 none, 1 undo, 2 redo
+  final bool storeBusy, writing;
+  const LooperStatus(
+    this.state,
+    this.level,
+    this.lenS,
+    this.posS,
+    this.maxS,
+    this.prepS,
+    this.undo,
+    this.storeBusy,
+    this.writing,
+  );
+  factory LooperStatus.parse(Uint8List p) {
+    if (p.length != 13) throw DeviceError('ルーパーの状態が不正です。');
+    return LooperStatus(
+      p[0],
+      p[1],
+      read16(p, 2),
+      read16(p, 4),
+      read16(p, 6),
+      read16(p, 8),
+      p[10],
+      p[11] != 0,
+      p[12] != 0,
+    );
+  }
+
+  bool get available => state != 0;
+}
+
 class PedalPreset {
   final Uint8List bytes;
   PedalPreset(List<int> bytes) : bytes = Uint8List.fromList(bytes) {
@@ -394,6 +430,73 @@ class PedalClient extends ChangeNotifier {
       ...codes,
       ...List.filled(20 - codes.length, 0),
     ]);
+  }
+
+  /// Reorder the effect chain of the edit buffer (`A0`, 7 bytes, no reply):
+  /// a permutation of module indexes 0..6.
+  Future<void> setModuleOrder(List<int> order) async {
+    if (order.length != 7 ||
+        !Set.of(order).containsAll(const [0, 1, 2, 3, 4, 5, 6])) {
+      throw DeviceError('モジュール順序が不正です。');
+    }
+    await transport.sendCommand(0xa0, order);
+  }
+
+  // ---- looper (our 0xD7 extension) ----
+
+  static const looperStates = ['利用不可', '空', '録音', '再生', 'ダビング', '停止'];
+
+  Future<LooperStatus> looperStatus() async {
+    final f = await transport.exchange(
+      0xd7,
+      [0],
+      0xd8,
+      accept: (f) => f.payload.length == 13,
+    );
+    return LooperStatus.parse(f.payload);
+  }
+
+  /// op 1..7: tap, rec, play, dub, stop, undo, clear. Returns the code
+  /// (0 ok, 1 not now, 2 no flash area, 3 not ready).
+  Future<int> looperAction(int op) async {
+    if (op < 1 || op > 7) throw ArgumentError.value(op, 'looper op');
+    final f = await transport.exchange(
+      0xd7,
+      [op],
+      0xd8,
+      accept: (f) => f.payload.length == 1,
+    );
+    return f.payload[0];
+  }
+
+  Future<void> looperLevel(int pct) async {
+    final f = await transport.exchange(
+      0xd7,
+      [8, pct.clamp(0, 100)],
+      0xd8,
+      accept: (f) => f.payload.length == 1,
+    );
+    if (f.payload[0] != 0) throw DeviceError('ルーパーの音量を変更できませんでした。');
+  }
+
+  Future<void> looperSave(int slot) async {
+    final f = await transport.exchange(
+      0xd7,
+      [9, slot.clamp(1, 2)],
+      0xd8,
+      accept: (f) => f.payload.length == 1,
+    );
+    if (f.payload[0] != 0) throw DeviceError('ループを保存できませんでした。');
+  }
+
+  Future<void> looperLoad(int slot) async {
+    final f = await transport.exchange(
+      0xd7,
+      [10, slot.clamp(1, 2)],
+      0xd8,
+      accept: (f) => f.payload.length == 1,
+    );
+    if (f.payload[0] != 0) throw DeviceError('ループを読み込めませんでした。');
   }
 
   Future<Uint8List> backup() async {
