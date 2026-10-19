@@ -22,6 +22,14 @@ the demo without connecting a pedal.
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
+- **NAM tone controls (0.9.0+13)**: under NAM the amp block's knob fields
+  become the NAM stage's sound controls — GAIN is the pre-model drive
+  (0.5..2x, 50 = unity; pushing harder gets more breakup), BASS/MID/
+  TREBLE a 3-band EQ after the model (±12 dB shelves at 100 Hz/3.2 kHz,
+  peaking mid sweeping 200 Hz..2 kHz), VOLUME the stage output level
+  (0..2x). Neutral values: 50/50/50/any/50/100. The knobs live in the
+  preset's own amp-block bytes, so they save/restore with each preset
+  exactly like the stock amp's did.
 - **Quad Cortex-style editor (0.8.0+12)**: the effects tab opens with the
   signal chain as a horizontal strip of module blocks in the edit buffer's
   own order (`0xBC` bytes; NAM firmware shows the running model on the amp
@@ -60,9 +68,11 @@ the demo without connecting a pedal.
 - Save selection into the currently loaded pedal preset.
 - **接続せず試す** simulates slots. It creates no BLE connection or audio process.
 
-NAM weights are not exposed as Gain/Bass/Middle/Treble knobs. Captures have fixed
-trained behavior; choose another capture for another amp setting. Separate
-pre/post gain or EQ could be added later but are not included in this version.
+NAM weights are not exposed as Gain/Bass/Middle/Treble knobs on the model
+itself. Captures have fixed trained behavior; choose another capture for
+another amp character. **0.9.0+13 adds NAM tone controls**: the preset's own
+amp-block fields become the NAM stage's drive/EQ/level (see above), giving
+per-preset sound shaping around the fixed capture.
 
 ## Build / verify
 

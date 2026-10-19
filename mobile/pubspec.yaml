@@ -1,7 +1,7 @@
 name: fb200_nam
 description: "FB200 A2-Lite model manager with explicit offline demo and BLE transfer."
 publish_to: 'none'
-version: 0.8.0+12
+version: 0.9.0+13
 
 environment:
   sdk: ^3.13.5

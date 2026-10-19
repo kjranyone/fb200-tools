@@ -728,7 +728,9 @@ class _PedalPageState extends State<PedalPage> {
       if (widget.restrictedNam && !widget.effectsAvailable)
         const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブは本体の更新後に利用できます。'),
       if (widget.restrictedNam && widget.effectsAvailable)
-        const Text('現在のNAM版ではアンプをNAMに置き換えています。キャビネット・MOD・リバーブはNAMの後段で動作します。'),
+        const Text(
+          'NAMモデルがアンプを置き換えています。アンプブロックのノブはNAMの音質制御（ドライブ/EQ/レベル）として動作します。',
+        ),
       ChainStrip(
         order: visible,
         enabled: _chainEnabled,
@@ -822,7 +824,9 @@ class _PedalPageState extends State<PedalPage> {
         [0x83, 0x84, 0x86].contains(module.command))) {
       return true;
     }
-    return widget.restrictedNam && module.command == 0x82 && field != 0;
+    // Under NAM the amp block's fields drive the NAM tone controls; only
+    // the model field (index 1) has no NAM meaning.
+    return widget.restrictedNam && module.command == 0x82 && field == 1;
   }
 
   Widget _value(

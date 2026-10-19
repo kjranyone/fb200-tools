@@ -180,7 +180,7 @@ endif
 # user's stock .mr (src/dsp/stock_data.h, `fb200 update stock`).
 STOCK_OBJS  := $(patsubst %,$(TARGET)/%.o,src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/drums.c)
 # The NAM kernel is the audio path's biggest cost; -O3 measured faster than
-# the default -O2 (see docs/NAM_HARDWARE_2026-10-18.md).
+# -O2 (262k vs 321k cycles/block; see docs/NAM_HARDWARE_2026-10-18.md).
 $(TARGET)/src/dsp/nam_a2.c.o: CFLAGS += -O3
 # The stock amp's filter chains are ill-conditioned: parity needs the stock's
 # separate multiply and add, no FMA contraction (tests/test_stock_dsp_parity.py).

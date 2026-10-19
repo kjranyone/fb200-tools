@@ -162,6 +162,10 @@ static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (u
 #include "dsp/nam_a2.h"
 #include "namstore/namstore.h"
 static nam_a2_t s_nam __attribute__((section(".dtcm_lo")));
+/* NAM drive/level: two floats from the amp block's GAIN/VOLUME fields.
+ * The biquad EQ lives in the existing 5-band EQ (eq_process, after cab). */
+static float s_nam_drive __attribute__((section(".ocram"))) = 1.0f;
+static float s_nam_level __attribute__((section(".ocram"))) = 1.0f;
 static unsigned s_nam_slot;
 static bool s_nam_loading;
 static float s_nam_fade;
@@ -230,6 +234,10 @@ COLD void engine_init(void)
 #endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_init(&s_eq, (float)AUDIO_FS);
+#ifdef NAM_RUNTIME
+    s_nam_drive = 1.0f;
+    s_nam_level = 1.0f;
+#endif
 #if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     /* the looper's area: the JEDEC ID sizes it (8 MB: F:0x510000..0x800000);
      * nothing in it is read before the looper writes it */
@@ -384,6 +392,20 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     if (model != s_amp_model && amp_set_model(&s_amp, model) == 0) s_amp_model = model;
     amp_set_params(&s_amp, pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
                    pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
+#ifdef NAM_RUNTIME
+    /* Under NAM the amp block's GAIN/VOLUME fields become the NAM stage's
+     * drive/level. GAIN: 0..100 -> 0.5..2x (50 = unity). VOLUME: 0..100
+     * -> 0..2x (100 = unity). The tone fields (BASS/MID/TREBLE) feed the
+     * existing 5-band EQ via the console `eq` command. */
+    {
+        unsigned g = pget(p, P_AMP_GAIN), v = pget(p, P_AMP_VOLUME);
+        if (g > 100) g = 100;
+        if (v > 100) v = 100;
+        extern float dsp_exp2f(float);
+        s_nam_drive = dsp_exp2f(((int)g - 50) * 0.02f);
+        s_nam_level = v * (2.0f / 100.0f);
+    }
+#endif
     int cab = pget(p, P_CAB_TYPE);
     if (cab != s_cab_type && !s_ir_busy) {   /* busy: engine_ir_release reapplies */
         s_cab_bypass = false;
@@ -683,6 +705,8 @@ void engine_task(void)
 #ifdef NAM_RUNTIME
     if (s_nam_loading) memset(x, 0, sizeof x);
     else if (s_nam_slot && s_amp_en) {
+        if (s_nam_drive != 1.0f)
+            for (size_t i = 0; i < n; i++) x[i] *= s_nam_drive;
         if (nam_a2_process(&s_nam, x, (unsigned)n)) {
             s_nam_slot = 0;
             memset(x, 0, sizeof x);
@@ -690,7 +714,7 @@ void engine_task(void)
         }
         for (unsigned i=0; i<n; i++) {
             if (s_nam_fade < 1.0f) s_nam_fade += 1.0f/256.0f;
-            x[i] *= s_nam_fade;
+            x[i] *= s_nam_fade * s_nam_level;
         }
     }
 #else
