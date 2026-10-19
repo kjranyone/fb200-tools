@@ -91,10 +91,13 @@ descending (`cab_ir_441_to_48`, host-tested against an independent
 computation), and the app enables those controls plus the global-cab switch
 on bit 7. The base restricted runtime keeps its stubs; Bluetooth audio
 remains excluded. Physical measurement: the restored chain costs ~43k
-cycles/block of the 400k budget (bypass total ~16%), but the NAM inference
-itself measured 719k cycles/block — 1.8x the whole budget — so
-NAM-with-effects is not yet glitch-free real time; kernel optimisation is
-the next gate (see NAM_HARDWARE_2026-10-18.md).
+cycles/block of the 400k budget (bypass total ~16%), while the NAM
+inference measured 719k cycles/block — 1.8x the whole budget. Optimised
+the same day to 262k (tap-major weight repack at init plus -O3,
+bit-identical by a committed golden fixture): the everything-on total is
+321k = 80.4% of budget with `dma_errs=0`. Further kernel work (windowed
+form, CMSIS-DSP) is optional headroom, not a gate
+(see NAM_HARDWARE_2026-10-18.md).
 
 85 Flutter tests and analyze pass (WAV decode/resampler parity against shared
 Python fixtures, IR list/rename/delete/upload harness, Bluetooth-name

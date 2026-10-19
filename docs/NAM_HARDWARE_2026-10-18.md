@@ -292,3 +292,29 @@ x receptive field 6,347) needs optimisation (CMSIS-DSP/windowed form)
 before NAM-with-effects can run glitch-free. NAM bypass + the full stock
 chain, drums, tuner and looper are comfortably real-time. Logs:
 `out/nam64-flash/nam-cpu-isolated.log`, `chain-cpu-clean.log`.
+
+## Kernel optimisation: 719k -> 262k cycles/block (2026-10-19, same day)
+
+The scalar kernel's inner loop read strided stream-order weights with a
+runtime kernel size — a multiply per weight index and no sequential
+access. Two changes, both bit-identical by construction (every
+accumulator keeps the reference addend order; `tests/nam_a2_golden.f32`
+compares against the pre-optimisation kernel output byte-for-byte, and
+the Core oracle/double-reference tests still pass):
+
+1. **Tap-major weight repack at init** (`nam_a2.c repack()`): per layer,
+   conv `[out][in][tap]` -> `[tap][out*3+in]`, head `[channel][tap]` ->
+   `[channel per tap]`; the history (76 kB) serves as scratch. The nine
+   products of each tap then read sequential weights. 719k -> 321k
+   cycles/block.
+2. **-O3 for nam_a2.c** (per-object Makefile rule): the scheduler loads
+   history values ahead of the FMA chains. 321k -> 262k.
+
+A hand-unrolled K=6 macro measured SLOWER (339k) than the runtime-K loop
+and was reverted — the comment in nam_a2.c records the dead end.
+
+Measured with everything on (NAM + cab + MOD + reverb + tuner): total
+**321,444 cycles/block = 80.4% of the 400k budget**, `dma_errs=0`
+(`out/nam64-flash/full-chain-cpu.log`). NAM-only stage: 262k (65.5%).
+The looper adds ~1k only while looping. This closes the real-time gate
+for NAM-with-effects on this firmware; remaining margin ~20% per block.

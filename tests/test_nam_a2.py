@@ -124,6 +124,18 @@ def test_numerical_reference_and_chunking(kernel):
     assert ct.sizeof(state) == 83976
 
 
+def test_kernel_matches_golden_fixture(kernel):
+    """The tap-major repack must be bit-identical to the stream-order kernel
+    that produced tests/nam_a2_golden.f32 (same addend order per
+    accumulator; see nam_a2.c)."""
+    weights = fixed.validate(model())
+    audio = np.random.default_rng(17).uniform(-0.8, 0.8, 7001).astype(np.float32)
+    audio[:4] = [1, 0, -1, 0]
+    golden = np.fromfile(ROOT / "tests" / "nam_a2_golden.f32", dtype=np.float32)
+    result = render(kernel, init(kernel, weights), audio, (7, 32, 3, 1, 29))
+    np.testing.assert_array_equal(result, golden)
+
+
 def test_invalid_input_and_model(kernel):
     weights = (ct.c_float * 1871)(*fixed.validate(model()))
     state = init(kernel, weights)
