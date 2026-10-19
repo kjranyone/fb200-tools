@@ -75,6 +75,7 @@ class _ModelPageState extends State<ModelPage> {
   ImportedTone? _toneSource;
   final _slotSources = <int, ImportedTone>{};
   bool _demo = false, _busy = false, _cancel = false, _committing = false;
+  bool _showModels = false;
   String _deviceName = '', _operation = '', _message = '', _error = '';
   double? _progress;
 
@@ -367,9 +368,15 @@ class _ModelPageState extends State<ModelPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('FB200 NAM'),
+      title: Text(_showModels ? 'モデル管理' : 'FB200'),
+      leading: _showModels
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => setState(() => _showModels = false),
+            )
+          : null,
       actions: [
-        if (_client != null || _wire != null) ...[
+        if (!_showModels && (_client != null || _wire != null)) ...[
           IconButton(
             tooltip: '一覧を更新',
             onPressed: _busy ? null : () => _run('一覧を更新中', _refresh),
@@ -381,6 +388,12 @@ class _ModelPageState extends State<ModelPage> {
             icon: const Icon(Icons.link_off),
           ),
         ],
+        if (_showModels)
+          IconButton(
+            tooltip: '一覧を更新',
+            onPressed: _busy ? null : () => _run('一覧を更新中', _refresh),
+            icon: const Icon(Icons.refresh),
+          ),
       ],
     ),
     body: SafeArea(
@@ -389,180 +402,179 @@ class _ModelPageState extends State<ModelPage> {
           constraints: const BoxConstraints(maxWidth: 680),
           child: ListView(
             padding: const EdgeInsets.all(20),
-            children: [
-              Text(
-                'いつもの音を、\nペダルへ。',
-                style: Theme.of(context).textTheme.headlineLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text('A2-Lite モデルマネージャー  /  48 kHz'),
-              const SizedBox(height: 24),
-              _modelCard(),
-              const SizedBox(height: 20),
-              if (_client == null && _wire == null)
-                _card([
-                  const Icon(Icons.bluetooth, size: 36),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'FB200を接続',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '本体の操作とモデル管理を利用できます。接続中は公式アプリを閉じてください。NAM転送には対応ファームウェアが必要です。',
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: !_busy && _connector.supported ? _connect : null,
-                    icon: const Icon(Icons.bluetooth_searching),
-                    label: const Text('Bluetoothで接続'),
-                  ),
-                  if (!_connector.supported)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text('Bluetooth接続はAndroid / iOSアプリで利用できます。'),
-                    ),
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _run(
-                            'デモを準備中',
-                            () => _attach(DemoTransport(), 'Demo FB200', true),
-                          ),
-                    child: const Text('接続せず試す'),
-                  ),
-                ])
-              else ...[
-                _card([
-                  Row(
-                    children: [
-                      Icon(
-                        _demo
-                            ? Icons.science_outlined
-                            : Icons.bluetooth_connected,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _deviceName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      Chip(label: Text(_demo ? 'DEMO' : '接続中')),
-                    ],
-                  ),
-                  if (_demo) const Text('画面の体験用です。本体への転送・音声処理は行いません。'),
-                  if (_wire != null)
-                    FilledButton.icon(
-                      onPressed: _busy
-                          ? null
-                          : () => _run('本体を操作中', () async {
-                              await Navigator.push<void>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PedalPage(
-                                    transport: _wire!,
-                                    restrictedNam: _client != null,
-                                    toolsAvailable:
-                                        _client == null ||
-                                        (_client!.capabilityFlags & 8) != 0,
-                                    effectsAvailable:
-                                        _client == null ||
-                                        (_client!.capabilityFlags & 128) != 0,
-                                    btAudioAvailable:
-                                        _client == null ||
-                                        (_client!.capabilityFlags & 256) != 0,
-                                    namModel: _state?.slots
-                                        .where(
-                                          (s) => s.number == _state!.selected,
-                                        )
-                                        .map((s) => s.name)
-                                        .firstOrNull,
-                                  ),
-                                ),
-                              );
-                              await _wire?.waitIdle();
-                              if (_client != null && mounted) await _refresh();
-                            }),
-                      icon: const Icon(Icons.dashboard_customize_outlined),
-                      label: const Text('プリセット・エフェクト・ツール'),
-                    ),
-                ]),
-                if (_state != null) ...[
-                  const SizedBox(height: 24),
-                  Text(
-                    '本体のモデル（${_state!.slots.where((s) => s.name != null).length}/${_client!.slotCount} 使用中）',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  for (final slot in _state!.slots) ...[
-                    _slotCard(slot),
-                    const SizedBox(height: 10),
-                  ],
-                  TextButton(
-                    onPressed: _busy || _state!.selected == 0
-                        ? null
-                        : () => _select(0),
-                    child: const Text('NAMをバイパス'),
-                  ),
-                  FilledButton.tonal(
-                    onPressed: _busy
-                        ? null
-                        : () => _select(_state!.selected, save: true),
-                    child: const Text('現在の選択をプリセットに保存'),
-                  ),
-                ],
-              ],
-              if (_busy) ...[
-                const SizedBox(height: 20),
-                LinearProgressIndicator(value: _progress),
-                const SizedBox(height: 8),
-                Text(_operation),
-                if (_progress != null)
-                  Row(
-                    children: [
-                      Text('${(_progress! * 100).round()}%'),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: _committing || _cancel
-                            ? null
-                            : () => setState(() => _cancel = true),
-                        child: const Text('転送を中止'),
-                      ),
-                    ],
-                  ),
-              ],
-              if (_message.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    _message,
-                    style: const TextStyle(color: Color(0xff74e5bd)),
-                  ),
-                ),
-              if (_error.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    _error,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 28),
-              Text(
-                '試作版・Bluetooth転送は実機検証中\nNAM内部のGAINやトーンは変更できません。音色の異なるキャプチャを切り替えて使用します。',
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: Colors.white54),
-              ),
-            ],
+            children: _showModels ? _modelsView() : _hubView(),
           ),
         ),
       ),
     ),
   );
+
+  // ---- hub (main page): connection + entry points ----
+
+  List<Widget> _hubView() => [
+    const SizedBox(height: 24),
+    if (_client == null && _wire == null) ...[
+      _card([
+        const Icon(Icons.bluetooth, size: 36),
+        const SizedBox(height: 12),
+        const Text(
+          'FB200を接続',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text('本体の操作とモデル管理を利用できます。接続中は公式アプリを閉じてください。'),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: !_busy && _connector.supported ? _connect : null,
+          icon: const Icon(Icons.bluetooth_searching),
+          label: const Text('Bluetoothで接続'),
+        ),
+        if (!_connector.supported)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('Bluetooth接続はAndroid / iOSアプリで利用できます。'),
+          ),
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => _run(
+                  'デモを準備中',
+                  () => _attach(DemoTransport(), 'Demo FB200', true),
+                ),
+          child: const Text('接続せず試す'),
+        ),
+      ]),
+    ] else ...[
+      _card([
+        Row(
+          children: [
+            Icon(_demo ? Icons.science_outlined : Icons.bluetooth_connected),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _deviceName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            Chip(label: Text(_demo ? 'DEMO' : '接続中')),
+          ],
+        ),
+        if (_demo) const Text('画面の体験用です。本体への転送・音声処理は行いません。'),
+        const SizedBox(height: 12),
+        if (_wire != null)
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _run('コントローラーを開いています', () async {
+                    await Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PedalPage(
+                          transport: _wire!,
+                          restrictedNam: _client != null,
+                          toolsAvailable:
+                              _client == null ||
+                              (_client!.capabilityFlags & 8) != 0,
+                          effectsAvailable:
+                              _client == null ||
+                              (_client!.capabilityFlags & 128) != 0,
+                          btAudioAvailable:
+                              _client == null ||
+                              (_client!.capabilityFlags & 256) != 0,
+                          namModel: _state?.slots
+                              .where((s) => s.number == _state!.selected)
+                              .map((s) => s.name)
+                              .firstOrNull,
+                        ),
+                      ),
+                    );
+                    await _wire?.waitIdle();
+                    if (_client != null && mounted) await _refresh();
+                  }),
+            icon: const Icon(Icons.tune),
+            label: const Text('コントローラー'),
+          ),
+        if (_client != null)
+          OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _run('モデル一覧を読み込み中', () async {
+                    await _refresh();
+                    if (mounted) setState(() => _showModels = true);
+                  }),
+            icon: const Icon(Icons.library_music),
+            label: Text(
+              'モデル管理（${_state?.slots.where((s) => s.name != null).length ?? 0}/${_client!.slotCount}）',
+            ),
+          ),
+      ]),
+    ],
+    ..._statusArea(),
+  ];
+
+  // ---- model management view: import + slots ----
+
+  List<Widget> _modelsView() => [
+    _modelCard(),
+    const SizedBox(height: 20),
+    if (_state != null) ...[
+      Text(
+        '本体のモデル（${_state!.slots.where((s) => s.name != null).length}/${_client!.slotCount} 使用中）',
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+      const SizedBox(height: 12),
+      for (final slot in _state!.slots) ...[
+        _slotCard(slot),
+        const SizedBox(height: 10),
+      ],
+      TextButton(
+        onPressed: _busy || _state!.selected == 0 ? null : () => _select(0),
+        child: const Text('NAMをバイパス'),
+      ),
+      FilledButton.tonal(
+        onPressed: _busy ? null : () => _select(_state!.selected, save: true),
+        child: const Text('現在の選択をプリセットに保存'),
+      ),
+    ],
+    ..._statusArea(),
+  ];
+
+  // ---- shared status / progress / messages ----
+
+  List<Widget> _statusArea() => [
+    if (_busy) ...[
+      const SizedBox(height: 20),
+      LinearProgressIndicator(value: _progress),
+      const SizedBox(height: 8),
+      Text(_operation),
+      if (_progress != null)
+        Row(
+          children: [
+            Text('${(_progress! * 100).round()}%'),
+            const Spacer(),
+            TextButton(
+              onPressed: _committing || _cancel
+                  ? null
+                  : () => setState(() => _cancel = true),
+              child: const Text('転送を中止'),
+            ),
+          ],
+        ),
+    ],
+    if (_message.isNotEmpty)
+      Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Text(_message, style: const TextStyle(color: Color(0xff74e5bd))),
+      ),
+    if (_error.isNotEmpty)
+      Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Text(
+          _error,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ),
+  ];
 
   Widget _modelCard() => _card([
     const Text(

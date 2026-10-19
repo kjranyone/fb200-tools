@@ -17,6 +17,12 @@ void main() {
       await tester.tap(find.text('接続せず試す'));
       await tester.pumpAndSettle();
       expect(find.text('DEMO'), findsOneWidget);
+      // Demo has no BLE wire, so no controller button; model management
+      // is the demo's entry into the slot cards.
+      expect(find.textContaining('モデル管理'), findsOneWidget);
+      // Enter model management to see the slot cards.
+      await tester.tap(find.textContaining('モデル管理'));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('Demo Crunch'), 250);
       final card = find.ancestor(
         of: find.text('Demo Crunch'),
@@ -40,6 +46,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('現在のプリセットに選択を保存しました。'), 200);
       expect(find.text('現在のプリセットに選択を保存しました。'), findsOneWidget);
+      // Back to hub, disconnect.
+      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('接続を終了'));
       await tester.pumpAndSettle();
       expect(find.text('接続せず試す'), findsOneWidget);
@@ -56,6 +65,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const MainApp());
     await tester.tap(find.text('接続せず試す'));
+    await tester.pumpAndSettle();
+    // Enter model management to see the slot cards.
+    await tester.tap(find.textContaining('モデル管理'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Demo Clean'), 250);
     // Bring the card up from the bottom edge so its menu fits on screen.

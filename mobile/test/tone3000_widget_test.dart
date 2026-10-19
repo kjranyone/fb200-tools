@@ -152,13 +152,17 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: ModelPage(pickTone: (_) async => imported)),
       );
+      // Connect to demo, then enter model management to reach the slots.
+      await tester.scrollUntilVisible(find.text('接続せず試す'), 180);
+      await tester.tap(find.text('接続せず試す'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('モデル管理'));
+      await tester.pumpAndSettle();
+      // The TONE3000 import is available inside model management.
       await tester.ensureVisible(find.text('TONE3000から探す'));
       await tester.tap(find.text('TONE3000から探す'));
       await tester.pumpAndSettle();
       expect(find.text('Bass Full Rig'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('接続せず試す'), 180);
-      await tester.tap(find.text('接続せず試す'));
-      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('03'), 180);
       final card = find.ancestor(
         of: find.text('03'),
