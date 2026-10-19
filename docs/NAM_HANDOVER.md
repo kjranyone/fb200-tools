@@ -285,9 +285,13 @@ verified. The stock cab/MOD/reverb chain followed (`1fe5ce7` + test fix
 [run 39194683537](https://github.com/kjranyone/fb200-tools/actions/runs/39194683537)
 success, inherited CI run 39195558288 success), flashed and verified —
 including the first hardware CPU measurement: the restored chain costs
-~43k of the 400k cycles/block budget, but the NAM kernel measures 719k
-(1.8x the budget), so kernel optimisation is the next gate. A Windows HID
-report-ID fix makes the PC tools work on Windows. See
+~43k of the 400k cycles/block budget, but the NAM kernel measured 719k
+(1.8x the budget). The kernel was then optimised (`81f3c61`: tap-major
+weight repack + -O3, bit-identical via a committed golden fixture; NAM
+validation [run 39200249372](https://github.com/kjranyone/fb200-tools/actions/runs/39200249372)
+and inherited CI run 39200238631 both success) to 262k, bringing the
+everything-on total to 321k = 80.4% of budget, flashed and verified. A
+Windows HID report-ID fix makes the PC tools work on Windows. See
 [NAM_HARDWARE_2026-10-18.md](NAM_HARDWARE_2026-10-18.md). The
 pedal's slots were empty when the layout changed, so no migration was needed;
 older app versions cannot manage this firmware.
