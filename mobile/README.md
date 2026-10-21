@@ -9,6 +9,11 @@ the demo without connecting a pedal.
 
 ## Features
 
+**0.10.3+17** makes the performance editor a fixed surface: model and NAM
+controls remain visible on tablets, and constrained screens use explicit
+parameter pages. Preset save remains fixed; routing metadata and help move
+to the editor menu. See [fixed-panel verification](../docs/design/NAM_STUDIO_FIXED_PANEL.md).
+
 Latest: **0.10.2+16** adds the imagegen-prototyped model card, searchable
 64-slot selection/transfer sheets, visible transfer progress and audition action,
 vertical knob drag with fine adjustment, and numeric validation/reset.

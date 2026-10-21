@@ -15,6 +15,7 @@ import 'protocol.dart';
 import 'widgets/chain_strip.dart';
 import 'widgets/knob.dart';
 import 'widgets/nam_model_picker.dart';
+import 'widgets/parameter_deck.dart';
 
 class PedalPage extends StatefulWidget {
   final WireTransport transport;
@@ -652,8 +653,21 @@ class _PedalPageState extends State<PedalPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('FB200 STUDIO'),
+      title: _ready && MediaQuery.sizeOf(context).height < 480
+          ? Text(
+              '${PedalClient.address(_pedal.selected)}  ${_pedal.edit!.name}',
+              overflow: TextOverflow.ellipsis,
+            )
+          : const Text('FB200 STUDIO'),
       actions: [
+        if (_ready && MediaQuery.sizeOf(context).height < 480)
+          IconButton(
+            tooltip: '保存',
+            onPressed: _busy
+                ? null
+                : () => _save(_pedal.selected, _pedal.edit!),
+            icon: const Icon(Icons.save_outlined, color: StudioTheme.nam),
+          ),
         if (_ready)
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -684,7 +698,7 @@ class _PedalPageState extends State<PedalPage> {
       child: Material(
         color: StudioTheme.background,
         child: SizedBox(
-          height: 68,
+          height: MediaQuery.sizeOf(context).height < 480 ? 50 : 68,
           child: LayoutBuilder(
             builder: (context, box) {
               const labels = [
@@ -780,12 +794,15 @@ class _PedalPageState extends State<PedalPage> {
                       child: Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: wide ? 24 : 16,
-                          vertical: 8,
+                          vertical: MediaQuery.sizeOf(context).height < 480
+                              ? 4
+                              : 8,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _presetHeader(),
+                            if (MediaQuery.sizeOf(context).height >= 480)
+                              _presetHeader(),
                             if (_error.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -798,17 +815,19 @@ class _PedalPageState extends State<PedalPage> {
                                   ),
                                 ),
                               ),
-                            const SizedBox(height: 12),
+                            if (MediaQuery.sizeOf(context).height >= 480)
+                              const SizedBox(height: 12),
                             Expanded(
-                              child: _fillOrScroll(switch (_tab) {
-                                0 => _banks(),
-                                1 => _effects(),
-                                2 => _drums(),
-                                3 => _tunerTab(),
-                                4 => _looper(),
-                                5 => _ir(),
-                                _ => _settings(),
-                              }),
+                              child: _tab == 1
+                                  ? _effects()
+                                  : _fillOrScroll(switch (_tab) {
+                                      0 => _banks(),
+                                      2 => _drums(),
+                                      3 => _tunerTab(),
+                                      4 => _looper(),
+                                      5 => _ir(),
+                                      _ => _settings(),
+                                    }),
                             ),
                           ],
                         ),
@@ -966,10 +985,8 @@ class _PedalPageState extends State<PedalPage> {
     ],
   );
 
-  /// Fixed-layout tab body: fills the screen when the content fits (the
-  /// normal case on portrait tablets), and only scrolls when the screen is
-  /// too short (landscape phones). Knobs still win the gesture arena over
-  /// this scroll view, so drag control keeps working either way.
+  /// Management and tool pages may scroll. The performance editor uses a
+  /// separately bounded layout and never passes through this wrapper.
   Widget _fillOrScroll(Widget child) => LayoutBuilder(
     builder: (context, constraints) => SingleChildScrollView(
       child: ConstrainedBox(
@@ -1122,6 +1139,56 @@ class _PedalPageState extends State<PedalPage> {
       if (_pedal.edit!.word(pedalModules[i].offset) != 0) i,
   };
 
+  void _editorAction(int action) {
+    if (action >= 0) {
+      setState(() => _selectedModule = action);
+    } else if (action == -1) {
+      _guard(_editModuleOrder);
+    } else {
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('音作りの操作'),
+          content: const Text(
+            '上下ドラッグで値を調整し、横に指を離すと微調整できます。数値タップで直接入力・標準値への復帰ができます。\n\nモデル選択は試聴です。「保存」でモデルとパラメーターをプリセットに記録します。音声の接続順は固定です。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('閉じる'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _editorMenu(List<int> modules, {bool includeModules = false}) =>
+      PopupMenuButton<int>(
+        enabled: !_busy,
+        tooltip: includeModules ? 'エフェクトを選ぶ' : 'エディターの詳細',
+        icon: Icon(
+          includeModules ? Icons.account_tree_outlined : Icons.more_horiz,
+        ),
+        onSelected: _editorAction,
+        itemBuilder: (_) => [
+          if (includeModules) ...[
+            for (final m in modules)
+              PopupMenuItem(
+                value: m,
+                child: Text(
+                  widget.restrictedNam && m == 2
+                      ? 'NAM A2 LITE'
+                      : pedalModules[m].name,
+                ),
+              ),
+            const PopupMenuDivider(),
+          ],
+          const PopupMenuItem(value: -2, child: Text('操作方法')),
+          const PopupMenuItem(value: -1, child: Text('モジュールの接続順')),
+        ],
+      );
+
   Widget _effects() {
     final visible = [
       for (final m in _chainOrder)
@@ -1145,158 +1212,122 @@ class _PedalPageState extends State<PedalPage> {
                 [3, 4, 6].contains(m)) ||
             (widget.restrictedNam && m == 2 && _namState?.selected == 0),
       );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              children: [
-                const Row(
-                  children: [
-                    Text(
-                      'SIGNAL CHAIN',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.4,
-                      ),
-                    ),
-                    Spacer(),
-                    Text(
-                      'FIXED',
-                      style: TextStyle(fontSize: 10, color: Color(0xff8390a1)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                ChainStrip(
-                  order: visible,
-                  enabled: enabled,
-                  unavailable: widget.restrictedNam && !widget.effectsAvailable
-                      ? const {3, 4, 6}
-                      : const {},
-                  selected: visible.indexOf(selected),
-                  restrictedNam: widget.restrictedNam,
-                  namModel: _namState == null ? widget.namModel : _activeModel,
-                  onTap: (i) => setState(() => _selectedModule = visible[i]),
-                ),
-              ],
+    final fields = isNam
+        ? const [2, 3, 4, 6, 5, 7]
+        : [
+            for (var i = 1; i < module.fields.length; i++)
+              if (module.fields[i].max > 0) i,
+          ];
+    final toggle = Switch(
+      value: enabled.contains(selected),
+      activeTrackColor: accent,
+      onChanged: _busy || unsupported || (isNam && _namState?.selected == 0)
+          ? null
+          : (v) => _run(
+              'エフェクトを更新中',
+              () => _pedal.module(module, [
+                for (var k = 0; k < module.fields.length; k++)
+                  k == 0
+                      ? (v ? 1 : 0)
+                      : _pedal.edit!.word(module.offset + k * 2),
+              ]),
             ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(9),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: .12),
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      child: Icon(
-                        ChainStrip.icons[selected],
-                        size: 23,
-                        color: accent,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isNam ? 'NAM A2 LITE' : module.name,
-                            style: const TextStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w800,
+    );
+    return LayoutBuilder(
+      builder: (context, box) {
+        final tight = box.maxHeight < 440;
+        final veryShort = box.maxHeight < 270;
+        return Column(
+          key: const ValueKey('fixed-editor'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!tight) ...[
+              ChainStrip(
+                order: visible,
+                enabled: enabled,
+                compact: true,
+                unavailable: widget.restrictedNam && !widget.effectsAvailable
+                    ? const {3, 4, 6}
+                    : const {},
+                selected: visible.indexOf(selected),
+                restrictedNam: widget.restrictedNam,
+                namModel: _namState == null ? widget.namModel : _activeModel,
+                onTap: (i) => setState(() => _selectedModule = visible[i]),
+              ),
+              const SizedBox(height: 10),
+            ],
+            Expanded(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (veryShort && isNam)
+                        Row(
+                          children: [
+                            _editorMenu(visible, includeModules: true),
+                            Expanded(child: _namModelSelector()),
+                            toggle,
+                          ],
+                        )
+                      else ...[
+                        Row(
+                          children: [
+                            if (tight)
+                              _editorMenu(visible, includeModules: true)
+                            else
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Icon(
+                                  ChainStrip.icons[selected],
+                                  color: accent,
+                                  size: 23,
+                                ),
+                              ),
+                            Expanded(
+                              child: Text(
+                                isNam ? 'NAM A2 LITE' : module.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: accent,
+                                ),
+                              ),
                             ),
-                          ),
-                          Text(
-                            isNam
-                                ? 'NEURAL AMP MODELER · 48 kHz'
-                                : ChainStrip.names[selected],
-                            style: TextStyle(
-                              fontSize: 9,
-                              letterSpacing: 1,
-                              color: accent,
-                            ),
-                          ),
+                            if (!tight) _editorMenu(visible),
+                            toggle,
+                          ],
+                        ),
+                        if (isNam) ...[
+                          const SizedBox(height: 6),
+                          _namModelSelector(),
                         ],
-                      ),
-                    ),
-                    Switch(
-                      value: enabled.contains(selected),
-                      activeTrackColor: accent,
-                      onChanged:
-                          _busy ||
-                              unsupported ||
-                              (isNam && _namState?.selected == 0)
-                          ? null
-                          : (v) => _run(
-                              'エフェクトを更新中',
-                              () => _pedal.module(module, [
-                                for (var k = 0; k < module.fields.length; k++)
-                                  k == 0
-                                      ? (v ? 1 : 0)
-                                      : _pedal.edit!.word(
-                                          module.offset + k * 2,
-                                        ),
-                              ]),
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (isNam) ...[
-                  _namModelSelector(),
-                  const SizedBox(height: 16),
-                  Text(
-                    widget.namClient?.canToneEq == true
-                        ? 'PRE · DRIVE  →  A2 LITE  →  POST · EQ / LEVEL'
-                        : 'このファームウェアではGAIN / VOLUMEのみ対応',
-                    style: TextStyle(
-                      fontSize: 9,
-                      letterSpacing: .5,
-                      color: Color(0xff9daaba),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                if (unsupported)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 12),
-                    child: Text('このファームウェアでは、このエフェクトの音声処理は利用できません。'),
-                  ),
-                LayoutBuilder(
-                  builder: (context, box) {
-                    final columns = box.maxWidth >= 650
-                        ? 6
-                        : box.maxWidth >= 280
-                        ? 3
-                        : 2;
-                    final width = (box.maxWidth - (columns - 1) * 12) / columns;
-                    final fields = isNam
-                        ? const [2, 3, 4, 6, 5, 7]
-                        : [
-                            for (var i = 1; i < module.fields.length; i++)
-                              if (module.fields[i].max > 0) i,
-                          ];
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 16,
-                      children: [
-                        for (final i in fields)
-                          SizedBox(
-                            width: width,
-                            child: Knob(
+                      ],
+                      if (isNam &&
+                          widget.namClient?.canToneEq != true &&
+                          !veryShort)
+                        const Text(
+                          'このファームウェアではGAIN / VOLUMEのみ対応',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      if (unsupported)
+                        const Text(
+                          'このファームウェアでは、このエフェクトの音声処理は利用できません。',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      const SizedBox(height: 6),
+                      Expanded(
+                        child: ParameterDeck(
+                          key: ValueKey('parameters-$selected'),
+                          count: fields.length,
+                          itemBuilder: (index, size) {
+                            final i = fields[index];
+                            return Knob(
                               key: ValueKey('module-$selected-field-$i'),
                               defaultValue: isNam ? 50 : null,
                               label: isNam
@@ -1310,7 +1341,7 @@ class _PedalPageState extends State<PedalPage> {
                                   ),
                               min: module.fields[i].min,
                               max: module.fields[i].max,
-                              size: width.clamp(56.0, 86.0),
+                              size: size,
                               accent: accent,
                               format: isNam
                                   ? (v) => NamTone.format(i, v)
@@ -1327,32 +1358,18 @@ class _PedalPageState extends State<PedalPage> {
                                           ),
                                 ]),
                               ),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const Divider(height: 20),
-                Text(
-                  isNam
-                      ? '上下で調整・横に離すと微調整 · 数値タップで入力 · 保存で確定'
-                      : '上下ドラッグで調整 · 数値タップで直接入力',
-                  style: TextStyle(fontSize: 10, color: Color(0xff8390a1)),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          title: const Text('モジュールの接続順'),
-          subtitle: const Text('プリセットの順序データを編集（音声経路は固定）。'),
-          trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: _busy ? null : () => _guard(_editModuleOrder),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -1394,8 +1411,11 @@ class _PedalPageState extends State<PedalPage> {
     final state = _namState;
     final selected = state?.selected ?? 0;
     final name = _activeModel;
+    final empty = state != null && !state.slots.any((s) => s.name != null);
     final status = state == null
         ? 'モデルの状態を取得できません'
+        : empty
+        ? '保存済みモデルなし · 追加・転送へ'
         : selected == 0
         ? 'NAMをバイパス中'
         : name == null
@@ -1403,97 +1423,68 @@ class _PedalPageState extends State<PedalPage> {
         : _pedal.edit!.word(0x2c) == 0
         ? 'ロード済み · NAMはOFF'
         : '本体にロード済み';
-    final info = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          state == null
-              ? widget.namModel ?? 'NAM MODEL'
-              : selected == 0
-              ? '00  BYPASS'
-              : '${selected.toString().padLeft(2, '0')}  ${name ?? 'モデルなし'}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Icon(
-              selected != 0 && name != null
-                  ? Icons.check_circle
-                  : Icons.info_outline,
-              size: 14,
-              color: StudioTheme.ready,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                status,
-                style: const TextStyle(fontSize: 12, color: StudioTheme.ready),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-    final actions = Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        FilledButton.icon(
-          key: const ValueKey('choose-nam-model'),
-          style: FilledButton.styleFrom(
-            backgroundColor: StudioTheme.nam,
-            foregroundColor: StudioTheme.background,
-          ),
-          onPressed: _busy || state == null || widget.namClient == null
-              ? null
-              : _chooseNamModel,
-          icon: const Icon(Icons.swap_horiz),
-          label: const Text('モデルを選ぶ'),
-        ),
-        if (widget.onOpenModels != null)
-          TextButton.icon(
-            key: const ValueKey('open-nam-library'),
-            onPressed: _busy ? null : () => _guard(_openModels),
-            icon: const Icon(Icons.add),
-            label: const Text('追加・転送'),
-          ),
-      ],
-    );
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: StudioTheme.background,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: StudioTheme.nam.withValues(alpha: .45)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          LayoutBuilder(
-            builder: (context, box) => box.maxWidth >= 650
-                ? Row(
-                    children: [
-                      Expanded(child: info),
-                      const SizedBox(width: 16),
-                      actions,
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [info, const SizedBox(height: 12), actions],
+      child: LayoutBuilder(
+        builder: (context, box) => Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    state == null
+                        ? widget.namModel ?? 'NAM MODEL'
+                        : selected == 0
+                        ? '00  BYPASS'
+                        : '${selected.toString().padLeft(2, '0')}  ${name ?? 'モデルなし'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-          ),
-          if (state != null && !state.slots.any((s) => s.name != null)) ...[
-            const SizedBox(height: 8),
-            const Text(
-              '保存済みモデルなし · ライブラリから本体へ転送してください',
-              style: TextStyle(fontSize: 12),
+                  Text(
+                    status,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: StudioTheme.ready,
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              key: const ValueKey('choose-nam-model'),
+              style: FilledButton.styleFrom(
+                backgroundColor: StudioTheme.nam,
+                foregroundColor: StudioTheme.background,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              onPressed: _busy || state == null || widget.namClient == null
+                  ? null
+                  : _chooseNamModel,
+              icon: const Icon(Icons.swap_horiz, size: 18),
+              label: Text(box.maxWidth >= 560 ? 'モデルを選ぶ' : '選ぶ'),
+            ),
+            if (widget.onOpenModels != null)
+              IconButton(
+                key: const ValueKey('open-nam-library'),
+                tooltip: '追加・転送',
+                onPressed: _busy ? null : () => _guard(_openModels),
+                icon: const Icon(Icons.add),
+              ),
           ],
-        ],
+        ),
       ),
     );
   }

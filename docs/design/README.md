@@ -1,5 +1,7 @@
 # FB200 Studio UI concept
 
+最新の操作改善：[固定メインパネル（0.10.3）](NAM_STUDIO_FIXED_PANEL.md)。
+
 最新版：[imagegen試作から操作可能なFlutter UIへの反映（0.10.2）](NAM_STUDIO_UX.md)。
 
 2026-10-20に内蔵image_genで生成した初期案です。最初はmainブランチのWeb版を参照しました。その後、NAM統合済みブランチを基にAndroid / Flutter版を改修しています。

@@ -272,6 +272,8 @@ class _KnobState extends State<Knob> {
         const SizedBox(height: 4),
         Text(
           widget.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 11,
             color: widget.enabled ? scheme.onSurfaceVariant : scheme.outline,
@@ -284,6 +286,8 @@ class _KnobState extends State<Knob> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Text(
               _text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,

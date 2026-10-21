@@ -1,5 +1,7 @@
 # FB200 Studio 操作設計 — 0.10.2+16
 
+後続の改善：[0.10.3・スクロールしないメインパネル](NAM_STUDIO_FIXED_PANEL.md)。
+
 2026-10-21、`feat/nam-a2-lite-studio`。
 
 ## imagegenによる試作

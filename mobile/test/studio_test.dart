@@ -4,7 +4,6 @@ import 'package:fb200_nam/nam_tone.dart';
 import 'package:fb200_nam/pedal_page.dart';
 import 'package:fb200_nam/protocol.dart';
 import 'package:fb200_nam/studio_theme.dart';
-import 'package:fb200_nam/widgets/chain_strip.dart';
 import 'package:fb200_nam/widgets/knob.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,7 +49,7 @@ void main() {
       expect(find.text('NAM A2 LITE'), findsOneWidget);
       expect(find.byType(Knob), findsNWidgets(6));
       expect(find.text('Stale model'), findsNothing);
-      expect(find.text('Studio Clean'), findsOneWidget);
+      expect(find.textContaining('Studio Clean'), findsOneWidget);
 
       await tester.ensureVisible(
         find.byKey(const ValueKey('choose-nam-model')),
@@ -63,7 +62,7 @@ void main() {
         [2, 0],
       ]); // audition never writes flash
       expect(h.pedal.writes, 0);
-      expect(find.text('Bass Crunch'), findsOneWidget);
+      expect(find.textContaining('Bass Crunch'), findsOneWidget);
       expect(find.textContaining('EDITED'), findsOneWidget);
 
       final gain = find.byWidgetPredicate(
@@ -116,19 +115,18 @@ void main() {
       expect(h.selections, [
         [0, 0],
       ]);
-      final chain = tester.widget<ChainStrip>(find.byType(ChainStrip));
-      expect(chain.enabled.contains(2), isFalse);
+      expect(h.selected, 0);
       expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
       h.selectPreset(1); // front-panel change: update model as well as preset
       await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
-      expect(find.text('Bass Crunch'), findsOneWidget);
+      expect(find.textContaining('Bass Crunch'), findsOneWidget);
       await tester.ensureVisible(
         find.byKey(const ValueKey('open-nam-library')),
       );
       await tester.tap(find.byKey(const ValueKey('open-nam-library')));
       await tester.pumpAndSettle();
-      expect(find.text('RenamedBass'), findsOneWidget);
+      expect(find.textContaining('RenamedBass'), findsOneWidget);
       expect(h.pedal.writes, 0);
       await tester.pumpWidget(const SizedBox());
       await tester.runAsync(h.close);
@@ -167,7 +165,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('nam-slot-2')));
       await tester.pumpAndSettle();
-      expect(find.text('Studio Clean'), findsOneWidget);
+      expect(find.textContaining('Studio Clean'), findsOneWidget);
       expect(find.textContaining('本体の保存・読み込みに失敗しました'), findsOneWidget);
       expect(h.selected, 1);
       expect(h.pedal.writes, 0);
@@ -233,7 +231,7 @@ void main() {
     h.pedal.link.incoming.add(frame(0x98, [0]));
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pumpAndSettle();
-    expect(find.text('Bass Crunch'), findsOneWidget);
+    expect(find.textContaining('Bass Crunch'), findsOneWidget);
     expect(h.selections, isEmpty);
     expect(h.pedal.writes, 0);
     await tester.pumpWidget(const SizedBox());

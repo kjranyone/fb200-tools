@@ -137,7 +137,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('エフェクト'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('COMP'), warnIfMissed: false);
+      if (find.byTooltip('エフェクトを選ぶ').evaluate().isNotEmpty) {
+        await tester.tap(find.byTooltip('エフェクトを選ぶ'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('コンプレッサー').last);
+      } else {
+        await tester.tap(find.text('COMP'));
+      }
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: name);
       await tester.pumpWidget(const SizedBox());
@@ -163,9 +169,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('エフェクト'));
       await tester.pumpAndSettle();
-      if (find.text('モジュールの接続順').evaluate().isEmpty) {
-        await bringIntoView(tester, find.text('モジュールの接続順'));
-      }
+      await tester.tap(
+        find.byTooltip(
+          find.byTooltip('エディターの詳細').evaluate().isNotEmpty
+              ? 'エディターの詳細'
+              : 'エフェクトを選ぶ',
+        ),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('モジュールの接続順'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: name);
