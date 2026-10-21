@@ -8,6 +8,8 @@ static uint32_t get32(const uint8_t *p)
 static void put32(uint8_t *p, uint32_t v)
 { for (unsigned i=0; i<4; i++) p[i] = (uint8_t)(v >> (i*8)); }
 static void seal(uint8_t *p) { put32(p+60, crc32_ieee(p, 60)); }
+static uint32_t revision;
+uint32_t namstore_revision(void) { return revision; }
 
 int namstore_ready(void) { return namstore_capacity() >= NAMSTORE_END; }
 const uint8_t *namstore_record(unsigned slot, unsigned bank)
@@ -41,10 +43,18 @@ int namstore_current(unsigned slot)
     return vb ? 1 : va ? 0 : -1;
 }
 
+int namstore_is_model(unsigned slot)
+{
+    int bank = namstore_current(slot);
+    /* namstore_current already validates both banks, including their CRCs. */
+    return bank >= 0 && get32(namstore_record(slot, (unsigned)bank)+48) == 0;
+}
+
 int namstore_write(unsigned slot, uint8_t *buf)
 {
     if (!namstore_ready() || slot < 1 || slot > NAMSTORE_SLOTS || !namstore_valid(buf)) return -1;
     int old = namstore_current(slot), bank = old == 0 ? 1 : 0;
+    revision++;
     uint32_t seq = old < 0 ? 1 : get32(namstore_record(slot, (unsigned)old)+20)+1;
     uint8_t header[NAMSTORE_HEADER];
     memcpy(header, buf, sizeof header);

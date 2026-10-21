@@ -3,7 +3,7 @@
  * model, so its GAIN/BASS/MIDDLE/MIDDLE-FREQ/TREBLE/VOLUME fields become
  * NAM-stage controls instead: GAIN is the pre-NAM drive (pushing the model
  * harder gets more breakup), BASS/MID/TREBLE a 3-band EQ after the model,
- * VOLUME the stage output level. Neutral: 50/50/50/~50/100. MIT; see
+ * VOLUME the stage output level. Neutral: 50/50/50/~50/50. MIT; see
  * LICENSE and docs/NAM_A2_LITE.md. */
 #ifndef FB200_DSP_NAM_TONE_H
 #define FB200_DSP_NAM_TONE_H
@@ -14,7 +14,8 @@ typedef struct {
     biquad_t shelf;          /* bass (low shelf) + treble (high shelf) */
     biquad_t mid;            /* peaking EQ at the mid frequency */
     float drive;             /* pre-NAM gain, 1.0 at value 50 */
-    float level;             /* post-NAM gain, 1.0 at value 100 */
+    float level;             /* post-NAM gain, 1.0 at value 50 */
+    unsigned tone_active;    /* flat tone skips all three filter stages */
     unsigned midfreq_word;   /* the raw preset word, for re-design on fs change */
 } nam_tone_t;
 

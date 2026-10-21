@@ -14,10 +14,11 @@ COLD void nam_tone_init(nam_tone_t *t, float fs)
     t->drive = 1.0f;
     t->level = 1.0f;
     t->midfreq_word = 50;
-    nam_tone_set(t, fs, 50, 50, 50, 50, 50, 100);
+    t->tone_active = 0;
+    nam_tone_set(t, fs, 50, 50, 50, 50, 50, 50);
 }
 
-COLD void nam_tone_reset(nam_tone_t *t)
+void nam_tone_reset(nam_tone_t *t)
 {
     memset(t->shelf.state, 0, sizeof t->shelf.state);
     memset(t->mid.state, 0, sizeof t->mid.state);
@@ -45,7 +46,7 @@ static COLD float drive_gain(unsigned v)
     return dsp_exp2f(((int)v - 50) * 0.02f);   /* +-1 octave over 0..100 */
 }
 
-/* 0..100 knob -> 0..2.0x level, 100 = 1.0x (50 = 0.5x) */
+/* 0..100 knob -> 0..2.0x level, 50 = 1.0x */
 static COLD float level_gain(unsigned v)
 {
     if (v > 100) v = 100;
@@ -59,6 +60,9 @@ COLD void nam_tone_set(nam_tone_t *t, float fs,
     t->drive = drive_gain(gain);
     t->level = level_gain(volume);
     t->midfreq_word = midfreq;
+    unsigned active = bass != 50 || mid != 50 || treble != 50;
+    if (active != t->tone_active) nam_tone_reset(t);
+    t->tone_active = active;
     biquad_design(&t->shelf, 0, BQ_LOWSHELF, fs, 100.0f, 0.7f, knob_db(bass));
     biquad_design(&t->shelf, 1, BQ_HIGHSHELF, fs, 3200.0f, 0.7f, knob_db(treble));
     biquad_design(&t->mid, 0, BQ_PEAK, fs, mid_hz(midfreq), 1.0f, knob_db(mid));
@@ -70,10 +74,31 @@ void nam_tone_pre(nam_tone_t *t, float *x, unsigned n)
     for (unsigned i = 0; i < n; i++) x[i] *= t->drive;
 }
 
+/* The target's ITCM also holds reverb delay lines. A compact DF2T loop
+ * avoids retaining CMSIS's unrolled DF2T kernel just for these three
+ * stages. Coefficient/state layout is identical to biquad_t/CMSIS. */
+static void tone_filter(biquad_t *b, float *x, unsigned n)
+{
+    for (unsigned stage = 0; stage < b->stages; stage++) {
+        const float *c = b->coeffs + 5 * stage;
+        float d1 = b->state[2 * stage], d2 = b->state[2 * stage + 1];
+        for (unsigned i = 0; i < n; i++) {
+            float in = x[i];
+            float out = c[0] * in + d1;
+            d1 = c[1] * in + c[3] * out + d2;
+            d2 = c[2] * in + c[4] * out;
+            x[i] = out;
+        }
+        b->state[2 * stage] = d1; b->state[2 * stage + 1] = d2;
+    }
+}
+
 void nam_tone_post(nam_tone_t *t, float *x, unsigned n)
 {
-    biquad_process(&t->shelf, x, x, n);
-    biquad_process(&t->mid, x, x, n);
+    if (t->tone_active) {
+        tone_filter(&t->shelf, x, n);
+        tone_filter(&t->mid, x, n);
+    }
     if (t->level != 1.0f) {
         for (unsigned i = 0; i < n; i++) x[i] *= t->level;
     }

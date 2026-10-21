@@ -154,7 +154,7 @@ SRC_C := \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
 ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
-SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
+SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c src/dsp/nam_tone.c
 # NAM builds: the former long IR area F:0x400000.. is the extended NAM store
 # (flash_rmw.h); the long IR store is not compiled in.
 SRC_C := $(filter-out src/irstore/%,$(SRC_C))
@@ -204,7 +204,10 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 # Every other file stays in ITCM. The main loop (main.c), boot (startup.c),
 # the fault path (vectors.c, recovery.c) and crc32.c stay in ITCM on purpose.
 # Recovery has no XIP code: it runs everything from ITCM.
+# CMSIS sine/cosine are used only by cold coefficient design, not audio.
+# The compiled hot-path check also checks this placement.
 COLD_SRC := \
+  $(DSP_SRC)/FastMathFunctions/FastMathFunctions.c \
   src/debug/console.c src/debug/regs.c \
   src/led.c src/cpu_power.c \
   src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/power_logic.c src/ui/lightbar.c \

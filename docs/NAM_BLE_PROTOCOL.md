@@ -71,11 +71,13 @@ looper (`PROFILE=nam-manager`; `D7` control), bit 7 stock cab/MOD/reverb in
 the chain after the NAM stage (`nam-manager`; 44.1 kHz IRs resampled to
 48 kHz), bit 8 Bluetooth audio mixed into the output (`nam-manager`; SAI3
 runs in every profile — the module slaves to our I2S clock, so 48 kHz needs
-no resampling). Op 8 is read-only;
+no resampling), bit 9 NAM tone EQ connected to the audio path (both NAM
+profiles). Without bit 9, only the amp words GAIN/VOLUME affect NAM audio;
+clients must not offer the other four tone controls as active. Op 8 is read-only;
 the existing B8/BA commands still control tuner/rhythm. Its floats are little
 endian IEEE-754; invalid/silent readings must not be displayed as a pitch.
-The base restricted `nam-runtime` reports flags 7|16|32 = 55 (plus bits 3,
-6, 7 and 8 for `nam-manager`: 511) and 64 slots; the earlier three-slot
+The base restricted `nam-runtime` reports flags 7|16|32|512 = 567 (plus bits 3,
+6, 7 and 8 for `nam-manager`: 1023) and 64 slots; the earlier three-slot
 firmware reported 7 (15 with utilities) without bits 4/5.
 Status:
 0 success, 1 invalid args/incomplete packet, 2 staging busy, 3 CRC/model validation

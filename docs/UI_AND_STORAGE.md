@@ -31,6 +31,12 @@ No LCD, no controller, no frame buffer; the "font" is a code switch
 
 ## 2. Controls (H)
 
+NAM builds override the AMP knob (k2) with stored-model selection: bypass
+plus validated occupied NAM slots, ascending, with crossing pickup and a
+250 ms settle before loading. Display: `n00` / `n01`..`n64`; a dot means
+pickup or selection pending. Stock builds retain AMP 1..10. See
+[Studio UX](design/NAM_STUDIO_UX.md) for the workflow and verification.
+
 Footswitches: pads `GPIO_SD_B0_00/01/02` and `GPIO_B1_08`, ALT5, pad
 **0xF0B0** (22k pull-up), **active low**.
 

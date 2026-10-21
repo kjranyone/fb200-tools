@@ -9,6 +9,12 @@ the demo without connecting a pedal.
 
 ## Features
 
+Latest: **0.10.2+16** adds the imagegen-prototyped model card, searchable
+64-slot selection/transfer sheets, visible transfer progress and audition action,
+vertical knob drag with fine adjustment, and numeric validation/reset.
+The companion NAM firmware maps the physical AMP knob to stored NAM models.
+See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX.md).
+
 - Bank/preset editor: ten banks / forty presets, read/select, rename/copy,
   explicit overwrite, lossless binary fields in JSON backup, CRC validation and
   verified restore. Unknown bytes and NAM bindings are retained; copying a
@@ -22,28 +28,31 @@ the demo without connecting a pedal.
 - Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
-- **NAM tone controls (0.9.0+13)**: under NAM the amp block's knob fields
-  become the NAM stage's sound controls — GAIN is the pre-model drive
-  (0.5..2x, 50 = unity; pushing harder gets more breakup), BASS/MID/
-  TREBLE a 3-band EQ after the model (±12 dB shelves at 100 Hz/3.2 kHz,
-  peaking mid sweeping 200 Hz..2 kHz), VOLUME the stage output level
-  (0..2x). Neutral values: 50/50/50/any/50/100. The knobs live in the
-  preset's own amp-block bytes, so they save/restore with each preset
-  exactly like the stock amp's did.
-- **Quad Cortex-style editor (0.8.0+12)**: the effects tab opens with the
-  signal chain as a horizontal strip of module blocks in the edit buffer's
-  own order (`0xBC` bytes; NAM firmware shows the running model on the amp
-  block); tap a block to edit it with rotary **knobs** — drag around the
-  knob, radius tapers the rate, release to commit, arc glow shows activity.
-  Every previous slider (drums, tuner, LED, looper level, effect params)
-  is now a knob. Dark near-black theme with mint accents throughout.
+- **Studio editor (0.10.0+14)**: dark graphite surfaces, effect-specific colours,
+  fixed audio signal-chain strip and a persistent preset sidebar on wide screens.
+  The controller opens on the NAM/amp editor. Model audition, six tone controls,
+  direct numeric entry, edited-state indication and explicit preset save share
+  one screen. The model library opens directly from the NAM block and borrows
+  the BLE connection; returning refreshes the active model and slot names.
+- **NAM tone controls**: GAIN is pre-model drive (0.5..2x; 50 = unity),
+  BASS/MID/TREBLE are ±12 dB shelves/peak after the model, MID FREQ sweeps
+  200..2000 Hz, and VOLUME is post-model level (0..2x; **50 = unity**).
+  Neutral preset words are 50/50/50/any/50/50. Firmware capability bit 9
+  guarantees the tone EQ is connected. Earlier firmware applied GAIN/VOLUME
+  but ignored the tone words; this app disables the four unsupported EQ
+  controls on those devices. The companion firmware connects the existing
+  NAM tone DSP without replacing the independent five-band cabinet EQ.
+  Audition changes the edit buffer, and the visible Save action persists
+  model binding and tone words together. Switching presets with unsaved
+  edits asks before discarding them. Capture weights remain unchanged.
 - Looper control (`D7`, our extension) on `nam-manager` and the stock open
   profile: tap/record/play/dub/stop/undo/clear, level, two save slots and a
   live status line. The base restricted runtime and the vendor firmware have
   no looper; the tab states that. The pedal's own looper mode (hold D+C) keeps
   working alongside the app.
-- Module order (`A0`): reorder the effect chain of the edit buffer from the
-  effects tab; a permutation picker with per-row arrows.
+- Module order (`A0`): edit the preset's order metadata with per-row arrows.
+  Current firmware's audible processing order is fixed; the chain strip shows
+  that actual order, and the order editor explicitly identifies the limitation.
 - User IR management: list the nine slots, import a WAV (converted locally to
   the official 1024-sample 44.1 kHz float32 format, byte-identical to the PC
   tool's conversion), rename and delete. IR storage is shared with the stock
@@ -70,9 +79,8 @@ the demo without connecting a pedal.
 
 NAM weights are not exposed as Gain/Bass/Middle/Treble knobs on the model
 itself. Captures have fixed trained behavior; choose another capture for
-another amp character. **0.9.0+13 adds NAM tone controls**: the preset's own
-amp-block fields become the NAM stage's drive/EQ/level (see above), giving
-per-preset sound shaping around the fixed capture.
+another amp character. The Studio tone controls shape the signal around the
+fixed capture using the preset's amp words (see firmware support above).
 
 ## Build / verify
 

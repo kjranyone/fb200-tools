@@ -111,6 +111,10 @@ class NamClient {
   /// Firmware capabilities include in-place rename (RPC op 9, flags bit 4).
   bool get canRename => (capabilityFlags & 16) != 0;
 
+  /// Older firmware accepted these preset words without applying tone EQ.
+  /// Gain/volume work on both; only bit 9 guarantees the three-band EQ.
+  bool get canToneEq => (capabilityFlags & 512) != 0;
+
   /// Rename a stored slot. The firmware rule (like the upload header):
   /// 1..23 printable ASCII bytes at 0x21..0x7E, no spaces, NUL padded to 24.
   Future<void> rename(int slot, String name) async {
@@ -206,8 +210,7 @@ class DemoTransport implements RpcTransport {
           3,
           64,
           ...u16(packetBytes),
-          7 | 16 | 32,
-          0,
+          ...u16(7 | 16 | 32 | 512),
           _selected,
         ]);
       case 1:

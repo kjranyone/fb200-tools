@@ -78,7 +78,7 @@ class _Tone3000PageState extends State<Tone3000Page> {
   final _models = <ToneModel>[];
   int _page = 0, _totalPages = 0;
   bool _loadingSettings = true, _busy = false, _editing = false;
-  String _error = '', _status = '';
+  String _error = '', _status = '', _notice = '';
 
   bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -114,15 +114,18 @@ class _Tone3000PageState extends State<Tone3000Page> {
       _busy = true;
       _status = label;
       _error = '';
+      _notice = '';
     });
     try {
       await action();
     } on ToneCancelled {
-      /* Returning from the browser leaves the current model intact. */
+      _showCancellation();
     } on ToneError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } on PlatformException catch (e) {
-      if (mounted && e.code != 'CANCELED') {
+      if (e.code == 'CANCELED') {
+        _showCancellation();
+      } else if (mounted) {
         setState(() => _error = 'ブラウザーを開けませんでした。対応ブラウザーを確認してください。');
       }
     } catch (_) {
@@ -137,6 +140,14 @@ class _Tone3000PageState extends State<Tone3000Page> {
     }
   }
 
+  void _showCancellation() {
+    if (mounted) {
+      setState(
+        () => _notice = 'TONE3000のログイン・トーン選択を中止しました。もう一度「TONE3000で探す」から続けられます。',
+      );
+    }
+  }
+
   Future<Uri> _openBrowser(Uri url) async {
     final result = await const MethodChannel('dev.fb200/tone3000')
         .invokeMethod<String>('select', {'url': url.toString()});
@@ -146,6 +157,7 @@ class _Tone3000PageState extends State<Tone3000Page> {
 
   Future<void> _browse() => _run('TONE3000でトーンを選択中', () async {
     final key = validatePublishableKey(_key.text);
+    FocusManager.instance.primaryFocus?.unfocus();
     // Only the public application identifier is saved. Tokens remain in memory.
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_settingsKey, key);
@@ -223,6 +235,54 @@ class _Tone3000PageState extends State<Tone3000Page> {
         ),
       ],
     ),
+    bottomNavigationBar: SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_busy) ...[
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 8),
+                  Text(_status),
+                  const SizedBox(height: 8),
+                ],
+                if (_error.isNotEmpty || _notice.isNotEmpty) ...[
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      _error.isNotEmpty ? _error : _notice,
+                      style: TextStyle(
+                        color: _error.isNotEmpty
+                            ? Theme.of(context).colorScheme.error
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                FilledButton.icon(
+                  onPressed:
+                      _busy ||
+                          _loadingSettings ||
+                          (!_supported && widget.browser == null)
+                      ? null
+                      : _browse,
+                  icon: const Icon(Icons.travel_explore),
+                  label: Text(_selection == null ? 'TONE3000で探す' : '別のトーンを探す'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
     body: SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -237,12 +297,10 @@ class _Tone3000PageState extends State<Tone3000Page> {
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'TONE3000でログインしてA2モデルを選びます。対応するA2-Liteを取り込んだ後、転送する本体スロットを選べます。',
-              ),
+              const Text('Publishable Keyはアプリを識別するキーです。キーの設定だけではログインは完了しません。'),
               const SizedBox(height: 8),
               const Text(
-                'FB200のこの版にはキャビネット処理がありません。必要に応じてAmp + Cabのキャプチャを選択してください。',
+                '「TONE3000で探す」を押すとログイン画面が開きます。TONE3000に登録したメールアドレスを入力し、Send Codeで届くコードを使ってログインすると、トーンを選べます。',
               ),
               if (_loadingSettings) const LinearProgressIndicator(),
               if (_editing && !_loadingSettings) ...[
@@ -263,6 +321,13 @@ class _Tone3000PageState extends State<Tone3000Page> {
                   enabled: !_busy,
                   autocorrect: false,
                   enableSuggestions: false,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted:
+                      _busy ||
+                          _loadingSettings ||
+                          (!_supported && widget.browser == null)
+                      ? null
+                      : (_) => _browse(),
                   decoration: const InputDecoration(
                     labelText: 'Publishable Key（client_id）',
                     helperText: 'Secret Keyは入力しないでください。',
@@ -290,32 +355,6 @@ class _Tone3000PageState extends State<Tone3000Page> {
                   ),
                 ),
               const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed:
-                    _busy ||
-                        _loadingSettings ||
-                        (!_supported && widget.browser == null)
-                    ? null
-                    : _browse,
-                icon: const Icon(Icons.travel_explore),
-                label: Text(_selection == null ? 'TONE3000で探す' : '別のトーンを探す'),
-              ),
-              if (_busy) ...[
-                const SizedBox(height: 16),
-                const LinearProgressIndicator(),
-                const SizedBox(height: 8),
-                Text(_status),
-              ],
-              if (_error.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    _error,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
               if (_selection != null) ...[
                 const SizedBox(height: 24),
                 Row(

@@ -160,12 +160,12 @@ static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (
 static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
 #ifdef NAM_RUNTIME
 #include "dsp/nam_a2.h"
+#include "dsp/nam_tone.h"
 #include "namstore/namstore.h"
 static nam_a2_t s_nam __attribute__((section(".dtcm_lo")));
-/* NAM drive/level: two floats from the amp block's GAIN/VOLUME fields.
- * The biquad EQ lives in the existing 5-band EQ (eq_process, after cab). */
-static float s_nam_drive __attribute__((section(".ocram"))) = 1.0f;
-static float s_nam_level __attribute__((section(".ocram"))) = 1.0f;
+/* The preset's amp words shape the NAM stage. Keep this separate from the
+ * user's five-band EQ after the cabinet; neither overwrites the other. */
+static nam_tone_t s_nam_tone __attribute__((section(".ocram")));
 static unsigned s_nam_slot;
 static bool s_nam_loading;
 static float s_nam_fade;
@@ -192,6 +192,7 @@ COLD int engine_nam_select(unsigned slot)
         }
         flash_pump(); /* audio/USB service plus watchdog refresh */
     }
+    nam_tone_reset(&s_nam_tone);
     s_nam_slot = slot; s_nam_fade = 0;
     s_nam_loading = false;
     return 0;
@@ -235,8 +236,7 @@ COLD void engine_init(void)
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_init(&s_eq, (float)AUDIO_FS);
 #ifdef NAM_RUNTIME
-    s_nam_drive = 1.0f;
-    s_nam_level = 1.0f;
+    nam_tone_init(&s_nam_tone, (float)AUDIO_FS);
 #endif
 #if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     /* the looper's area: the JEDEC ID sizes it (8 MB: F:0x510000..0x800000);
@@ -289,6 +289,7 @@ void engine_dsp_reset(void)
 #endif
 #ifdef NAM_RUNTIME
     nam_a2_reset(&s_nam);
+    nam_tone_reset(&s_nam_tone);
 #endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_reset(&s_eq);            /* the settings come back with the preset */
@@ -393,18 +394,9 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     amp_set_params(&s_amp, pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
                    pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
 #ifdef NAM_RUNTIME
-    /* Under NAM the amp block's GAIN/VOLUME fields become the NAM stage's
-     * drive/level. GAIN: 0..100 -> 0.5..2x (50 = unity). VOLUME: 0..100
-     * -> 0..2x (100 = unity). The tone fields (BASS/MID/TREBLE) feed the
-     * existing 5-band EQ via the console `eq` command. */
-    {
-        unsigned g = pget(p, P_AMP_GAIN), v = pget(p, P_AMP_VOLUME);
-        if (g > 100) g = 100;
-        if (v > 100) v = 100;
-        extern float dsp_exp2f(float);
-        s_nam_drive = dsp_exp2f(((int)g - 50) * 0.02f);
-        s_nam_level = v * (2.0f / 100.0f);
-    }
+    nam_tone_set(&s_nam_tone, (float)AUDIO_FS,
+                 pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
+                 pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
 #endif
     int cab = pget(p, P_CAB_TYPE);
     if (cab != s_cab_type && !s_ir_busy) {   /* busy: engine_ir_release reapplies */
@@ -705,16 +697,16 @@ void engine_task(void)
 #ifdef NAM_RUNTIME
     if (s_nam_loading) memset(x, 0, sizeof x);
     else if (s_nam_slot && s_amp_en) {
-        if (s_nam_drive != 1.0f)
-            for (size_t i = 0; i < n; i++) x[i] *= s_nam_drive;
+        nam_tone_pre(&s_nam_tone, x, (unsigned)n);
         if (nam_a2_process(&s_nam, x, (unsigned)n)) {
             s_nam_slot = 0;
             memset(x, 0, sizeof x);
             s_stats.dsp_resets++;
         }
+        nam_tone_post(&s_nam_tone, x, (unsigned)n);
         for (unsigned i=0; i<n; i++) {
             if (s_nam_fade < 1.0f) s_nam_fade += 1.0f/256.0f;
-            x[i] *= s_nam_fade * s_nam_level;
+            x[i] *= s_nam_fade;
         }
     }
 #else

@@ -1,5 +1,9 @@
 # NAM A2-Lite: runtime model slots
 
+Current front-panel NAM selection and Android 0.10.2 workflow:
+[Studio UX implementation](design/NAM_STUDIO_UX.md). The AMP knob now selects
+bypass and validated occupied slots in both NAM firmware profiles.
+
 Model changes must not require a firmware rebuild. The `nam-runtime` research
 profile implements **model upload -> persistent model slot -> RAM load -> inference**.
 The firmware's fixed A2-Lite engine is installed once; subsequent captures are
@@ -66,7 +70,10 @@ Their UI/control scaffolding is not a completed NAM-oriented front panel.
 
 In particular there is currently **no cab/IR stage** in this profile. A capture
 including a cabinet or an external cabinet stage is needed for a complete amp
-sound. The existing stock amp GAIN/tone knobs do not become NAM drive/EQ controls.
+sound. Current firmware connects the preset's amp words to NAM-stage drive,
+three-band tone and level, advertised by capability bit 9. GAIN 50 and VOLUME
+50 are unity; bass/mid/treble 50 are flat. Older firmware without bit 9 applied
+only GAIN/VOLUME. Tone EQ is independent of the five-band EQ after the cab.
 Input/output calibration and listening tests remain necessary.
 
 The old 512-tap cab allocation and some unused module state remain in the image;

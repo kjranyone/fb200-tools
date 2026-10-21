@@ -27,7 +27,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('0A  PRESET'), findsWidgets);
+    expect(find.text('PRESET'), findsOneWidget);
     expect(h.writes, 0);
     await tester.tap(find.text('チューナー'));
     await tester.pumpAndSettle();

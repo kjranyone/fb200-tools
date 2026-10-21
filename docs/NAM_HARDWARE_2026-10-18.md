@@ -334,3 +334,31 @@ so silence), the BT module is up (`bt: init step 4/4`, responding to AT),
 and the AT on/off hook was already wired. No physical Bluetooth stream has
 been listened to; that needs a phone pairing and remains a listening test,
 not a code gate.
+
+## NAM Studio firmware + Android APK transfer (2026-10-20, user authorized)
+
+User explicitly requested the firmware flash and APK transfer. Built from the
+working tree on `feat/nam-a2-lite-studio`, `nam-manager` profile. Rebuilt the
+app slot and passed the compiled audio/flash-busy hot-path check before flashing.
+Only the application slot was written over Windows USB CDC (COM7); recovery,
+stock data, preset/settings/IR data and NAM model storage were not targeted.
+
+App slot: 214692 bytes, CRC32 `932f2aa7`, SHA256
+`ecf59aa9cf3896a55bbd853ef099cf3ba9b4262d0a7e8c865acecf29f89835da`.
+`fw done crc=932f2aa7 ok`; reset sent. Read-back CRC at `0x60020000`
+for 214692 bytes matched. Read-only HID capabilities changed from flags 511
+to **1023** (NAM tone EQ bit 9), with 48000 Hz, 1871 weights, 64 slots and
+7548-byte packets unchanged. Selected model was bypass (0) before and after.
+
+Protected-region CRCs before/after were identical: recovery `cd92299e`,
+stock `24e05ce5`, user data `2c6191ba`, NAM models `01b295c3`.
+All forty raw preset records and the 13-byte settings block also matched.
+The restarted device reported `stock data: flash ok, in use` and `no crash dump`.
+No model selection, preset save, model/IR write or listening test was performed.
+
+APK 0.10.0+14 was pushed to the connected Lenovo TB-J716F:
+`/sdcard/Download/fb200-studio-0.10.0-14-debug.apk` (180403185 bytes).
+PC/Android SHA256 both
+`99ec1ecbe3b25b1bd9dd887afc50b3fc6faf578df54b8e4dbb8a1d7b90f0b554`.
+Transfer only; the app was not installed. Evidence (ignored local artifacts):
+`out/studio-deploy-20261020/{deployment.json,before.json,install-app.log,after.json,verification.txt}`.

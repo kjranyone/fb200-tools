@@ -94,7 +94,7 @@ def test_mobile_fixture_matches_python_packet_and_frame():
 
 def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c = client
-    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32, 0)
+    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512, 0)
     selected, slots = c.list_all()
     assert selected == 0 and not any(used for used, _, _ in slots.values())
     packet = nam.pack(model(), "phone")

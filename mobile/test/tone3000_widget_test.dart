@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fb200_nam/main.dart';
@@ -67,6 +68,63 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'keyboard Go starts the explicit login flow and saves the public key',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final h = ToneHarness();
+      var browserCalls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Tone3000Page(
+            apiFactory: (_) => h.api,
+            browser: (url) async {
+              browserCalls++;
+              return acceptBrowser(url);
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('キーの設定だけではログインは完了しません'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'publishable-test');
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pumpAndSettle();
+      expect(browserCalls, 1);
+      expect(find.text('@listener でログイン中'), findsOneWidget);
+      expect(
+        (await SharedPreferences.getInstance()).getString('tone3000_client_id'),
+        'publishable-test',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final cancel in [ToneCancelled(), PlatformException(code: 'CANCELED')]) {
+    testWidgets(
+      'browser cancellation explains how to continue: ${cancel.runtimeType}',
+      (tester) async {
+        final h = ToneHarness();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Tone3000Page(
+              apiFactory: (_) => h.api,
+              browser: (_) async => throw cancel,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('TONE3000で探す'));
+        await tester.tap(find.text('TONE3000で探す'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('ログイン・トーン選択を中止しました'), findsOneWidget);
+        expect(h.requests, isEmpty);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('first setup rejects a secret key without contacting TONE3000', (
     tester,
@@ -163,15 +221,20 @@ void main() {
       await tester.tap(find.text('TONE3000から探す'));
       await tester.pumpAndSettle();
       expect(find.text('Bass Full Rig'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('03'), 180);
+      await tester.ensureVisible(find.text('転送先を選ぶ'));
+      await tester.tap(find.text('転送先を選ぶ'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('nam-slot-3')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('03'),
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
       final card = find.ancestor(
         of: find.text('03'),
         matching: find.byType(Card),
       );
-      final upload = find.descendant(of: card, matching: find.text('ここへ転送'));
-      await tester.ensureVisible(upload);
-      await tester.pumpAndSettle();
-      await tester.tap(upload);
       // The simulated radio has a timer per chunk; advance all chunks even
       // when no animation frame is scheduled between acknowledgements.
       for (
@@ -196,6 +259,12 @@ void main() {
       );
       expect(
         find.descendant(of: card, matching: find.text('@creator')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('ロードして試聴'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: card, matching: find.text('選択中')),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

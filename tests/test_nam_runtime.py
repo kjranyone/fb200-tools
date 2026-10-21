@@ -48,6 +48,23 @@ def latest(store, slot=1):
     return ct.string_at(store.namstore_record(slot, bank), nam.PACKET) if bank >= 0 else None
 
 
+def test_catalog_validity_and_mutation_revision(store):
+    store.fake_reset()
+    rev = store.namstore_revision()
+    assert not store.namstore_is_model(64)
+    assert store.namstore_write(64, staging(nam.pack(model(), "last"))) == 0
+    assert store.namstore_revision() != rev
+    assert store.namstore_is_model(64)
+    rev = store.namstore_revision()
+    store.fake_cut(1)
+    assert store.namstore_write(64, staging(nam.pack(model(), "failed"))) < 0
+    assert store.namstore_revision() != rev  # failed writes invalidate cached lists too
+    assert store.namstore_is_model(64)  # previous committed model survives
+    store.fake_cut(0x7fffffff)
+    assert store.namstore_delete(64) == 0
+    assert not store.namstore_is_model(64)  # tombstone must not resurrect a model
+
+
 def test_store_load_replace_and_delete(store):
     store.fake_reset()
     old = nam.pack(model(), "old")

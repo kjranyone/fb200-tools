@@ -41,10 +41,16 @@ void main() {
         findsOneWidget,
       );
       final save = find.text('現在の選択をプリセットに保存');
-      await tester.scrollUntilVisible(save, 200);
+      await tester.scrollUntilVisible(
+        save,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(save);
+      await tester.pumpAndSettle();
       await tester.tap(save);
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('現在のプリセットに選択を保存しました。'), 200);
+      await tester.ensureVisible(find.text('現在のプリセットに選択を保存しました。'));
       expect(find.text('現在のプリセットに選択を保存しました。'), findsOneWidget);
       // Back to hub, disconnect.
       await tester.tap(find.byIcon(Icons.arrow_back));
@@ -89,7 +95,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600)); // dialog outro timer
     expect(find.text('DemoLead'), findsOneWidget);
     expect(find.text('Demo Clean'), findsNothing);
-    await tester.scrollUntilVisible(find.text('スロット 1 の名前を変更しました。'), 250);
+    await tester.ensureVisible(find.text('スロット 1 の名前を変更しました。'));
     expect(find.text('スロット 1 の名前を変更しました。'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);

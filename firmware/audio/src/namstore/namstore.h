@@ -20,6 +20,11 @@ int namstore_valid(const uint8_t *record);
 /* slot is 1..3. Returns latest valid bank or -1 (including a small chip).
  * A tombstone is current but not loadable; never resurrect its older bank. */
 int namstore_current(unsigned slot);
+/* Validated current bank contains a model (not empty/corrupt/tombstoned). */
+int namstore_is_model(unsigned slot);
+/* Changes before every attempted flash mutation, including failed writes.
+ * Main-loop catalog readers must discard their cached slot list on change. */
+uint32_t namstore_revision(void);
 const uint8_t *namstore_record(unsigned slot, unsigned bank);
 int namstore_ready(void);
 /* Caller owns an 8192-byte staging buffer. Packet validated before any write.

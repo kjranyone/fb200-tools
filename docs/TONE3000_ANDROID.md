@@ -22,13 +22,17 @@ compile SDK 37 / AGP 9.1.1 / Java 17 configuration is retained.
    flutter build apk --debug --dart-define=TONE3000_CLIENT_ID=YOUR_PUBLISHABLE_KEY
    ```
 
-4. Tap **TONE3000で探す**. Android Custom Tabs opens the official sign-in/catalog
-   page with `prompt=select_tone`, `format=nam`, and `architecture=2`. Search,
+4. Tap **TONE3000で探す** (or the keyboard's Go action after entering the key).
+   The publishable key identifies the app; it does **not** sign the user in.
+   On the official login page, enter the TONE3000 account's email address,
+   tap **Send Code**, and complete the emailed-code login before selecting
+   a tone. An empty email field leaves Send Code disabled.
+   Android Custom Tabs opens the official sign-in/catalog page with `prompt=select_tone`, `format=nam`, and `architecture=2`. Search,
    favorites, and tone selection remain in the official experience. No custom
    high-rate search API polling is used.
 5. Select a variant in the returned tone pack. The app downloads and validates
    the file. Unsupported architectures/rates are rejected before any pedal RPC.
-6. Connect the FB200 by Bluetooth and tap **ここへ転送** on slot 1–3. Upload is
+6. Connect the FB200 by Bluetooth and tap **ここへ転送** on an available slot (64 on current firmware). Upload is
    separate from **選択** / **再読み込み** and preset save. Replacing the selected
    slot does not switch the running RAM model until explicit reload.
 
@@ -107,3 +111,25 @@ USB reconnection or manual APK installation.
 65 Flutter tests passed, including QR validation/fill/cancel, legacy framing,
 backup/restore and narrow editor/firmware capability gating. Analyze passed.
 Logs and inspected Android screenshots: `out/tone3000-evidence/`.
+
+## Login guidance fix (0.10.1+15, 2026-10-21)
+
+A report that entering the publishable key did nothing was inspected on the
+connected tablet. The installed app was 0.9.0+13. Its key had been accepted:
+the official Custom Tab was showing the TONE3000 account email login, with
+an empty email field and disabled Send Code button. No account credentials,
+verification emails or tokens were entered or submitted during diagnosis.
+
+The picker now distinguishes key configuration from user login, starts browsing
+from the keyboard Go action, keeps the browse button and feedback visible at
+the bottom, and explains cancellation instead of returning silently. The
+existing PKCE/state verification and key/token handling remain unchanged.
+Real account login and download still require the user's email-code step;
+unit-test authentication is simulated.
+
+Validation: Flutter analyze passed, all 146 Flutter tests passed, and the debug
+APK build passed. The 0.10.1+15 APK was transferred to the tablet at
+`/sdcard/Download/fb200-studio-0.10.1-15-debug.apk`; it was not installed.
+PC and tablet SHA-256 matched:
+`bd79ce9602776a2d14aa98db2ed1c1e96aff3f9784067f35e046ebbae007593c`.
+Logs and the inspected login screenshot are in `out/tone3000-fix-20261021/`.

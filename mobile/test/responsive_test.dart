@@ -198,6 +198,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.text('プリセット'));
+      await tester.pumpAndSettle();
       // The preset row's 名前の変更 button opens the rename dialog.
       if (find.text('名前の変更').evaluate().isEmpty) {
         await bringIntoView(tester, find.text('名前の変更').first);

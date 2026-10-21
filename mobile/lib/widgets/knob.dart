@@ -1,12 +1,15 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
-    show Drag, DragEndDetails, DragUpdateDetails, ImmediateMultiDragGestureRecognizer;
+    show
+        Drag,
+        DragEndDetails,
+        DragUpdateDetails,
+        ImmediateMultiDragGestureRecognizer;
 import 'package:flutter/material.dart';
 
-/// A rotary control in the spirit of the Quad Cortex: drag around the knob
-/// to change the value (the farther from the centre, the coarser), release
-/// to commit. The arc fills over a 270° sweep with a soft accent glow.
+/// Drag vertically to adjust; move sideways for finer control, release
+/// to commit. Values are accumulated as doubles so small movements are retained. A flat 270° arc and a numeric entry show the current value.
 ///
 /// Uses ImmediateMultiDragGestureRecognizer so the knob wins the gesture
 /// arena against the surrounding ListView's scroll (a plain GestureDetector
@@ -18,9 +21,12 @@ class Knob extends StatefulWidget {
   final int min;
   final int max;
   final int step;
+  final int? defaultValue;
   final String Function(int)? format;
   final ValueChanged<int> onChanged; // committed on release
   final bool enabled;
+  final Color? accent;
+  final double? size;
 
   const Knob({
     super.key,
@@ -30,8 +36,11 @@ class Knob extends StatefulWidget {
     required this.max,
     required this.onChanged,
     this.step = 1,
+    this.defaultValue,
     this.format,
     this.enabled = true,
+    this.accent,
+    this.size,
   });
 
   @override
@@ -39,6 +48,7 @@ class Knob extends StatefulWidget {
 }
 
 class _KnobState extends State<Knob> {
+  final _dialKey = GlobalKey();
   bool _dragging = false;
   late int _draft;
   late double _knobSize;
@@ -55,47 +65,125 @@ class _KnobState extends State<Knob> {
     // Adaptive sizing keeps the no-scroll layout usable on short screens
     // (landscape phones) while staying comfortable on tablets.
     final h = MediaQuery.sizeOf(context).height;
-    _knobSize = h < 480 ? 56 : (h < 640 ? 66 : 76);
+    _knobSize = widget.size ?? (h < 480 ? 56 : (h < 640 ? 66 : 76));
   }
 
   @override
   void didUpdateWidget(Knob old) {
     super.didUpdateWidget(old);
-    if (old.value != widget.value && !_dragging) _draft = widget.value;
+    if (widget.size != old.size) {
+      final h = MediaQuery.sizeOf(context).height;
+      _knobSize = widget.size ?? (h < 480 ? 56 : (h < 640 ? 66 : 76));
+    }
+    if (!_dragging) _draft = widget.value;
   }
 
   double get _fraction => (widget.max == widget.min)
       ? 0
       : (_draft - widget.min) / (widget.max - widget.min);
 
+  Offset? _lastPosition;
+  Offset _dragOrigin = Offset.zero;
+  double _precise = 0;
+
   void _updateFromPosition(Offset local) {
-    final center = Offset(_knobSize / 2, _knobSize / 2);
-    final angle = math.atan2(local.dy - center.dy, local.dx - center.dx);
-    if (_lastAngle case final last?) {
-      var delta = angle - last;
-      if (delta > math.pi) delta -= 2 * math.pi;
-      if (delta < -math.pi) delta += 2 * math.pi;
-      final radius = (local - center).distance / (_knobSize / 2);
-      final steps = (widget.max - widget.min) / widget.step;
-      final next = (_draft - widget.min) / widget.step +
-          delta / (2 * math.pi) * steps * (0.35 + 0.65 * radius.clamp(0.2, 1.4));
-      final v = widget.min +
-          (next.clamp(0.0, steps.toDouble()).round() * widget.step);
-      if (v != _draft) setState(() => _draft = v);
-    }
-    _lastAngle = angle;
+    final last = _lastPosition;
+    _lastPosition = local;
+    if (last == null) return;
+    final fine = (local.dx - _dragOrigin.dx).abs() >= 80 ? .25 : 1.0;
+    _precise =
+        (_precise -
+                (local.dy - last.dy) * (widget.max - widget.min) / 200 * fine)
+            .clamp(widget.min.toDouble(), widget.max.toDouble());
+    final value =
+        (widget.min +
+                ((_precise - widget.min) / widget.step).round() * widget.step)
+            .clamp(widget.min, widget.max);
+    if (value != _draft) setState(() => _draft = value);
   }
 
-  double? _lastAngle;
+  Future<void> _enterValue() async {
+    final controller = TextEditingController(text: '$_draft');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) {
+          final parsed = int.tryParse(controller.text);
+          final valid =
+              parsed != null && parsed >= widget.min && parsed <= widget.max;
+          return AlertDialog(
+            title: Text(widget.label),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(signed: true),
+              decoration: InputDecoration(
+                labelText: '${widget.min}–${widget.max}',
+                helperText: widget.format == null
+                    ? 'プリセット値を直接入力'
+                    : '表示：${valid ? widget.format!(parsed) : '—'}',
+                errorText: valid
+                    ? null
+                    : '${widget.min}〜${widget.max}の整数を入力してください',
+              ),
+              onChanged: (_) => setDialog(() {}),
+              onSubmitted: (text) {
+                final value = int.tryParse(text);
+                if (value != null &&
+                    value >= widget.min &&
+                    value <= widget.max) {
+                  Navigator.pop(context, value);
+                }
+              },
+            ),
+            actions: [
+              if (widget.defaultValue != null)
+                TextButton(
+                  onPressed: () => Navigator.pop(context, widget.defaultValue),
+                  child: const Text('標準に戻す'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('キャンセル'),
+              ),
+              FilledButton(
+                onPressed: !valid
+                    ? null
+                    : () {
+                        final value = int.tryParse(controller.text);
+                        if (value != null &&
+                            value >= widget.min &&
+                            value <= widget.max) {
+                          Navigator.pop(context, value);
+                        }
+                      },
+                child: const Text('適用'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    // Keep the controller alive for the dialog's outgoing animation.
+    Future<void>.delayed(const Duration(milliseconds: 500), controller.dispose);
+    if (!mounted || !widget.enabled || result == null) return;
+    final value =
+        (widget.min +
+                ((result - widget.min) / widget.step).round() * widget.step)
+            .clamp(widget.min, widget.max);
+    setState(() => _draft = value);
+    if (value != widget.value) widget.onChanged(value);
+  }
 
   Drag? _startDrag(Offset position) {
     if (!widget.enabled) return null;
     // MultiDrag's Drag.update only fills globalPosition (localPosition
-    // defaults to it), so convert via this render box for correct angles.
-    final box = context.findRenderObject() as RenderBox?;
+    // defaults to it), so convert through this render box before tracking.
+    final box = _dialKey.currentContext?.findRenderObject() as RenderBox?;
     Offset toLocal(Offset global) =>
         box == null ? global : box.globalToLocal(global);
-    _lastAngle = null;
+    _lastPosition = _dragOrigin = toLocal(position);
+    _precise = _draft.toDouble();
     setState(() => _dragging = true);
     return _KnobDrag(
       onMove: (details) {
@@ -104,9 +192,17 @@ class _KnobState extends State<Knob> {
       },
       onDone: () {
         if (!mounted) return;
-        _lastAngle = null;
+        _lastPosition = null;
         setState(() => _dragging = false);
-        if (_draft != widget.value) widget.onChanged(_draft);
+        if (widget.enabled && _draft != widget.value) widget.onChanged(_draft);
+      },
+      onCancel: () {
+        if (!mounted) return;
+        _lastPosition = null;
+        setState(() {
+          _dragging = false;
+          _draft = widget.value;
+        });
       },
     );
   }
@@ -121,7 +217,27 @@ class _KnobState extends State<Knob> {
         Semantics(
           label: widget.label,
           value: _text,
+          increasedValue:
+              widget.format?.call(
+                (_draft + widget.step).clamp(widget.min, widget.max),
+              ) ??
+              '${(_draft + widget.step).clamp(widget.min, widget.max)}',
+          decreasedValue:
+              widget.format?.call(
+                (_draft - widget.step).clamp(widget.min, widget.max),
+              ) ??
+              '${(_draft - widget.step).clamp(widget.min, widget.max)}',
           enabled: widget.enabled,
+          onIncrease: widget.enabled
+              ? () => widget.onChanged(
+                  (_draft + widget.step).clamp(widget.min, widget.max),
+                )
+              : null,
+          onDecrease: widget.enabled
+              ? () => widget.onChanged(
+                  (_draft - widget.step).clamp(widget.min, widget.max),
+                )
+              : null,
           child: RawGestureDetector(
             behavior: HitTestBehavior.opaque,
             excludeFromSemantics: true,
@@ -129,20 +245,22 @@ class _KnobState extends State<Knob> {
               ImmediateMultiDragGestureRecognizer:
                   GestureRecognizerFactoryWithHandlers<
                     ImmediateMultiDragGestureRecognizer
-                  >(
-                () => ImmediateMultiDragGestureRecognizer(),
-                (ImmediateMultiDragGestureRecognizer instance) {
-                  instance.onStart = _startDrag;
-                },
-              ),
+                  >(() => ImmediateMultiDragGestureRecognizer(), (
+                    ImmediateMultiDragGestureRecognizer instance,
+                  ) {
+                    instance.onStart = _startDrag;
+                  }),
             },
             child: SizedBox(
+              key: _dialKey,
               width: _knobSize,
               height: _knobSize,
               child: CustomPaint(
                 painter: _KnobPainter(
                   fraction: _fraction,
-                  accent: scheme.primary,
+                  accent: widget.enabled
+                      ? widget.accent ?? scheme.primary
+                      : scheme.outline,
                   track: scheme.outlineVariant.withValues(alpha: 0.35),
                   active: active,
                   dragging: _dragging,
@@ -159,14 +277,23 @@ class _KnobState extends State<Knob> {
             color: widget.enabled ? scheme.onSurfaceVariant : scheme.outline,
           ),
         ),
-        Text(
-          _text,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: widget.enabled
-                ? (active ? scheme.primary : scheme.onSurface)
-                : scheme.outline,
+        InkWell(
+          onTap: widget.enabled ? _enterValue : null,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Text(
+              _text,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: widget.enabled
+                    ? (active
+                          ? widget.accent ?? scheme.primary
+                          : scheme.onSurface)
+                    : scheme.outline,
+              ),
+            ),
           ),
         ),
       ],
@@ -177,9 +304,14 @@ class _KnobState extends State<Knob> {
 }
 
 class _KnobDrag extends Drag {
-  _KnobDrag({required this.onMove, required this.onDone});
+  _KnobDrag({
+    required this.onMove,
+    required this.onDone,
+    required this.onCancel,
+  });
   final void Function(DragUpdateDetails) onMove;
   final void Function() onDone;
+  final VoidCallback onCancel;
 
   @override
   void update(DragUpdateDetails details) => onMove(details);
@@ -188,7 +320,7 @@ class _KnobDrag extends Drag {
   void end(DragEndDetails details) => onDone();
 
   @override
-  void cancel() => onDone();
+  void cancel() => onCancel();
 }
 
 class _KnobPainter extends CustomPainter {
@@ -222,58 +354,35 @@ class _KnobPainter extends CustomPainter {
       ..color = track;
     canvas.drawArc(rect, _start, _sweep, false, trackPaint);
 
-    if (fraction > 0) {
-      final fill = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.round
-        ..color = accent;
-      if (active) {
-        canvas.saveLayer(Offset.zero & size, Paint());
-        canvas.drawArc(rect, _start, _sweep * fraction, false, fill);
-        canvas.drawArc(
-          rect,
-          _start,
-          _sweep * fraction,
-          false,
-          fill..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
-        );
-        canvas.restore();
-      } else {
-        canvas.drawArc(rect, _start, _sweep * fraction, false, fill);
-      }
-    }
-
-    // knob body + pointer
-    final bodyFill = Paint()
-      ..color = accent.withValues(alpha: active ? 0.10 : 0.04);
-    final bodyStroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = accent.withValues(alpha: active ? 0.7 : 0.25);
-    final bodyRadius = radius - stroke - 5;
-    canvas.drawCircle(center, bodyRadius, bodyFill);
-    canvas.drawCircle(center, bodyRadius, bodyStroke);
     final angle = _start + _sweep * fraction;
-    final inner = Offset(
-      center.dx + math.cos(angle) * bodyRadius * 0.2,
-      center.dy + math.sin(angle) * bodyRadius * 0.2,
-    );
-    final outer = Offset(
-      center.dx + math.cos(angle) * bodyRadius * 0.85,
-      center.dy + math.sin(angle) * bodyRadius * 0.85,
-    );
-    canvas.drawLine(
-      inner,
-      outer,
-      Paint()
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..color = accent.withValues(alpha: active ? (dragging ? 1.0 : 0.9) : 0.35),
+    if (fraction > 0) {
+      canvas.drawArc(
+        rect,
+        _start,
+        _sweep * fraction,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round
+          ..color = accent.withValues(alpha: active ? 1 : .45),
+      );
+    }
+    canvas.drawCircle(
+      Offset(
+        center.dx + math.cos(angle) * radius,
+        center.dy + math.sin(angle) * radius,
+      ),
+      dragging ? 5 : 4,
+      Paint()..color = active ? const Color(0xffe7eef7) : accent,
     );
   }
 
   @override
   bool shouldRepaint(_KnobPainter old) =>
-      old.fraction != fraction || old.active != active || old.dragging != dragging;
+      old.fraction != fraction ||
+      old.active != active ||
+      old.dragging != dragging ||
+      old.accent != accent ||
+      old.track != track;
 }
