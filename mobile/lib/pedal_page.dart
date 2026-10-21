@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'ir_wav.dart' show WavError, wavToIr;
 import 'nam_client.dart' show DeviceState, NamClient;
 import 'nam_tone.dart';
+import 'connection_recovery.dart';
+import 'widgets/recovery_layer.dart';
 import 'studio_theme.dart';
 
 import 'pedal_client.dart';
@@ -19,6 +21,7 @@ import 'widgets/parameter_deck.dart';
 
 class PedalPage extends StatefulWidget {
   final WireTransport transport;
+  final ConnectionRecovery? recovery;
   final bool restrictedNam;
   final bool toolsAvailable;
   final bool effectsAvailable;
@@ -33,6 +36,7 @@ class PedalPage extends StatefulWidget {
   const PedalPage({
     super.key,
     required this.transport,
+    this.recovery,
     required this.restrictedNam,
     required this.toolsAvailable,
     required this.effectsAvailable,
@@ -50,7 +54,9 @@ class _PedalPageState extends State<PedalPage> {
   late final PedalClient _pedal;
   Timer? _timer;
   int _tab = 1, _bank = 0;
-  bool _busy = false, _ready = false;
+  bool _working = false, _ready = false;
+  bool get _busy =>
+      _working || (widget.recovery != null && !widget.recovery!.connected);
   String _error = '', _status = '';
   DateTime? _lastTap;
   Future<void>? _poll;
@@ -58,6 +64,7 @@ class _PedalPageState extends State<PedalPage> {
   List<IrSlotInfo>? _irs;
   DeviceState? _namState;
   bool _libraryOpen = false;
+  RecoveryDraft? _pendingEdit;
 
   @override
   void initState() {
@@ -65,6 +72,8 @@ class _PedalPageState extends State<PedalPage> {
     _pedal = PedalClient(widget.transport, namAware: widget.restrictedNam)
       ..addListener(_changed);
     _namState = widget.namState;
+    widget.recovery?.addListener(_connectionChanged);
+    widget.recovery?.addResynchronizer(_resynchronize);
     unawaited(
       _run('本体を読み込み中', () async {
         await _pedal.initialize();
@@ -105,6 +114,75 @@ class _PedalPageState extends State<PedalPage> {
     });
   }
 
+  void _connectionChanged() {
+    final recovery = widget.recovery;
+    if (recovery == null || !mounted) return;
+    if (recovery.phase == RecoveryPhase.disconnected) {
+      if (_pendingEdit case final pending?) {
+        recovery.keepDraft(pending.preset, pending.bytes);
+      } else if (_dirty) {
+        recovery.keepDraft(
+          _pedal.editIndex ?? _pedal.selected,
+          _pedal.edit!.bytes,
+        );
+      }
+    }
+    setState(() {});
+  }
+
+  Future<void> _resynchronize() async {
+    if (!mounted) return;
+    await _pedal.initialize();
+    if (!mounted) return;
+    _bank = _pedal.selected ~/ 4;
+    await _pedal.loadBank(_bank);
+    if (!mounted) return;
+    await _refreshNam();
+    final recovery = widget.recovery;
+    final draft = recovery?.draft;
+    if (draft != null &&
+        draft.preset == _pedal.selected &&
+        listEquals(draft.bytes, _pedal.edit!.bytes)) {
+      recovery!.clearDraft();
+    }
+    if (mounted) {
+      setState(() {
+        _ready = true;
+        _error = '';
+      });
+    }
+  }
+
+  Future<void> _restoreDraft() async {
+    final recovery = widget.recovery;
+    final draft = recovery?.draft;
+    if (_busy || recovery == null || draft == null) return;
+    if (!await _confirm(
+      '${PedalClient.address(draft.preset)}へ下書きの編集を戻します。音色が切り替わります。プリセットへの記録は、その後「保存」で行ってください。',
+      title: '下書きを本体へ戻す',
+      accept: '編集を戻す',
+    )) {
+      return;
+    }
+    await _run('下書きを復元中', () async {
+      await _pedal.select(draft.preset);
+      var restored = PedalPreset(draft.bytes);
+      if (widget.restrictedNam && restored.word(0xde) != 0x414e) {
+        restored = restored.setWord(0xde, 0x414e).setWord(0xe0, 0);
+      }
+      await widget.transport.sendCommand(0x97, [255, ...restored.bytes]);
+      await _pedal.refresh();
+      if (_pedal.selected != draft.preset ||
+          !listEquals(restored.bytes, _pedal.edit!.bytes)) {
+        throw DeviceError('下書きの復元結果を確認できませんでした。下書きは保持しています。');
+      }
+      _bank = _pedal.selected ~/ 4;
+      await _pedal.loadBank(_bank);
+      await _refreshNam();
+      recovery.clearDraft();
+    });
+  }
+
   void _changed() {
     if (mounted) setState(() {});
   }
@@ -123,7 +201,10 @@ class _PedalPageState extends State<PedalPage> {
 
   bool get _dirty =>
       _ready &&
-      !listEquals(_pedal.edit?.bytes, _pedal.presets[_pedal.selected]?.bytes);
+      !listEquals(
+        _pedal.edit?.bytes,
+        _pedal.presets[_pedal.editIndex ?? _pedal.selected]?.bytes,
+      );
 
   Future<void> _selectPreset(int index) async {
     if (index == _pedal.selected || _busy) return;
@@ -165,7 +246,7 @@ class _PedalPageState extends State<PedalPage> {
   Future<void> _run(String status, Future<void> Function() action) async {
     if (_busy || !mounted) return;
     setState(() {
-      _busy = true;
+      _working = true;
       _error = '';
       _status = status;
     });
@@ -183,7 +264,7 @@ class _PedalPageState extends State<PedalPage> {
     } finally {
       if (mounted) {
         setState(() {
-          _busy = false;
+          _working = false;
           _status = '';
         });
       }
@@ -645,6 +726,8 @@ class _PedalPageState extends State<PedalPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    widget.recovery?.removeListener(_connectionChanged);
+    widget.recovery?.removeResynchronizer(_resynchronize);
     _pedal.removeListener(_changed);
     _pedal.dispose();
     super.dispose();
@@ -768,100 +851,134 @@ class _PedalPageState extends State<PedalPage> {
         ),
       ),
     ),
-    body: SafeArea(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (_ready)
-            LayoutBuilder(
-              builder: (context, box) {
-                final wide = box.maxWidth >= 1000;
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (wide)
-                      Container(
-                        width: 242,
-                        padding: const EdgeInsets.all(16),
-                        decoration: const BoxDecoration(
-                          border: Border(
-                            right: BorderSide(color: StudioTheme.line),
+    body: RecoveryLayer(
+      recovery: widget.recovery,
+      child: SafeArea(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_ready)
+              LayoutBuilder(
+                builder: (context, box) {
+                  final wide = box.maxWidth >= 1000;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (wide)
+                        Container(
+                          width: 242,
+                          padding: const EdgeInsets.all(16),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              right: BorderSide(color: StudioTheme.line),
+                            ),
                           ),
+                          child: SingleChildScrollView(child: _presetSidebar()),
                         ),
-                        child: SingleChildScrollView(child: _presetSidebar()),
-                      ),
-                    Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: wide ? 24 : 16,
-                          vertical: MediaQuery.sizeOf(context).height < 480
-                              ? 4
-                              : 8,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (MediaQuery.sizeOf(context).height >= 480)
-                              _presetHeader(),
-                            if (_error.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 6,
-                                ),
-                                child: Text(
-                                  _error,
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.error,
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: wide ? 24 : 16,
+                            vertical: MediaQuery.sizeOf(context).height < 480
+                                ? 4
+                                : 8,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (MediaQuery.sizeOf(context).height >= 480)
+                                _presetHeader(),
+                              if (_error.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 6,
+                                  ),
+                                  child: Text(
+                                    _error,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error,
+                                    ),
                                   ),
                                 ),
+                              if (MediaQuery.sizeOf(context).height >= 480)
+                                const SizedBox(height: 12),
+                              Expanded(
+                                child: _tab == 1
+                                    ? _effects()
+                                    : _fillOrScroll(switch (_tab) {
+                                        0 => _banks(),
+                                        2 => _drums(),
+                                        3 => _tunerTab(),
+                                        4 => _looper(),
+                                        5 => _ir(),
+                                        _ => _settings(),
+                                      }),
                               ),
-                            if (MediaQuery.sizeOf(context).height >= 480)
-                              const SizedBox(height: 12),
-                            Expanded(
-                              child: _tab == 1
-                                  ? _effects()
-                                  : _fillOrScroll(switch (_tab) {
-                                      0 => _banks(),
-                                      2 => _drums(),
-                                      3 => _tunerTab(),
-                                      4 => _looper(),
-                                      5 => _ir(),
-                                      _ => _settings(),
-                                    }),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          if (_busy && _status != 'エフェクトを更新中') ...[
-            const ModalBarrier(color: Color(0x99090d12), dismissible: false),
-            Center(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(_status, textAlign: TextAlign.center),
                     ],
+                  );
+                },
+              ),
+            if (_working && _status != 'エフェクトを更新中') ...[
+              const ModalBarrier(color: Color(0x99090d12), dismissible: false),
+              Center(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(_status, textAlign: TextAlign.center),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     ),
+    bottomSheet:
+        widget.recovery?.connected == true && widget.recovery?.draft != null
+        ? Material(
+            color: StudioTheme.panel,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Wrap(
+                  spacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text('切断前の未保存の下書きがあります'),
+                    TextButton(
+                      onPressed: _busy ? null : _restoreDraft,
+                      child: const Text('下書きを本体へ戻す'),
+                    ),
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => widget.recovery!.clearDraft(),
+                      child: const Text('本体の状態を使う'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        : null,
   );
 
   Widget _presetHeader() => Row(
@@ -1128,6 +1245,21 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
+  Future<void> _changeModule(PedalModule module, List<int> values) async {
+    if (_busy) return;
+    var wanted = _pedal.edit!;
+    for (var i = 0; i < values.length; i++) {
+      wanted = wanted.setWord(module.offset + i * 2, values[i]);
+    }
+    if (module.command == 0x85) wanted = wanted.setWord(0x96, 0x4c44);
+    _pendingEdit = RecoveryDraft(_pedal.selected, wanted.bytes);
+    try {
+      await _run('エフェクトを更新中', () => _pedal.module(module, values));
+    } finally {
+      _pendingEdit = null;
+    }
+  }
+
   int _selectedModule = 2;
 
   // engine_task processes this fixed serial path. Preset order bytes are
@@ -1223,15 +1355,10 @@ class _PedalPageState extends State<PedalPage> {
       activeTrackColor: accent,
       onChanged: _busy || unsupported || (isNam && _namState?.selected == 0)
           ? null
-          : (v) => _run(
-              'エフェクトを更新中',
-              () => _pedal.module(module, [
-                for (var k = 0; k < module.fields.length; k++)
-                  k == 0
-                      ? (v ? 1 : 0)
-                      : _pedal.edit!.word(module.offset + k * 2),
-              ]),
-            ),
+          : (v) => _changeModule(module, [
+              for (var k = 0; k < module.fields.length; k++)
+                k == 0 ? (v ? 1 : 0) : _pedal.edit!.word(module.offset + k * 2),
+            ]),
     );
     return LayoutBuilder(
       builder: (context, box) {
@@ -1347,17 +1474,14 @@ class _PedalPageState extends State<PedalPage> {
                                   ? (v) => NamTone.format(i, v)
                                   : null,
                               enabled: !_busy && !_moduleDisabled(module, i),
-                              onChanged: (value) => _run(
-                                'エフェクトを更新中',
-                                () => _pedal.module(module, [
-                                  for (var k = 0; k < module.fields.length; k++)
-                                    k == i
-                                        ? value
-                                        : _pedal.edit!.word(
-                                            module.offset + k * 2,
-                                          ),
-                                ]),
-                              ),
+                              onChanged: (value) => _changeModule(module, [
+                                for (var k = 0; k < module.fields.length; k++)
+                                  k == i
+                                      ? value
+                                      : _pedal.edit!.word(
+                                          module.offset + k * 2,
+                                        ),
+                              ]),
                             );
                           },
                         ),
@@ -1377,6 +1501,7 @@ class _PedalPageState extends State<PedalPage> {
     final state = _namState, client = widget.namClient;
     if (_busy || state == null || client == null) return;
     final preset = _pedal.selected;
+    final generation = widget.recovery?.generation;
     setState(() => _libraryOpen = true);
     int? choice;
     try {
@@ -1395,16 +1520,21 @@ class _PedalPageState extends State<PedalPage> {
       await _guard(_openModels);
       return;
     }
-    if (preset != _pedal.selected) {
+    if (generation != widget.recovery?.generation ||
+        preset != _pedal.selected) {
       setState(() => _error = '本体のプリセットが切り替わりました。モデルを選び直してください。');
       return;
     }
     if (choice == state.selected) return;
+    var wanted = _pedal.edit!.setWord(0xde, 0x414e).setWord(0xe0, choice);
+    if (choice != 0) wanted = wanted.setWord(0x2c, 1);
+    _pendingEdit = RecoveryDraft(_pedal.selected, wanted.bytes);
     await _run('NAMモデルをロード中', () async {
       await client.select(choice!);
       await _pedal.refresh();
       await _refreshNam();
     });
+    _pendingEdit = null;
   }
 
   Widget _namModelSelector() {

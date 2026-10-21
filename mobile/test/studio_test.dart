@@ -1,4 +1,5 @@
 import 'package:fb200_nam/main.dart';
+import 'package:fb200_nam/connection_recovery.dart';
 import 'package:fb200_nam/nam_client.dart';
 import 'package:fb200_nam/nam_tone.dart';
 import 'package:fb200_nam/pedal_page.dart';
@@ -10,21 +11,25 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/studio_harness.dart';
 
-Widget studio(StudioHarness h, {Future<void> Function()? openModels}) =>
-    MaterialApp(
-      theme: StudioTheme.theme,
-      home: PedalPage(
-        transport: h.pedal.wire,
-        restrictedNam: true,
-        toolsAvailable: true,
-        effectsAvailable: true,
-        btAudioAvailable: true,
-        namClient: h.client,
-        onOpenModels: openModels,
-        // The page must refresh this initial stale name from the device.
-        namModel: 'Stale model',
-      ),
-    );
+Widget studio(
+  StudioHarness h, {
+  Future<void> Function()? openModels,
+  ConnectionRecovery? recovery,
+}) => MaterialApp(
+  theme: StudioTheme.theme,
+  home: PedalPage(
+    transport: h.pedal.wire,
+    recovery: recovery,
+    restrictedNam: true,
+    toolsAvailable: true,
+    effectsAvailable: true,
+    btAudioAvailable: true,
+    namClient: h.client,
+    onOpenModels: openModels,
+    // The page must refresh this initial stale name from the device.
+    namModel: 'Stale model',
+  ),
+);
 
 void main() {
   test('NAM display units follow the firmware mapping', () {

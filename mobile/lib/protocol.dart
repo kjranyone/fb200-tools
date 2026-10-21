@@ -102,11 +102,11 @@ abstract class FrameLink {
 }
 
 class WireTransport implements RpcTransport {
-  final FrameLink link;
+  FrameLink link;
   final Duration timeout;
   final int retries;
-  late final StreamSubscription<List<int>> _subscription;
-  final _decoder = FrameDecoder();
+  StreamSubscription<List<int>>? _subscription;
+  FrameDecoder _decoder = FrameDecoder();
   Completer<Uint8List>? _pending;
   Completer<Frame>? _legacyPending;
   bool Function(Frame)? _legacyAccept;
@@ -114,8 +114,12 @@ class WireTransport implements RpcTransport {
   final _frames = StreamController<Frame>.broadcast();
   Stream<Frame> get frames => _frames.stream;
   int _id = Random().nextInt(65536), _operation = 0;
-  bool _closed = false;
+  bool _closed = false, _disposed = false;
+  int _binding = 0;
   bool get isClosed => _closed;
+  int get connectionGeneration => _binding;
+  bool get isIdle =>
+      _pending == null && _legacyPending == null && !_legacyWriting;
   Future<void> waitIdle() async {
     await _pending?.future;
     await _legacyPending?.future;
@@ -127,8 +131,14 @@ class WireTransport implements RpcTransport {
     this.timeout = const Duration(seconds: 1),
     this.retries = 2,
   }) {
+    _listen();
+  }
+
+  void _listen() {
+    final binding = _binding;
     _subscription = link.bytes.listen(
       (bytes) {
+        if (_closed || binding != _binding) return;
         for (final incoming in _decoder.add(bytes)) {
           _frames.add(incoming);
           if (_legacyPending != null &&
@@ -150,11 +160,62 @@ class WireTransport implements RpcTransport {
         }
       },
       onError: (Object error) {
-        _disconnected();
+        if (binding == _binding) _disconnected();
       },
-      onDone: _disconnected,
+      onDone: () {
+        if (binding == _binding) _disconnected();
+      },
     );
   }
+
+  /// Replace only the link. Clients and frame subscriptions keep their identity.
+  /// No queued command, save or upload is replayed across connections.
+  Future<void> detach() async {
+    _closed = true;
+    _binding++;
+    _fail('接続が切れました。操作結果を再接続後に確認してください。');
+    _pending = null;
+    _legacyPending = null;
+    _legacyAccept = null;
+    _legacyWriting = false;
+    final subscription = _subscription;
+    final previous = link;
+    _subscription = null;
+    await subscription?.cancel();
+    await previous.close();
+  }
+
+  Future<void> replaceLink(FrameLink next) async {
+    if (_disposed) {
+      await next.close();
+      throw DeviceError('接続は終了しています。');
+    }
+    try {
+      await detach();
+    } catch (_) {
+      await next.close();
+      rethrow;
+    }
+    if (_disposed) {
+      await next.close();
+      throw DeviceError('接続は終了しています。');
+    }
+    link = next;
+    _decoder = FrameDecoder();
+    _closed = false;
+    _listen();
+  }
+
+  Future<void> _write(Uint8List data) async {
+    final binding = _binding;
+    try {
+      await link.write(data);
+    } catch (_) {
+      if (binding == _binding) _disconnected();
+      rethrow;
+    }
+  }
+
   void _disconnected() {
     if (_closed) return;
     _closed = true;
@@ -183,10 +244,14 @@ class WireTransport implements RpcTransport {
   Future<void> sendCommand(int command, List<int> payload) async {
     _checkAvailable();
     _legacyWriting = true;
+    final binding = _binding;
     try {
-      await link.write(frame(command, payload));
+      await _write(frame(command, payload));
+    } catch (_) {
+      if (binding == _binding) _disconnected();
+      rethrow;
     } finally {
-      _legacyWriting = false;
+      if (binding == _binding) _legacyWriting = false;
     }
   }
 
@@ -202,13 +267,19 @@ class WireTransport implements RpcTransport {
     _legacyPending = pending;
     _legacyAccept = (f) => f.command == reply && (accept?.call(f) ?? true);
     try {
-      await link.write(frame(command, payload));
+      await _write(frame(command, payload));
       return await pending.future.timeout(const Duration(seconds: 3));
     } on TimeoutException {
-      throw DeviceError('本体から応答がありません。一覧を更新して操作結果を確認してください。');
+      _disconnected();
+      throw DeviceError('本体から応答がありません。再接続後に操作結果を確認してください。');
+    } catch (_) {
+      if (identical(_legacyPending, pending)) _disconnected();
+      rethrow;
     } finally {
-      _legacyPending = null;
-      _legacyAccept = null;
+      if (identical(_legacyPending, pending)) {
+        _legacyPending = null;
+        _legacyAccept = null;
+      }
     }
   }
 
@@ -226,7 +297,7 @@ class WireTransport implements RpcTransport {
     try {
       Uint8List? result;
       for (var attempt = 0; attempt <= retries; attempt++) {
-        if (!pending.isCompleted) await link.write(encoded);
+        if (!pending.isCompleted) await _write(encoded);
         try {
           result = await pending.future.timeout(timeout);
           break;
@@ -248,18 +319,23 @@ class WireTransport implements RpcTransport {
       }
       return Uint8List.sublistView(p, 5);
     } on TimeoutException {
+      // Optional NAM capability probing must still allow stock firmware.
+      if (operation != 0) _disconnected();
       throw DeviceError('本体から応答がありません。対応ファームウェアと接続を確認してください。');
     } finally {
-      _pending = null;
+      if (identical(_pending, pending)) _pending = null;
     }
   }
 
   @override
   Future<void> close() async {
-    _closed = true;
-    _fail('接続を終了しました。');
-    await _subscription.cancel();
-    await link.close();
-    if (!_frames.isClosed) await _frames.close();
+    if (_disposed) return;
+    _disposed = true;
+    onDisconnected = null;
+    try {
+      await detach();
+    } finally {
+      if (!_frames.isClosed) await _frames.close();
+    }
   }
 }

@@ -9,6 +9,11 @@ the demo without connecting a pedal.
 
 ## Features
 
+**0.10.4+18** adds shared connection recovery across the hub, controller and
+model library: bounded reconnect, read-only resync, idle link checks and
+unsaved-draft recovery without automatically replaying saves or uploads.
+See [Android recovery and verification](../docs/ANDROID_RECOVERY.md).
+
 **0.10.3+17** makes the performance editor a fixed surface: model and NAM
 controls remain visible on tablets, and constrained screens use explicit
 parameter pages. Preset save remains fixed; routing metadata and help move

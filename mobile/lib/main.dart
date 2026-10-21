@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
 import 'ble_link.dart';
+import 'connection_recovery.dart';
+import 'widgets/recovery_layer.dart';
 import 'nam_client.dart';
 import 'nam_model.dart';
 import 'pedal_client.dart';
@@ -36,17 +38,19 @@ class ModelPage extends StatefulWidget {
   /// disconnect it when the library is closed.
   final NamClient? sharedClient;
   final DeviceState? initialState;
+  final ConnectionRecovery? recovery;
   const ModelPage({
     super.key,
     this.pickTone,
     this.sharedClient,
     this.initialState,
+    this.recovery,
   });
   @override
   State<ModelPage> createState() => _ModelPageState();
 }
 
-class _ModelPageState extends State<ModelPage> {
+class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
   final _connector = BleConnector();
   NamClient? _client;
   WireTransport? _wire;
@@ -54,7 +58,9 @@ class _ModelPageState extends State<ModelPage> {
   NamModel? _model;
   ImportedTone? _toneSource;
   final _slotSources = <int, ImportedTone>{};
-  bool _demo = false, _busy = false, _cancel = false, _committing = false;
+  bool _demo = false, _working = false, _cancel = false, _committing = false;
+  ConnectionRecovery? _recovery;
+  bool get _busy => _working || (_recovery != null && !_recovery!.connected);
   bool _showModels = false;
   String _deviceName = '', _operation = '', _message = '', _error = '';
   double? _progress;
@@ -66,6 +72,9 @@ class _ModelPageState extends State<ModelPage> {
   @override
   void initState() {
     super.initState();
+    if (!_libraryOnly) WidgetsBinding.instance.addObserver(this);
+    _recovery = widget.recovery;
+    _listenRecovery();
     if (_libraryOnly) {
       _client = widget.sharedClient;
       _state = widget.initialState;
@@ -76,7 +85,7 @@ class _ModelPageState extends State<ModelPage> {
   Future<void> _run(String label, Future<void> Function() action) async {
     if (_busy) return;
     setState(() {
-      _busy = true;
+      _working = true;
       _operation = label;
       _error = '';
       _message = '';
@@ -90,7 +99,7 @@ class _ModelPageState extends State<ModelPage> {
     } finally {
       if (mounted) {
         setState(() {
-          _busy = false;
+          _working = false;
           _progress = null;
           _committing = false;
         });
@@ -105,7 +114,12 @@ class _ModelPageState extends State<ModelPage> {
     if (mounted && _client == client) setState(() => _state = value);
   }
 
-  Future<void> _attach(RpcTransport transport, String name, bool demo) async {
+  Future<void> _attach(
+    RpcTransport transport,
+    String name,
+    bool demo, {
+    Future<FrameLink> Function()? reopen,
+  }) async {
     final client = NamClient(transport);
     try {
       if (transport is WireTransport) {
@@ -124,22 +138,12 @@ class _ModelPageState extends State<ModelPage> {
         if (transport is! WireTransport || transport.isClosed) rethrow;
         // Stock firmware supports the legacy editor but not NAM RPC.
       }
+      if (transport is WireTransport && transport.isClosed) {
+        throw DeviceError('接続の確認中に通信が切れました。再接続してください。');
+      }
       if (!mounted) {
         await client.close();
         return;
-      }
-      if (transport is WireTransport) {
-        transport.onDisconnected = () {
-          if (mounted && _wire == transport) {
-            setState(() {
-              _client = null;
-              _wire = null;
-              _state = null;
-              _error = '接続が切れました。再接続して本体の一覧を確認してください。';
-            });
-            unawaited(client.close());
-          }
-        };
       }
       setState(() {
         _client = state == null ? null : client;
@@ -147,6 +151,14 @@ class _ModelPageState extends State<ModelPage> {
         _state = state;
         _demo = demo;
         _deviceName = name;
+        if (transport is WireTransport && reopen != null) {
+          _recovery = ConnectionRecovery(
+            transport,
+            reopen,
+            cancelOpening: _connector.cancelPendingConnection,
+          );
+          _listenRecovery();
+        }
         if (state == null) {
           _message = '本体コントロールを利用できます。NAMモデル管理には対応ファームウェアが必要です。';
         }
@@ -170,6 +182,7 @@ class _ModelPageState extends State<ModelPage> {
         transport,
         device.name.isEmpty ? 'FB200' : device.name,
         false,
+        reopen: () => _connector.openLink(device.id),
       );
     });
   }
@@ -184,8 +197,16 @@ class _ModelPageState extends State<ModelPage> {
       _message = '';
       _error = '';
     });
-    await client?.close();
-    if (client == null) await wire?.close();
+    final recovery = _recovery;
+    _unlistenRecovery();
+    setState(() => _recovery = null);
+    if (recovery != null) {
+      await recovery.close();
+      recovery.dispose();
+    } else {
+      await client?.close();
+      if (client == null) await wire?.close();
+    }
     _slotSources.clear();
   }
 
@@ -366,22 +387,74 @@ class _ModelPageState extends State<ModelPage> {
     });
   }
 
+  void _listenRecovery() {
+    _recovery?.addListener(_connectionChanged);
+    _recovery?.addResynchronizer(_resynchronize);
+  }
+
+  void _unlistenRecovery() {
+    _recovery?.removeListener(_connectionChanged);
+    _recovery?.removeResynchronizer(_resynchronize);
+  }
+
+  void _connectionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _resynchronize() async {
+    if (!mounted) return;
+    if (_wire case final wire?) {
+      final pedal = PedalClient(wire);
+      try {
+        await pedal.initialize();
+      } finally {
+        pedal.dispose();
+      }
+    }
+    if (_client case final client?) {
+      await client.handshake();
+      await _refresh();
+    }
+    if (mounted) {
+      setState(() {
+        _error = '';
+        _lastUploaded = null;
+        _message = '再接続しました。本体の状態を読み直しました。中断した転送・保存は再実行していません。';
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_libraryOnly) {
+      _recovery?.setForeground(state == AppLifecycleState.resumed);
+    }
+  }
+
   @override
   void dispose() {
-    if (!_libraryOnly) unawaited(_client?.close() ?? _wire?.close());
+    _unlistenRecovery();
+    if (!_libraryOnly) {
+      WidgetsBinding.instance.removeObserver(this);
+      if (_recovery != null) {
+        _recovery!.dispose();
+      } else {
+        unawaited(_client?.close() ?? _wire?.close());
+      }
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !_busy,
+    canPop: !_working,
     child: Scaffold(
       appBar: AppBar(
         title: Text(_showModels ? 'NAM LIBRARY' : 'FB200 STUDIO'),
         leading: _showModels
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
-                onPressed: _busy
+                onPressed: _working
                     ? null
                     : () {
                         if (_libraryOnly) {
@@ -401,7 +474,7 @@ class _ModelPageState extends State<ModelPage> {
             ),
             IconButton(
               tooltip: '接続を終了',
-              onPressed: _busy ? null : _disconnect,
+              onPressed: _working ? null : _disconnect,
               icon: const Icon(Icons.link_off),
             ),
           ],
@@ -446,13 +519,16 @@ class _ModelPageState extends State<ModelPage> {
               ),
             )
           : null,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680),
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: _showModels ? _modelsView() : _hubView(),
+      body: RecoveryLayer(
+        recovery: _recovery,
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: _showModels ? _modelsView() : _hubView(),
+              ),
             ),
           ),
         ),
@@ -538,6 +614,7 @@ class _ModelPageState extends State<ModelPage> {
                       MaterialPageRoute(
                         builder: (_) => PedalPage(
                           transport: _wire!,
+                          recovery: _recovery,
                           restrictedNam: _client != null,
                           toolsAvailable:
                               _client == null ||
@@ -558,6 +635,7 @@ class _ModelPageState extends State<ModelPage> {
                                     MaterialPageRoute(
                                       builder: (_) => ModelPage(
                                         sharedClient: _client,
+                                        recovery: _recovery,
                                         initialState: _state,
                                         pickTone: widget.pickTone,
                                       ),
@@ -594,6 +672,11 @@ class _ModelPageState extends State<ModelPage> {
           ),
       ]),
     ],
+    if (_recovery?.draft != null)
+      const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Text('未保存の下書きを保持しています。コントローラーで確認できます。'),
+      ),
     ..._statusArea(),
   ];
 

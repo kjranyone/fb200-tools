@@ -143,8 +143,18 @@ class NamClient {
     required bool Function() cancelled,
     void Function()? committing,
   }) async {
+    final wire = transport is WireTransport ? transport as WireTransport : null;
+    final generation = wire?.connectionGeneration;
+    void checkConnection() {
+      if (wire != null &&
+          (wire.isClosed || wire.connectionGeneration != generation)) {
+        throw DeviceError('転送中に接続が切れました。本体の一覧を確認し、必要なら最初から転送してください。');
+      }
+    }
+
     var token = 0;
     try {
+      checkConnection();
       final begin = await transport.request(2, [
         slot,
         ...u16(model.packet.length),
@@ -157,6 +167,7 @@ class NamClient {
       if (token == 0) throw DeviceError('転送番号を確認できませんでした。');
       var offset = 0;
       while (offset < model.packet.length) {
+        checkConnection();
         if (cancelled()) throw TransferCancelled();
         final end = min(offset + _chunkSize, model.packet.length);
         final ack = await transport.request(3, [
@@ -174,10 +185,13 @@ class NamClient {
       }
       if (cancelled()) throw TransferCancelled();
       committing?.call();
+      checkConnection();
       await transport.request(4, u32(token));
       token = 0;
     } catch (_) {
-      if (token != 0) {
+      if (token != 0 &&
+          (wire == null ||
+              (!wire.isClosed && wire.connectionGeneration == generation))) {
         try {
           await transport.request(5, u32(token));
         } catch (_) {

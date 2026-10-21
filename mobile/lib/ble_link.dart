@@ -16,6 +16,16 @@ class _ChannelPair {
 
 class BleConnector {
   FlutterReactiveBle? _instance;
+  int _openingGeneration = 0;
+  Future<void> Function()? _cancelOpening;
+
+  Future<void> cancelPendingConnection() async {
+    _openingGeneration++;
+    final cancel = _cancelOpening;
+    _cancelOpening = null;
+    await cancel?.call();
+  }
+
   bool get supported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
@@ -55,10 +65,16 @@ class BleConnector {
     yield* ble.scanForDevices(withServices: [], scanMode: ScanMode.lowLatency);
   }
 
-  Future<WireTransport> connect(String id) async {
+  Future<WireTransport> connect(String id) async =>
+      WireTransport(await openLink(id));
+
+  Future<FrameLink> openLink(String id) async {
+    final generation = ++_openingGeneration;
     await prepare();
+    if (generation != _openingGeneration) throw DeviceError('再接続を中止しました。');
     final connected = Completer<void>();
     _BleFrameLink? link;
+    var disconnected = false;
     late final StreamSubscription<ConnectionStateUpdate> subscription;
     subscription = ble
         .connectToDevice(id: id, connectionTimeout: const Duration(seconds: 12))
@@ -69,6 +85,7 @@ class BleConnector {
               connected.complete();
             }
             if (s.connectionState == DeviceConnectionState.disconnected) {
+              disconnected = true;
               if (!connected.isCompleted) {
                 connected.completeError(DeviceError('本体に接続できませんでした。'));
               }
@@ -76,16 +93,38 @@ class BleConnector {
             }
           },
           onError: (Object error) {
+            disconnected = true;
             if (!connected.isCompleted) {
               connected.completeError(DeviceError('本体への接続に失敗しました。'));
             }
             link?.lost();
           },
+          onDone: () {
+            disconnected = true;
+            if (!connected.isCompleted) {
+              connected.completeError(DeviceError('本体への接続が終了しました。'));
+            }
+            link?.lost();
+          },
         );
+    Future<void> cancel() async {
+      disconnected = true;
+      if (!connected.isCompleted) {
+        connected.completeError(DeviceError('再接続を中止しました。'));
+      }
+      await subscription.cancel();
+    }
+
+    _cancelOpening = cancel;
     try {
       await connected.future.timeout(const Duration(seconds: 15));
-      await ble.discoverAllServices(id);
-      final services = await ble.getDiscoveredServices(id);
+      await ble.discoverAllServices(id).timeout(const Duration(seconds: 10));
+      final services = await ble
+          .getDiscoveredServices(id)
+          .timeout(const Duration(seconds: 10));
+      if (disconnected || generation != _openingGeneration) {
+        throw DeviceError('通信の準備中に接続が切れました。');
+      }
       final route = selectFb200Uart([
         for (final service in services)
           for (final c in service.characteristics)
@@ -104,14 +143,18 @@ class BleConnector {
         _ChannelPair(route.writer, route.reader),
         subscription,
       );
-      final transport = WireTransport(link);
       link.start();
       await Future<void>.delayed(const Duration(milliseconds: 300));
-      return transport;
+      if (disconnected || link._closed || generation != _openingGeneration) {
+        throw DeviceError('通信の準備中に接続が切れました。');
+      }
+      return link;
     } catch (_) {
       await link?.close();
       await subscription.cancel();
       rethrow;
+    } finally {
+      if (identical(_cancelOpening, cancel)) _cancelOpening = null;
     }
   }
 }
@@ -119,7 +162,9 @@ class BleConnector {
 class _BleFrameLink implements FrameLink {
   final _ChannelPair channel;
   final StreamSubscription<ConnectionStateUpdate> connection;
-  final _bytes = StreamController<List<int>>();
+  // No request is sent until WireTransport subscribes. A broadcast stream
+  // also lets cleanup finish if GATT fails before the link is returned.
+  final _bytes = StreamController<List<int>>.broadcast();
   StreamSubscription<List<int>>? _notifications;
   bool _closed = false;
   _BleFrameLink(this.channel, this.connection);
@@ -149,10 +194,17 @@ class _BleFrameLink implements FrameLink {
     if (_closed) throw DeviceError('Bluetooth接続が切れています。');
     for (var offset = 0; offset < value.length; offset += 20) {
       if (_closed) throw DeviceError('Bluetooth接続が切れています。');
-      await channel.writer.write(
-        value.sublist(offset, min(offset + 20, value.length)),
-        withResponse: channel.writer.isWritableWithResponse,
-      );
+      try {
+        await channel.writer
+            .write(
+              value.sublist(offset, min(offset + 20, value.length)),
+              withResponse: channel.writer.isWritableWithResponse,
+            )
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {
+        lost();
+        throw DeviceError('Bluetooth通信が中断されました。再接続後に操作結果を確認してください。');
+      }
       if (!channel.writer.isWritableWithResponse) {
         await Future<void>.delayed(const Duration(milliseconds: 15));
       }
@@ -162,8 +214,13 @@ class _BleFrameLink implements FrameLink {
   @override
   Future<void> close() async {
     _closed = true;
-    await _notifications?.cancel();
-    await connection.cancel();
+    // Android may already have torn GATT down (e.g. Bluetooth switched off).
+    try {
+      await _notifications?.cancel();
+    } catch (_) {}
+    try {
+      await connection.cancel();
+    } catch (_) {}
     if (!_bytes.isClosed) await _bytes.close();
   }
 }

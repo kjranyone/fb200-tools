@@ -85,6 +85,8 @@ class PedalClient extends ChangeNotifier {
   final presets = <int, PedalPreset>{};
   PedalPreset? edit;
   int selected = 0, battery = 0;
+  int? editIndex;
+  bool _disposed = false;
   bool charging = false, refreshRequired = false;
   Uint8List? settings, rhythm;
   String version = '';
@@ -98,6 +100,7 @@ class PedalClient extends ChangeNotifier {
     switch (frame.command) {
       case 0xa1 when p.length == 257 && p[0] < 40:
         selected = p[0];
+        editIndex = p[0];
         edit = PedalPreset(p.sublist(1));
       case 0x97 when p.length == 257 && p[0] < 40:
         presets[p[0]] = PedalPreset(p.sublist(1));
@@ -125,7 +128,7 @@ class PedalClient extends ChangeNotifier {
           return;
         }
     }
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> initialize() async {
@@ -170,7 +173,7 @@ class PedalClient extends ChangeNotifier {
     for (var i = bank * 4; i < bank * 4 + 4; i++) {
       await readPreset(i);
     }
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> select(int index) async {
@@ -550,6 +553,7 @@ class PedalClient extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     unawaited(_subscription.cancel());
     super.dispose();
   }

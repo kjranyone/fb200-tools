@@ -41,7 +41,20 @@ class StudioHarness {
           pedal.link.incoming.add(frame(command, payload));
       if (f.command == 0xe0) {
         final op = f.payload[1], args = f.payload.sublist(4);
-        if (op == 1) {
+        if (op == 0) {
+          pedal.link.reply(
+            bytes,
+            data: [
+              ...u32(48000),
+              ...u16(1871),
+              3,
+              64,
+              ...u16(7548),
+              ...u16(7 | 8 | 16 | 128 | 256 | 512),
+              selected,
+            ],
+          );
+        } else if (op == 1) {
           final data = <int>[selected];
           for (var i = 1; i <= 3; i++) {
             final name = names[i]?.codeUnits ?? <int>[];
