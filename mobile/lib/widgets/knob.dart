@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
@@ -8,8 +9,9 @@ import 'package:flutter/gestures.dart'
         ImmediateMultiDragGestureRecognizer;
 import 'package:flutter/material.dart';
 
-/// Drag vertically to adjust; move sideways for finer control, release
-/// to commit. Values are accumulated as doubles so small movements are retained. A flat 270° arc and a numeric entry show the current value.
+/// Drag vertically to adjust; move sideways for finer control. An optional
+/// live preview is throttled to 80 ms; release commits/verifies the final value.
+/// Values accumulate as doubles so small movements are retained.
 ///
 /// Uses ImmediateMultiDragGestureRecognizer so the knob wins the gesture
 /// arena against the surrounding ListView's scroll (a plain GestureDetector
@@ -24,6 +26,7 @@ class Knob extends StatefulWidget {
   final int? defaultValue;
   final String Function(int)? format;
   final ValueChanged<int> onChanged; // committed on release
+  final ValueChanged<int>? onPreview;
   final bool enabled;
   final Color? accent;
   final double? size;
@@ -35,6 +38,7 @@ class Knob extends StatefulWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.onPreview,
     this.step = 1,
     this.defaultValue,
     this.format,
@@ -52,6 +56,8 @@ class _KnobState extends State<Knob> {
   bool _dragging = false;
   late int _draft;
   late double _knobSize;
+  Timer? _previewTimer;
+  int? _previewValue;
 
   @override
   void initState() {
@@ -75,7 +81,10 @@ class _KnobState extends State<Knob> {
       final h = MediaQuery.sizeOf(context).height;
       _knobSize = widget.size ?? (h < 480 ? 56 : (h < 640 ? 66 : 76));
     }
-    if (!_dragging) _draft = widget.value;
+    if (!_dragging &&
+        (widget.value != old.value || (!old.enabled && widget.enabled))) {
+      _draft = widget.value;
+    }
   }
 
   double get _fraction => (widget.max == widget.min)
@@ -99,7 +108,21 @@ class _KnobState extends State<Knob> {
         (widget.min +
                 ((_precise - widget.min) / widget.step).round() * widget.step)
             .clamp(widget.min, widget.max);
-    if (value != _draft) setState(() => _draft = value);
+    if (value != _draft) {
+      setState(() => _draft = value);
+      if (widget.onPreview != null && _previewTimer == null) {
+        _previewTimer = Timer(const Duration(milliseconds: 80), () {
+          _previewTimer = null;
+          if (mounted &&
+              _dragging &&
+              widget.enabled &&
+              _previewValue != _draft) {
+            _previewValue = _draft;
+            widget.onPreview!(_draft);
+          }
+        });
+      }
+    }
   }
 
   Future<void> _enterValue() async {
@@ -184,6 +207,7 @@ class _KnobState extends State<Knob> {
         box == null ? global : box.globalToLocal(global);
     _lastPosition = _dragOrigin = toLocal(position);
     _precise = _draft.toDouble();
+    _previewValue = widget.value;
     setState(() => _dragging = true);
     return _KnobDrag(
       onMove: (details) {
@@ -192,19 +216,37 @@ class _KnobState extends State<Knob> {
       },
       onDone: () {
         if (!mounted) return;
+        _previewTimer?.cancel();
+        _previewTimer = null;
         _lastPosition = null;
         setState(() => _dragging = false);
-        if (widget.enabled && _draft != widget.value) widget.onChanged(_draft);
+        if (widget.enabled &&
+            (_draft != widget.value || widget.onPreview != null)) {
+          widget.onChanged(_draft);
+        }
       },
       onCancel: () {
         if (!mounted) return;
+        _previewTimer?.cancel();
+        _previewTimer = null;
         _lastPosition = null;
         setState(() {
           _dragging = false;
           _draft = widget.value;
         });
+        if (widget.enabled &&
+            widget.onPreview != null &&
+            _previewValue != widget.value) {
+          widget.onChanged(widget.value);
+        }
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _previewTimer?.cancel();
+    super.dispose();
   }
 
   @override

@@ -9,6 +9,11 @@ the demo without connecting a pedal.
 
 ## Features
 
+**0.10.6+20** adds live NAM knob preview with a coalesced BLE writer and final
+readback, names effect algorithms and their audible parameters, and shows
+actual IR names/assignments in the cabinet selector and IR tab. Unused DSP
+fields are excluded from the controls. See [tone measurement and controls](../docs/ANDROID_EFFECT_CONTROLS.md).
+
 **0.10.5+19** reduces unnecessary recovery: idle-only checks tolerate a missed
 reply, NAM list replies have a suitable timeout, panel updates read only the
 selection, and open routes share the recovered catalogue. Reconnect status is

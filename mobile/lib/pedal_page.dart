@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'ir_wav.dart' show WavError, wavToIr;
 import 'nam_client.dart' show DeviceState, NamClient;
 import 'nam_tone.dart';
+import 'effect_parameters.dart';
 import 'connection_recovery.dart';
 import 'widgets/recovery_layer.dart';
 import 'studio_theme.dart';
@@ -18,6 +19,7 @@ import 'widgets/chain_strip.dart';
 import 'widgets/knob.dart';
 import 'widgets/nam_model_picker.dart';
 import 'widgets/parameter_deck.dart';
+import 'widgets/effect_choice.dart';
 
 class PedalPage extends StatefulWidget {
   final WireTransport transport;
@@ -57,7 +59,9 @@ class _PedalPageState extends State<PedalPage> {
   bool _working = false, _ready = false;
   bool _blocking = false;
   bool get _busy =>
-      _working || (widget.recovery != null && !widget.recovery!.connected);
+      _working ||
+      _toneDraft != null ||
+      (widget.recovery != null && !widget.recovery!.connected);
   String _error = '', _status = '';
   DateTime? _lastTap;
   Future<void>? _poll;
@@ -66,6 +70,9 @@ class _PedalPageState extends State<PedalPage> {
   DeviceState? _namState;
   bool _libraryOpen = false;
   RecoveryDraft? _pendingEdit;
+  RecoveryDraft? _toneDraft, _toneQueued;
+  Future<void>? _tonePreviewWork;
+  int? _toneField;
 
   @override
   void initState() {
@@ -81,6 +88,7 @@ class _PedalPageState extends State<PedalPage> {
         _bank = _pedal.selected ~/ 4;
         await _pedal.loadBank(_bank);
         await _refreshNam();
+        await _irReload();
         _ready = true;
         await _probeLooper();
       }),
@@ -127,18 +135,24 @@ class _PedalPageState extends State<PedalPage> {
           _pedal.edit!.bytes,
         );
       }
+      _toneQueued = null;
+      _toneDraft = null;
     }
     setState(() {});
   }
 
   Future<void> _resynchronize() async {
     if (!mounted) return;
+    _toneQueued = null;
+    _toneDraft = null;
+    _pendingEdit = null;
     await _pedal.initialize();
     if (!mounted) return;
     _bank = _pedal.selected ~/ 4;
     await _pedal.loadBank(_bank);
     if (!mounted) return;
     await _refreshNam(reuseSlots: true);
+    await _irReload();
     final recovery = widget.recovery;
     final draft = recovery?.draft;
     if (draft != null &&
@@ -185,7 +199,21 @@ class _PedalPageState extends State<PedalPage> {
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        if (_toneDraft != null &&
+            (_toneDraft!.preset != _pedal.selected || _pedal.refreshRequired)) {
+          _toneQueued = null;
+          _toneDraft = null;
+          _toneField = null;
+          _pendingEdit = null;
+        }
+        if (_pedal.irSlots.length == PedalClient.irSlotCount) {
+          _irs = _pedal.irSlots.values.toList()
+            ..sort((a, b) => a.slot.compareTo(b.slot));
+        }
+      });
+    }
   }
 
   Future<void> _refreshNam({
@@ -206,11 +234,12 @@ class _PedalPageState extends State<PedalPage> {
       ?.name;
 
   bool get _dirty =>
-      _ready &&
-      !listEquals(
-        _pedal.edit?.bytes,
-        _pedal.presets[_pedal.editIndex ?? _pedal.selected]?.bytes,
-      );
+      _toneDraft != null ||
+      (_ready &&
+          !listEquals(
+            _pedal.edit?.bytes,
+            _pedal.presets[_pedal.editIndex ?? _pedal.selected]?.bytes,
+          ));
 
   Future<void> _selectPreset(int index) async {
     if (index == _pedal.selected || _busy) return;
@@ -264,6 +293,7 @@ class _PedalPageState extends State<PedalPage> {
     try {
       final binding = widget.transport.connectionGeneration;
       await _poll;
+      await _tonePreviewWork;
       await widget.transport.waitIdle();
       if (widget.transport.isClosed ||
           binding != widget.transport.connectionGeneration) {
@@ -743,6 +773,7 @@ class _PedalPageState extends State<PedalPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _toneQueued = null;
     widget.recovery?.removeListener(_connectionChanged);
     widget.recovery?.removeResynchronizer(_resynchronize);
     _pedal.removeListener(_changed);
@@ -829,12 +860,14 @@ class _PedalPageState extends State<PedalPage> {
                         child: SizedBox(
                           width: (box.maxWidth / 7).clamp(48.0, 180.0),
                           child: InkWell(
-                            onTap: () {
-                              setState(() => _tab = i);
-                              if (i == 5 && _irs == null && !_busy) {
-                                _run('IR一覧を読み込み中', _irReload);
-                              }
-                            },
+                            onTap: _toneDraft != null
+                                ? null
+                                : () {
+                                    setState(() => _tab = i);
+                                    if (i == 5 && _irs == null && !_busy) {
+                                      _run('IR一覧を読み込み中', _irReload);
+                                    }
+                                  },
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -1277,6 +1310,98 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
+  void _previewNamTone(int field, int value) {
+    if (_working ||
+        !mounted ||
+        _pedal.refreshRequired ||
+        _pedal.editIndex != _pedal.selected ||
+        (widget.recovery != null && !widget.recovery!.connected)) {
+      return;
+    }
+    final base = _pedal.edit!.bytes;
+    final wanted = PedalPreset(base).setWord(0x2c + field * 2, value);
+    setState(() {
+      _toneField = field;
+      _toneDraft = RecoveryDraft(_pedal.selected, wanted.bytes);
+      _toneQueued = _toneDraft;
+      _pendingEdit = _toneDraft;
+    });
+    if (_tonePreviewWork != null) return;
+    final work = _sendTonePreviews(widget.transport.connectionGeneration);
+    _tonePreviewWork = work;
+    unawaited(
+      work.whenComplete(() {
+        if (identical(_tonePreviewWork, work)) _tonePreviewWork = null;
+      }),
+    );
+  }
+
+  Future<void> _sendTonePreviews(int binding) async {
+    try {
+      while (_toneQueued != null) {
+        var wanted = _toneQueued!;
+        _toneQueued = null;
+        await widget.transport.waitIdle();
+        if (_toneQueued != null) {
+          wanted = _toneQueued!;
+          _toneQueued = null;
+        }
+        if (!mounted ||
+            widget.transport.isClosed ||
+            widget.transport.connectionGeneration != binding ||
+            _pedal.selected != wanted.preset ||
+            _pedal.editIndex != wanted.preset ||
+            _pedal.refreshRequired) {
+          return;
+        }
+        final field = _toneField;
+        if (field == null) return;
+        final live = _pedal.edit!.setWord(
+          0x2c + field * 2,
+          PedalPreset(wanted.bytes).word(0x2c + field * 2),
+        );
+        await widget.transport.sendCommand(
+          0x82,
+          live.bytes.sublist(0x2c, 0x3c),
+        );
+      }
+    } catch (e) {
+      _toneQueued = null;
+      if (mounted) {
+        setState(
+          () => _error = e is DeviceError ? e.message : '音色の反映を確認できませんでした。',
+        );
+      }
+    }
+  }
+
+  Future<void> _finishNamTone(int field, int value) async {
+    if (_working ||
+        !mounted ||
+        _pedal.refreshRequired ||
+        _pedal.editIndex != _pedal.selected ||
+        (widget.recovery != null && !widget.recovery!.connected)) {
+      return;
+    }
+    _previewNamTone(
+      field,
+      value,
+    ); // flush the final value even below the 80 ms interval
+    setState(() => _toneDraft = null);
+    try {
+      await _run('NAM音色を確認中', () async {
+        await _pedal.refresh();
+        if (_pedal.edit!.word(0x2c + field * 2) != value) {
+          throw DeviceError('本体への反映を確認できませんでした。表示値を確認して再操作してください。');
+        }
+        await _refreshNam();
+      }, blocking: false);
+    } finally {
+      _pendingEdit = null;
+      _toneField = null;
+    }
+  }
+
   int _selectedModule = 2;
 
   // engine_task processes this fixed serial path. Preset order bytes are
@@ -1299,7 +1424,7 @@ class _PedalPageState extends State<PedalPage> {
         builder: (context) => AlertDialog(
           title: const Text('音作りの操作'),
           content: const Text(
-            '上下ドラッグで値を調整し、横に指を離すと微調整できます。数値タップで直接入力・標準値への復帰ができます。\n\nモデル選択は試聴です。「保存」でモデルとパラメーターをプリセットに記録します。音声の接続順は固定です。',
+            '上下ドラッグで値を調整します。NAMノブはドラッグ中も音に反映し、指を離すと本体の値を確認します。他のエフェクトは指を離すと反映します。横に指を離すと微調整できます。数値タップで直接入力・標準値への復帰ができます。\n\nNAMのGAINはモデル前の入力ドライブ、BASS・MID・TREBLEはモデル後のEQ、MID FREQはMIDの中心周波数、VOLUMEはモデル後の出力レベルです。NAMがOFFまたはBYPASSの間は効きません。Bluetoothの再生音と通常のUSB再生音はNAMを通りません。\n\nモデル選択は試聴です。「保存」でモデルとパラメーターをプリセットに記録します。音声の接続順は固定です。',
           ),
           actions: [
             TextButton(
@@ -1361,12 +1486,14 @@ class _PedalPageState extends State<PedalPage> {
                 [3, 4, 6].contains(m)) ||
             (widget.restrictedNam && m == 2 && _namState?.selected == 0),
       );
+    final parameters = EffectParameters.forModule(
+      module,
+      _pedal.edit!,
+      irSlots: _irs,
+    );
     final fields = isNam
         ? const [2, 3, 4, 6, 5, 7]
-        : [
-            for (var i = 1; i < module.fields.length; i++)
-              if (module.fields[i].max > 0) i,
-          ];
+        : parameters.map((p) => p.field).toList();
     final toggle = Switch(
       value: enabled.contains(selected),
       activeTrackColor: accent,
@@ -1396,7 +1523,9 @@ class _PedalPageState extends State<PedalPage> {
                 selected: visible.indexOf(selected),
                 restrictedNam: widget.restrictedNam,
                 namModel: _namState == null ? widget.namModel : _activeModel,
-                onTap: (i) => setState(() => _selectedModule = visible[i]),
+                onTap: (i) {
+                  if (!_busy) setState(() => _selectedModule = visible[i]);
+                },
               ),
               const SizedBox(height: 10),
             ],
@@ -1471,34 +1600,66 @@ class _PedalPageState extends State<PedalPage> {
                           count: fields.length,
                           itemBuilder: (index, size) {
                             final i = fields[index];
+                            final parameter = isNam ? null : parameters[index];
+                            final choices = parameter?.choices;
+                            if (choices != null) {
+                              final value = _pedal.edit!.word(
+                                module.offset + i * 2,
+                              );
+                              return EffectChoice(
+                                label: parameter!.label,
+                                value: choices[value] ?? '未選択 ($value)',
+                                enabled: !_busy && !unsupported,
+                                onPressed: () =>
+                                    _pickEffectParameter(module, parameter),
+                              );
+                            }
                             return Knob(
-                              key: ValueKey('module-$selected-field-$i'),
+                              key: ValueKey(
+                                'preset-${_pedal.editIndex}-nam-${_namState?.selected}-module-$selected-field-$i',
+                              ),
                               defaultValue: isNam ? 50 : null,
                               label: isNam
                                   ? NamTone.labels[i]!
-                                  : module.fields[i].label,
+                                  : parameter!.label,
                               value: _pedal.edit!
                                   .word(module.offset + i * 2)
                                   .clamp(
-                                    module.fields[i].min,
-                                    module.fields[i].max,
+                                    parameter?.min ?? module.fields[i].min,
+                                    parameter?.max ?? module.fields[i].max,
                                   ),
-                              min: module.fields[i].min,
-                              max: module.fields[i].max,
+                              min: parameter?.min ?? module.fields[i].min,
+                              max: parameter?.max ?? module.fields[i].max,
                               size: size,
                               accent: accent,
                               format: isNam
                                   ? (v) => NamTone.format(i, v)
+                                  : parameter?.format,
+                              enabled:
+                                  (isNam && _toneDraft != null
+                                      ? !_working &&
+                                            _toneField == i &&
+                                            (widget.recovery == null ||
+                                                widget.recovery!.connected)
+                                      : !_busy) &&
+                                  !_moduleDisabled(module, i),
+                              onPreview: isNam
+                                  ? (value) => _previewNamTone(i, value)
                                   : null,
-                              enabled: !_busy && !_moduleDisabled(module, i),
-                              onChanged: (value) => _changeModule(module, [
-                                for (var k = 0; k < module.fields.length; k++)
-                                  k == i
-                                      ? value
-                                      : _pedal.edit!.word(
-                                          module.offset + k * 2,
-                                        ),
-                              ]),
+                              onChanged: isNam
+                                  ? (value) => _finishNamTone(i, value)
+                                  : (value) => _changeModule(module, [
+                                      for (
+                                        var k = 0;
+                                        k < module.fields.length;
+                                        k++
+                                      )
+                                        k == i
+                                            ? value
+                                            : _pedal.edit!.word(
+                                                module.offset + k * 2,
+                                              ),
+                                    ]),
                             );
                           },
                         ),
@@ -1569,7 +1730,7 @@ class _PedalPageState extends State<PedalPage> {
         ? '選択したスロットは空です。モデルを選び直してください'
         : _pedal.edit!.word(0x2c) == 0
         ? 'ロード済み · NAMはOFF'
-        : '本体にロード済み';
+        : 'NAM有効 · ドラッグ中も音に反映';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -1636,6 +1797,80 @@ class _PedalPageState extends State<PedalPage> {
     );
   }
 
+  Future<void> _pickEffectParameter(
+    PedalModule module,
+    EffectParameter parameter,
+  ) async {
+    if (_busy) return;
+    final preset = _pedal.selected;
+    final generation = widget.transport.connectionGeneration;
+    final value = _pedal.edit!.word(module.offset + parameter.field * 2);
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .7,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  parameter.label,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final option in parameter.choices!.entries)
+                      ListTile(
+                        selected: option.key == value,
+                        enabled:
+                            !(module.command == 0x83 &&
+                                option.key >= 11 &&
+                                _irs
+                                        ?.where(
+                                          (s) =>
+                                              s.slot == option.key - 10 &&
+                                              s.used,
+                                        )
+                                        .isEmpty !=
+                                    false),
+                        leading: Icon(
+                          option.key == value
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                        ),
+                        title: Text(option.value),
+                        subtitle: module.command == 0x83 && option.key >= 11
+                            ? Text('ユーザーIR ${option.key - 10}')
+                            : null,
+                        onTap: () => Navigator.pop(context, option.key),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null || _busy) return;
+    if (generation != widget.transport.connectionGeneration ||
+        preset != _pedal.selected) {
+      setState(() => _error = '本体の状態が変わりました。もう一度選択してください。');
+      return;
+    }
+    await _changeModule(module, [
+      for (var i = 0; i < module.fields.length; i++)
+        i == parameter.field
+            ? choice
+            : _pedal.edit!.word(module.offset + i * 2),
+    ]);
+  }
+
   bool _moduleDisabled(PedalModule module, int field) {
     if ((widget.restrictedNam &&
         !widget.effectsAvailable &&
@@ -1647,6 +1882,8 @@ class _PedalPageState extends State<PedalPage> {
     return widget.restrictedNam &&
         module.command == 0x82 &&
         (field == 1 ||
+            _namState?.selected == 0 ||
+            _pedal.edit!.word(0x2c) == 0 ||
             (field >= 3 && field <= 6 && widget.namClient?.canToneEq != true));
   }
 
@@ -1891,17 +2128,26 @@ class _PedalPageState extends State<PedalPage> {
               style: TextStyle(fontSize: 12),
             ),
           ),
-        GridView.count(
-          crossAxisCount: 3,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1.9,
+        GridView(
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 360,
+            mainAxisExtent:
+                104 + (MediaQuery.textScalerOf(context).scale(14) - 14) * 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: [
             for (final s in slots)
               Card(
                 margin: EdgeInsets.zero,
+                shape: _pedal.edit!.word(0x46) == s.slot + 10
+                    ? RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: StudioTheme.nam),
+                      )
+                    : null,
                 child: InkWell(
                   onTap: _busy ? null : () => _guard(() => _irSlotMenu(s)),
                   child: Padding(
@@ -1911,12 +2157,12 @@ class _PedalPageState extends State<PedalPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'IR${s.slot}',
+                          'IR${s.slot}${_pedal.edit!.word(0x46) == s.slot + 10 ? ' · CABに割当（${_pedal.edit!.word(0x44) == 0 ? 'OFF' : 'ON'}）' : ''}',
                           style: Theme.of(context).textTheme.labelMedium,
                         ),
                         Text(
                           s.used ? s.name : '空き',
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(

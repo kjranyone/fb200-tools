@@ -83,6 +83,7 @@ class PedalClient extends ChangeNotifier {
   final bool namAware;
   late final StreamSubscription<Frame> _subscription;
   final presets = <int, PedalPreset>{};
+  final irSlots = <int, IrSlotInfo>{};
   PedalPreset? edit;
   int selected = 0, battery = 0;
   int? editIndex;
@@ -98,6 +99,14 @@ class PedalClient extends ChangeNotifier {
   void _receive(Frame frame) {
     final p = frame.payload;
     switch (frame.command) {
+      case 0x69
+          when p.length == 59 &&
+              p[0] == 1 &&
+              read16(p, 1) >= 1 &&
+              read16(p, 1) <= irSlotCount &&
+              p[3] <= 1:
+        final slot = _irRecord(p, 0);
+        irSlots[slot.slot] = slot;
       case 0xa1 when p.length == 257 && p[0] < 40:
         selected = p[0];
         editIndex = p[0];
@@ -312,22 +321,25 @@ class PedalClient extends ChangeNotifier {
       if (p[o] != 1 || read16(p, o + 1) != s + 1) {
         throw DeviceError('IRスロット一覧の形式が不正です。');
       }
-      final used = p[o + 3] == 1;
-      result.add(
-        IrSlotInfo(
-          s + 1,
-          used,
-          used
-              ? latin1
-                    .decode(p.sublist(o + 5, o + 5 + _irNameLen))
-                    .split('\x00')
-                    .first
-              : '',
-        ),
-      );
+      if (p[o + 3] > 1) throw DeviceError('IRスロットの使用状態が不正です。');
+      result.add(_irRecord(p, o));
     }
+    irSlots
+      ..clear()
+      ..addEntries(result.map((s) => MapEntry(s.slot, s)));
     return result;
   }
+
+  static IrSlotInfo _irRecord(List<int> p, int offset) => IrSlotInfo(
+    read16(p, offset + 1),
+    p[offset + 3] == 1,
+    p[offset + 3] == 1
+        ? latin1
+              .decode(p.sublist(offset + 5, offset + 5 + _irNameLen))
+              .split('\x00')
+              .first
+        : '',
+  );
 
   /// Rename a used IR slot (`67` op 2).
   Future<void> irRename(int slot, String name) async {

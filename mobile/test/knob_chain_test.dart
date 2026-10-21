@@ -5,6 +5,46 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fb200_nam/widgets/knob.dart';
 
 void main() {
+  testWidgets(
+    'live preview is throttled and cancel restores the original value',
+    (tester) async {
+      final previews = <int>[], finalValues = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: Knob(
+                label: 'GAIN',
+                value: 50,
+                min: 0,
+                max: 100,
+                onPreview: previews.add,
+                onChanged: finalValues.add,
+              ),
+            ),
+          ),
+        ),
+      );
+      final dial = find
+          .descendant(
+            of: find.byType(Knob),
+            matching: find.byType(RawGestureDetector),
+          )
+          .first;
+      final drag = await tester.startGesture(tester.getCenter(dial));
+      await drag.moveBy(const Offset(0, -20));
+      await tester.pump(const Duration(milliseconds: 40));
+      await drag.moveBy(const Offset(0, -20));
+      expect(previews, isEmpty);
+      await tester.pump(const Duration(milliseconds: 45));
+      expect(previews, [70]);
+      expect(finalValues, isEmpty);
+      await drag.cancel();
+      await tester.pump();
+      expect(finalValues, [50]);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   testWidgets('vertical drag supports fine adjustment and cancellation', (
     tester,
   ) async {
