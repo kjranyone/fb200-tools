@@ -12,6 +12,37 @@ import 'studio_test.dart' show studio;
 import 'support/studio_harness.dart';
 
 void main() {
+  for (final size in [const Size(360, 640), const Size(844, 390)]) {
+    testWidgets('recovery status keeps the editor fixed at $size', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final h = StudioHarness();
+      final recovery = ConnectionRecovery(
+        h.pedal.wire,
+        () async => throw StateError('cancelled recovery must not open'),
+        heartbeatInterval: Duration.zero,
+      );
+      await tester.pumpWidget(studio(h, recovery: recovery));
+      await tester.pumpAndSettle();
+      final editor = find.byKey(const ValueKey('fixed-editor'));
+      final before = tester.getRect(editor);
+      h.pedal.link.incoming.addError(Exception('lost'));
+      await tester.pump();
+      recovery.cancelRecovery();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(editor), before);
+      expect(find.text('同じ本体に再接続'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(recovery.close);
+      recovery.dispose();
+      await tester.runAsync(h.close);
+    });
+  }
   testWidgets(
     'an open borrowed library follows the recovered connection and releases no owner',
     (tester) async {
@@ -132,6 +163,13 @@ void main() {
         }
         await tester.pump(const Duration(milliseconds: 20));
         expect(recovery.draft, isNotNull);
+        expect(
+          find.byWidgetPredicate(
+            (w) => w is ModalBarrier && w.color != null && w.color!.a > 0,
+          ),
+          findsNothing,
+        );
+        expect(find.byType(Knob), findsWidgets);
         expect(read16(recovery.draft!.bytes, 0x30), 75);
         expect(
           tester.widgetList<Knob>(find.byType(Knob)).every((k) => !k.enabled),

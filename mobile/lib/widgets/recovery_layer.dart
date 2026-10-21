@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../connection_recovery.dart';
 
+/// Keep the last known editor visible while device writes are disabled.
+/// Reconnecting is connection status, not a modal task the user must dismiss.
 class RecoveryLayer extends StatelessWidget {
   final ConnectionRecovery? recovery;
   final Widget child;
@@ -17,66 +19,64 @@ class RecoveryLayer extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           AbsorbPointer(absorbing: !session.connected, child: child),
-          if (!session.connected) ...[
-            const ModalBarrier(color: Color(0xcc0c0f13), dismissible: false),
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 430),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            session.phase == RecoveryPhase.synchronizing
-                                ? '本体の状態を再同期中'
-                                : session.busy
-                                ? '本体へ再接続中（${session.attempt}/${session.retryDelays.length}）'
-                                : '本体との接続が切れました',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
+          if (!session.connected)
+            Align(
+              alignment: Alignment.topCenter,
+              child: Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        child: Wrap(
+                          spacing: 16,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              session.phase == RecoveryPhase.synchronizing
+                                  ? '本体の状態を再同期中 · 操作は復旧後に再開できます'
+                                  : session.busy
+                                  ? '本体へ再接続中（${session.attempt}/${session.retryDelays.length}）'
+                                  : '本体との接続が切れました',
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            '本体の電源とBluetoothを確認してください。転送や保存は自動で再実行しません。',
-                          ),
-                          if (session.draft != null)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: Text('未保存の編集を下書きとして保持しています。'),
+                            if (session.draft != null)
+                              const Text('未保存の下書きを保持しています'),
+                            TextButton.icon(
+                              onPressed: session.busy
+                                  ? session.cancelRecovery
+                                  : () => session.reconnect(),
+                              icon: Icon(
+                                session.busy ? Icons.close : Icons.refresh,
+                                size: 18,
+                              ),
+                              label: Text(session.busy ? '再接続を中止' : '同じ本体に再接続'),
                             ),
-                          if (session.error.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(session.error),
-                            ),
-                          const SizedBox(height: 16),
-                          if (session.busy) ...[
-                            const LinearProgressIndicator(),
-                            TextButton(
-                              onPressed: session.cancelRecovery,
-                              child: const Text('再接続を中止'),
-                            ),
-                          ] else
-                            FilledButton.icon(
-                              onPressed: () => session.reconnect(),
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('同じ本体に再接続'),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                      if (!session.busy)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                          child: Text(
+                            session.error.isNotEmpty
+                                ? session.error
+                                : '本体の電源とBluetoothを確認してください。転送や保存は自動で再実行しません。',
+                          ),
+                        ),
+                      if (session.busy)
+                        const LinearProgressIndicator(minHeight: 2),
+                    ],
                   ),
                 ),
               ),
             ),
-          ],
         ],
       ),
     );

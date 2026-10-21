@@ -33,6 +33,62 @@ class MemoryLink implements FrameLink {
 }
 
 void main() {
+  for (final probe in ['legacy', 'NAM']) {
+    test(
+      'waiting for an idle wire completes after a soft $probe timeout',
+      () async {
+        final link = MemoryLink();
+        final wire = WireTransport(
+          link,
+          timeout: const Duration(milliseconds: 5),
+          retries: 0,
+        );
+        final request = probe == 'legacy'
+            ? wire.exchange(
+                0,
+                [],
+                1,
+                disconnectOnTimeout: false,
+                responseTimeout: const Duration(milliseconds: 5),
+              )
+            : wire.request(0, []);
+        final failed = expectLater(request, throwsA(isA<DeviceError>()));
+        await wire.waitIdle().timeout(const Duration(seconds: 1));
+        await failed;
+        expect(wire.isIdle, isTrue);
+        expect(wire.isClosed, isFalse);
+        link.sent = (_) async => link.incoming.add(frame(1, [1]));
+        await wire.exchange(0, [], 1);
+        await wire.close();
+      },
+    );
+  }
+  test(
+    'a slow large NAM page completes before any duplicate request is sent',
+    () async {
+      final link = MemoryLink();
+      final payload = List.generate(993, (i) => i & 255);
+      final timers = <Timer>[];
+      link.sent = (request) async {
+        timers.add(
+          Timer(const Duration(milliseconds: 1200), () {
+            link.reply(request, data: payload);
+          }),
+        );
+      };
+      final wire = WireTransport(link);
+      expect(await wire.request(1, [0]), payload);
+      expect(
+        link.writes.length,
+        1,
+        reason: 'a 1 KB BLE page can take over one second',
+      );
+      for (final timer in timers) {
+        timer.cancel();
+      }
+      await wire.close();
+    },
+  );
   test('stock framing and CRC agree with Python fixture', () {
     expect(frame(0xe0, [1, 0, 0x34, 0x12]), [
       0xaa,

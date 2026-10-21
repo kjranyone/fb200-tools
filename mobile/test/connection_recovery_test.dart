@@ -57,14 +57,68 @@ void main() {
         () async => next,
         retryDelays: const [Duration.zero],
         heartbeatInterval: Duration.zero,
+        probeTimeout: const Duration(milliseconds: 5),
+      );
+      await recovery.checkConnection();
+      expect(
+        recovery.connected,
+        isTrue,
+        reason: 'one missed probe keeps GATT open',
       );
       await recovery.checkConnection();
       await settleRecovery(recovery);
       expect(recovery.connected, isTrue);
-      expect(FrameDecoder().add(old.writes.single).single.command, 0);
+      expect(old.writes.length, 2);
+      expect(FrameDecoder().add(old.writes.first).single.command, 0);
       expect(next.writes, isEmpty);
       await recovery.close();
       recovery.dispose();
+    },
+  );
+
+  test(
+    'valid traffic resets missed probes and active links skip idle checks',
+    () async {
+      final link = MemoryLink();
+      final wire = WireTransport(link);
+      final recovery = ConnectionRecovery(
+        wire,
+        () async => throw StateError('must not reconnect'),
+        heartbeatInterval: Duration.zero,
+        probeTimeout: const Duration(milliseconds: 5),
+      );
+      await recovery.checkConnection();
+      link.incoming.add(frame(0xbb, [100, 0]));
+      await Future<void>.delayed(Duration.zero);
+      await recovery.checkConnection();
+      expect(recovery.connected, isTrue);
+      link.sent = (_) async => link.incoming.add(frame(0xbb, [99, 0]));
+      await recovery.checkConnection();
+      await recovery.checkConnection();
+      expect(
+        recovery.connected,
+        isTrue,
+        reason: 'live notifications prove GATT is healthy',
+      );
+      link.sent = (_) async => link.incoming.add(frame(1, [1]));
+      await recovery.checkConnection();
+      expect(recovery.connected, isTrue);
+      await recovery.close();
+      recovery.dispose();
+
+      final active = MemoryLink();
+      final healthy = ConnectionRecovery(
+        WireTransport(active),
+        () async => active,
+      );
+      await healthy.checkConnection();
+      expect(
+        active.writes,
+        isEmpty,
+        reason: 'recent link activity suppresses probes',
+      );
+      await healthy.close();
+      healthy.dispose();
     },
   );
 

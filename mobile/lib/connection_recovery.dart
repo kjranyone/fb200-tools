@@ -29,6 +29,7 @@ class ConnectionRecovery extends ChangeNotifier {
   final Future<void> Function()? cancelOpening;
   final List<Duration> retryDelays;
   final Duration heartbeatInterval;
+  final Duration probeTimeout;
   final _resynchronizers = <Future<void> Function()>[];
   RecoveryPhase phase = RecoveryPhase.connected;
   RecoveryDraft? draft;
@@ -38,6 +39,8 @@ class ConnectionRecovery extends ChangeNotifier {
   Timer? _heartbeat, _delay;
   Completer<void>? _delayDone;
   Future<void>? _recovering;
+  int _missedProbes = 0;
+  DateTime? _failedProbeReceived;
 
   ConnectionRecovery(
     this.transport,
@@ -48,7 +51,8 @@ class ConnectionRecovery extends ChangeNotifier {
       Duration(seconds: 2),
       Duration(seconds: 4),
     ],
-    this.heartbeatInterval = const Duration(seconds: 8),
+    this.heartbeatInterval = const Duration(seconds: 20),
+    this.probeTimeout = const Duration(seconds: 3),
   }) {
     transport.onDisconnected = _lost;
     if (heartbeatInterval > Duration.zero) {
@@ -86,6 +90,7 @@ class ConnectionRecovery extends ChangeNotifier {
       return; // the in-flight recovery loop detects the closed transport
     }
     phase = RecoveryPhase.disconnected;
+    debugPrint('FB200 recovery: connection lost');
     error = '';
     notifyListeners(); // capture route drafts before reading anything again
     if (_foreground) unawaited(reconnect(automatic: true));
@@ -141,6 +146,7 @@ class ConnectionRecovery extends ChangeNotifier {
         }
         await transport.replaceLink(link);
         phase = RecoveryPhase.synchronizing;
+        debugPrint('FB200 recovery: resynchronizing, attempt=$attempt');
         notifyListeners();
         for (final callback in List.of(_resynchronizers)) {
           if (_disposed || epoch != generation) return;
@@ -149,6 +155,8 @@ class ConnectionRecovery extends ChangeNotifier {
         if (transport.isClosed) throw DeviceError('再同期中に接続が切れました。');
         if (_disposed || epoch != generation) return;
         phase = RecoveryPhase.connected;
+        _missedProbes = 0;
+        debugPrint('FB200 recovery: connected');
         error = '';
         notifyListeners();
         return;
@@ -157,6 +165,7 @@ class ConnectionRecovery extends ChangeNotifier {
         error = e is DeviceError
             ? e.message
             : '本体との通信を復旧できませんでした。電源とBluetoothを確認してください。';
+        debugPrint('FB200 recovery: attempt=$attempt failed: $error');
       }
     }
     if (!_disposed && epoch == generation) {
@@ -192,10 +201,33 @@ class ConnectionRecovery extends ChangeNotifier {
 
   Future<void> checkConnection() async {
     if (!_foreground || !connected || !transport.isIdle) return;
+    // Recent replies already prove the link is alive. Do not inject a version
+    // request into the gaps of a multi-command editor/library operation.
+    if (DateTime.now().difference(transport.lastActivity) < heartbeatInterval) {
+      return;
+    }
+    final binding = transport.connectionGeneration;
+    final received = transport.lastReceived;
+    if (received != _failedProbeReceived) _missedProbes = 0;
     try {
-      await transport.exchange(0, [], 1);
+      await transport.exchange(
+        0,
+        [],
+        1,
+        disconnectOnTimeout: false,
+        responseTimeout: probeTimeout,
+      );
+      _missedProbes = 0;
     } catch (_) {
-      // Transport loss/timeout already starts bounded recovery.
+      if (!connected || transport.connectionGeneration != binding) return;
+      // A single lost version reply is not a GATT disconnect. Other valid
+      // traffic also proves the connection is alive, even if this reply is lost.
+      if (transport.lastReceived != received) {
+        _missedProbes = 0;
+        return;
+      }
+      _failedProbeReceived = received;
+      if (++_missedProbes >= 2) transport.reportUnresponsive();
     }
   }
 

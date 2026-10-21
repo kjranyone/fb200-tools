@@ -9,6 +9,12 @@ the demo without connecting a pedal.
 
 ## Features
 
+**0.10.5+19** reduces unnecessary recovery: idle-only checks tolerate a missed
+reply, NAM list replies have a suitable timeout, panel updates read only the
+selection, and open routes share the recovered catalogue. Reconnect status is
+an inline banner; automatic synchronization keeps the editor visible and fixed.
+
+
 **0.10.4+18** adds shared connection recovery across the hub, controller and
 model library: bounded reconnect, read-only resync, idle link checks and
 unsaved-draft recovery without automatically replaying saves or uploads.

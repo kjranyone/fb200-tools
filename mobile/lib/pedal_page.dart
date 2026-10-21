@@ -55,6 +55,7 @@ class _PedalPageState extends State<PedalPage> {
   Timer? _timer;
   int _tab = 1, _bank = 0;
   bool _working = false, _ready = false;
+  bool _blocking = false;
   bool get _busy =>
       _working || (widget.recovery != null && !widget.recovery!.connected);
   String _error = '', _status = '';
@@ -92,7 +93,7 @@ class _PedalPageState extends State<PedalPage> {
             _bank = _pedal.selected ~/ 4;
             await _pedal.loadBank(_bank);
             await _refreshNam();
-          }),
+          }, blocking: false),
         );
       } else if (_ready &&
           !_busy &&
@@ -137,7 +138,7 @@ class _PedalPageState extends State<PedalPage> {
     _bank = _pedal.selected ~/ 4;
     await _pedal.loadBank(_bank);
     if (!mounted) return;
-    await _refreshNam();
+    await _refreshNam(reuseSlots: true);
     final recovery = widget.recovery;
     final draft = recovery?.draft;
     if (draft != null &&
@@ -187,10 +188,15 @@ class _PedalPageState extends State<PedalPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _refreshNam() async {
+  Future<void> _refreshNam({
+    bool reloadSlots = false,
+    bool reuseSlots = false,
+  }) async {
     final client = widget.namClient;
     if (client == null) return;
-    final fresh = await client.readState();
+    final fresh = reloadSlots || reuseSlots || _namState == null
+        ? await client.readState(reuse: reuseSlots)
+        : DeviceState(await client.readSelection(), _namState!.slots);
     if (mounted) setState(() => _namState = fresh);
   }
 
@@ -235,7 +241,7 @@ class _PedalPageState extends State<PedalPage> {
         await _run('モデルを同期中', () async {
           await _pedal.refresh();
           await _pedal.loadBank(_bank);
-          await _refreshNam();
+          await _refreshNam(reloadSlots: true);
         });
       }
     } finally {
@@ -243,15 +249,26 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
-  Future<void> _run(String status, Future<void> Function() action) async {
+  Future<void> _run(
+    String status,
+    Future<void> Function() action, {
+    bool blocking = true,
+  }) async {
     if (_busy || !mounted) return;
     setState(() {
       _working = true;
+      _blocking = blocking;
       _error = '';
       _status = status;
     });
     try {
+      final binding = widget.transport.connectionGeneration;
       await _poll;
+      await widget.transport.waitIdle();
+      if (widget.transport.isClosed ||
+          binding != widget.transport.connectionGeneration) {
+        throw DeviceError('接続が切り替わりました。復旧後に操作をやり直してください。');
+      }
       await action();
     } catch (e) {
       if (mounted) {
@@ -769,7 +786,7 @@ class _PedalPageState extends State<PedalPage> {
                   await _pedal.refresh();
                   _bank = _pedal.selected ~/ 4;
                   await _pedal.loadBank(_bank);
-                  await _refreshNam();
+                  await _refreshNam(reloadSlots: true);
                   if (_irs != null) await _irReload();
                 }),
           icon: const Icon(Icons.sync, size: 21),
@@ -924,7 +941,7 @@ class _PedalPageState extends State<PedalPage> {
                   );
                 },
               ),
-            if (_working && _status != 'エフェクトを更新中') ...[
+            if (_working && _blocking && _status != 'エフェクトを更新中') ...[
               const ModalBarrier(color: Color(0x99090d12), dismissible: false),
               Center(
                 child: Card(

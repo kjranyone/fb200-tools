@@ -24,9 +24,15 @@ class NamClient {
   int _chunkSize = 64;
   int capabilityFlags = 0;
   int slotCount = 3;
+  DeviceState? _cachedState;
+  int? _cachedGeneration;
 
   NamClient(this.transport);
-  Future<void> handshake() async {
+  Future<void> handshake() async => readSelection();
+
+  /// A tiny capabilities reply includes the current selection. Knob/preset
+  /// updates need this, not another 64-slot catalogue download.
+  Future<int> readSelection() async {
     final p = await transport.request(0, []);
     if (p.length != 13 ||
         read32(p, 0) != 48000 ||
@@ -42,6 +48,8 @@ class NamClient {
     _chunkSize = p[7];
     slotCount = p[6];
     capabilityFlags = read16(p, 10);
+    if (p[12] > slotCount) throw DeviceError('不正なモデル選択です。');
+    return p[12];
   }
 
   /// Firmware advertises the paged list (op 1 takes a start index) as bit 5.
@@ -59,17 +67,34 @@ class NamClient {
     );
   }
 
-  Future<DeviceState> readState() async {
+  Future<DeviceState> readState({bool reuse = false}) async {
+    final wire = transport is WireTransport ? transport as WireTransport : null;
+    final generation = wire?.connectionGeneration;
+    if (reuse &&
+        wire != null &&
+        !wire.isClosed &&
+        _cachedState != null &&
+        _cachedGeneration == generation) {
+      return _cachedState!;
+    }
+    DeviceState remember(DeviceState state) {
+      _cachedState = state;
+      _cachedGeneration = generation;
+      return state;
+    }
+
     if (!_pagedList) {
       // Older firmware: one unpaged reply with every (three) slots.
       final p = await transport.request(1, []);
       if (p.length != 1 + slotCount * 30 || p[0] > slotCount) {
         throw DeviceError('本体の一覧を読み取れませんでした。');
       }
-      return DeviceState(p[0], [
-        for (var i = 0; i < slotCount; i++)
-          _checkedSlot(_slotRecord(p, 1 + i * 30), i + 1),
-      ]);
+      return remember(
+        DeviceState(p[0], [
+          for (var i = 0; i < slotCount; i++)
+            _checkedSlot(_slotRecord(p, 1 + i * 30), i + 1),
+        ]),
+      );
     }
     var selected = -1;
     final slots = <ModelSlot>[];
@@ -92,7 +117,7 @@ class NamClient {
     if (slots.length != slotCount || selected < 0) {
       throw DeviceError('本体の一覧を読み取れませんでした。');
     }
-    return DeviceState(selected, slots);
+    return remember(DeviceState(selected, slots));
   }
 
   ModelSlot _checkedSlot(ModelSlot s, int expected) {

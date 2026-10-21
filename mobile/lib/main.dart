@@ -91,6 +91,14 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
       _message = '';
     });
     try {
+      final transport = _wire ?? _client?.transport;
+      if (transport is WireTransport) {
+        final binding = transport.connectionGeneration;
+        await transport.waitIdle();
+        if (transport.isClosed || binding != transport.connectionGeneration) {
+          throw DeviceError('接続が切り替わりました。復旧後に操作をやり直してください。');
+        }
+      }
       await action();
     } on TransferCancelled {
       if (mounted) setState(() => _message = '転送を中止しました。');
@@ -107,10 +115,10 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool reuseSlots = false}) async {
     final client = _client;
     if (client == null) return;
-    final value = await client.readState();
+    final value = await client.readState(reuse: reuseSlots);
     if (mounted && _client == client) setState(() => _state = value);
   }
 
@@ -413,7 +421,7 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
     }
     if (_client case final client?) {
       await client.handshake();
-      await _refresh();
+      await _refresh(reuseSlots: true);
     }
     if (mounted) {
       setState(() {

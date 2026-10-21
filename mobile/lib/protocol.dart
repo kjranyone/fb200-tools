@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 int crc32(List<int> data) {
   var crc = 0xffffffff;
   for (final byte in data) {
@@ -116,19 +118,31 @@ class WireTransport implements RpcTransport {
   int _id = Random().nextInt(65536), _operation = 0;
   bool _closed = false, _disposed = false;
   int _binding = 0;
+  DateTime lastActivity = DateTime.now();
+  DateTime? lastReceived;
   bool get isClosed => _closed;
   int get connectionGeneration => _binding;
   bool get isIdle =>
       _pending == null && _legacyPending == null && !_legacyWriting;
+  Completer<void>? _operationDone;
   Future<void> waitIdle() async {
-    await _pending?.future;
-    await _legacyPending?.future;
+    while (!isIdle && !_closed) {
+      final done = _operationDone;
+      if (done == null) return;
+      await done.future;
+    }
+  }
+
+  void _finishOperation(Completer<void>? done) {
+    if (done == null) return;
+    if (identical(_operationDone, done)) _operationDone = null;
+    if (!done.isCompleted) done.complete();
   }
 
   void Function()? onDisconnected;
   WireTransport(
     this.link, {
-    this.timeout = const Duration(seconds: 1),
+    this.timeout = const Duration(seconds: 3),
     this.retries = 2,
   }) {
     _listen();
@@ -140,6 +154,8 @@ class WireTransport implements RpcTransport {
       (bytes) {
         if (_closed || binding != _binding) return;
         for (final incoming in _decoder.add(bytes)) {
+          lastActivity = DateTime.now();
+          lastReceived = lastActivity;
           _frames.add(incoming);
           if (_legacyPending != null &&
               !_legacyPending!.isCompleted &&
@@ -178,6 +194,7 @@ class WireTransport implements RpcTransport {
     _legacyPending = null;
     _legacyAccept = null;
     _legacyWriting = false;
+    _finishOperation(_operationDone);
     final subscription = _subscription;
     final previous = link;
     _subscription = null;
@@ -203,11 +220,14 @@ class WireTransport implements RpcTransport {
     link = next;
     _decoder = FrameDecoder();
     _closed = false;
+    lastActivity = DateTime.now();
+    lastReceived = null;
     _listen();
   }
 
   Future<void> _write(Uint8List data) async {
     final binding = _binding;
+    lastActivity = DateTime.now();
     try {
       await link.write(data);
     } catch (_) {
@@ -216,12 +236,15 @@ class WireTransport implements RpcTransport {
     }
   }
 
-  void _disconnected() {
+  void _disconnected([String reason = 'link closed']) {
     if (_closed) return;
+    debugPrint('FB200 transport: disconnected ($reason), generation=$_binding');
     _closed = true;
     _fail('接続が切れました。再接続して一覧を確認してください。');
     onDisconnected?.call();
   }
+
+  void reportUnresponsive() => _disconnected('consecutive idle probe failures');
 
   void _fail(String text) {
     if (_pending != null && !_pending!.isCompleted) {
@@ -243,6 +266,7 @@ class WireTransport implements RpcTransport {
   /// automatically retry mutations whose acknowledgement may have been lost.
   Future<void> sendCommand(int command, List<int> payload) async {
     _checkAvailable();
+    final done = _operationDone = Completer<void>();
     _legacyWriting = true;
     final binding = _binding;
     try {
@@ -252,6 +276,7 @@ class WireTransport implements RpcTransport {
       rethrow;
     } finally {
       if (binding == _binding) _legacyWriting = false;
+      _finishOperation(done);
     }
   }
 
@@ -260,17 +285,25 @@ class WireTransport implements RpcTransport {
     List<int> payload,
     int reply, {
     bool Function(Frame)? accept,
+    bool disconnectOnTimeout = true,
+    Duration responseTimeout = const Duration(seconds: 3),
   }) async {
     _checkAvailable();
+    final done = _operationDone = Completer<void>();
     final pending = Completer<Frame>();
     unawaited(pending.future.then<void>((_) {}, onError: (Object _) {}));
     _legacyPending = pending;
     _legacyAccept = (f) => f.command == reply && (accept?.call(f) ?? true);
     try {
       await _write(frame(command, payload));
-      return await pending.future.timeout(const Duration(seconds: 3));
+      return await pending.future.timeout(responseTimeout);
     } on TimeoutException {
-      _disconnected();
+      debugPrint(
+        'FB200 transport: timeout command=0x${command.toRadixString(16)}',
+      );
+      if (disconnectOnTimeout && identical(_legacyPending, pending)) {
+        _disconnected('legacy reply timeout');
+      }
       throw DeviceError('本体から応答がありません。再接続後に操作結果を確認してください。');
     } catch (_) {
       if (identical(_legacyPending, pending)) _disconnected();
@@ -280,12 +313,14 @@ class WireTransport implements RpcTransport {
         _legacyPending = null;
         _legacyAccept = null;
       }
+      _finishOperation(done);
     }
   }
 
   @override
   Future<Uint8List> request(int operation, List<int> arguments) async {
     _checkAvailable();
+    final done = _operationDone = Completer<void>();
     _id = (_id + 1) & 65535;
     _operation = operation;
     final pending = Completer<Uint8List>();
@@ -320,10 +355,14 @@ class WireTransport implements RpcTransport {
       return Uint8List.sublistView(p, 5);
     } on TimeoutException {
       // Optional NAM capability probing must still allow stock firmware.
-      if (operation != 0) _disconnected();
+      debugPrint('FB200 transport: timeout NAM op=$operation');
+      if (operation != 0 && identical(_pending, pending)) {
+        _disconnected('NAM reply timeout');
+      }
       throw DeviceError('本体から応答がありません。対応ファームウェアと接続を確認してください。');
     } finally {
       if (identical(_pending, pending)) _pending = null;
+      _finishOperation(done);
     }
   }
 

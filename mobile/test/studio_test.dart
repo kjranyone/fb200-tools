@@ -231,12 +231,29 @@ void main() {
     await tester.pumpWidget(studio(h));
     await tester.pumpAndSettle();
     // AMP knob changes the NAM binding without changing the preset index.
+    h.pedal.link.writes.clear();
     h.selected = 2;
     h.edit[0xe0] = 2;
     h.pedal.link.incoming.add(frame(0x98, [0]));
     await tester.pump(const Duration(milliseconds: 250));
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is ModalBarrier && w.color != null && w.color!.a > 0,
+      ),
+      findsNothing,
+    );
     await tester.pumpAndSettle();
     expect(find.textContaining('Bass Crunch'), findsOneWidget);
+    final ops = h.pedal.link.writes
+        .map((bytes) => FrameDecoder().add(bytes).single)
+        .where((f) => f.command == 0xe0)
+        .map((f) => f.payload[1]);
+    expect(ops, contains(0));
+    expect(
+      ops,
+      isNot(contains(1)),
+      reason: 'no catalogue download for knob updates',
+    );
     expect(h.selections, isEmpty);
     expect(h.pedal.writes, 0);
     await tester.pumpWidget(const SizedBox());

@@ -6,6 +6,8 @@ import 'package:fb200_nam/nam_client.dart';
 import 'package:fb200_nam/nam_model.dart';
 import 'package:fb200_nam/protocol.dart';
 
+import 'protocol_test.dart' show MemoryLink;
+
 class RecordingTransport implements RpcTransport {
   final demo = DemoTransport();
   final operations = <int>[];
@@ -111,6 +113,35 @@ class LegacyTransport implements RpcTransport {
 }
 
 void main() {
+  test('routes reuse one slot list per recovered wire generation', () async {
+    final first = MemoryLink(), next = MemoryLink();
+    final fixture = PagedTransport(64, pageSize: 33)..names[1] = 'Before';
+    var pages = 0;
+    void serve(MemoryLink link) {
+      link.sent = (bytes) async {
+        final p = FrameDecoder().add(bytes).single.payload;
+        if (p[1] == 1) pages++;
+        link.reply(bytes, data: await fixture.request(p[1], p.sublist(4)));
+      };
+    }
+
+    serve(first);
+    serve(next);
+    final wire = WireTransport(first);
+    final shared = NamClient(wire);
+    await shared.handshake();
+    expect((await shared.readState()).slots.first.name, 'Before');
+    expect(pages, 2);
+    await shared.readState(reuse: true);
+    expect(pages, 2);
+    fixture.names[1] = 'After';
+    await wire.replaceLink(next);
+    expect((await shared.readState(reuse: true)).slots.first.name, 'After');
+    expect(pages, 4);
+    await shared.readState(reuse: true);
+    expect(pages, 4);
+    await shared.close();
+  });
   late NamModel model;
   setUp(() {
     model = NamModel.parse(
