@@ -1,3 +1,5 @@
+import '../localization.dart';
+
 import 'package:flutter/material.dart';
 
 import '../connection_recovery.dart';
@@ -41,13 +43,16 @@ class RecoveryLayer extends StatelessWidget {
                           children: [
                             Text(
                               session.phase == RecoveryPhase.synchronizing
-                                  ? '本体の状態を再同期中 · 操作は復旧後に再開できます'
+                                  ? tr("本体の状態を再同期中 · 操作は復旧後に再開できます")
                                   : session.busy
-                                  ? '本体へ再接続中（${session.attempt}/${session.retryDelays.length}）'
-                                  : '本体との接続が切れました',
+                                  ? tr("本体へ再接続中（{0}/{1}）", [
+                                      session.attempt,
+                                      session.retryDelays.length,
+                                    ])
+                                  : tr("本体との接続が切れました"),
                             ),
                             if (session.draft != null)
-                              const Text('未保存の下書きを保持しています'),
+                              Text(tr("未保存の下書きを保持しています")),
                             TextButton.icon(
                               onPressed: session.busy
                                   ? session.cancelRecovery
@@ -56,7 +61,9 @@ class RecoveryLayer extends StatelessWidget {
                                 session.busy ? Icons.close : Icons.refresh,
                                 size: 18,
                               ),
-                              label: Text(session.busy ? '再接続を中止' : '同じ本体に再接続'),
+                              label: Text(
+                                session.busy ? tr("再接続を中止") : tr("同じ本体に再接続"),
+                              ),
                             ),
                           ],
                         ),
@@ -67,7 +74,9 @@ class RecoveryLayer extends StatelessWidget {
                           child: Text(
                             session.error.isNotEmpty
                                 ? session.error
-                                : '本体の電源とBluetoothを確認してください。転送や保存は自動で再実行しません。',
+                                : tr(
+                                    "本体の電源とBluetoothを確認してください。転送や保存は自動で再実行しません。",
+                                  ),
                           ),
                         ),
                       if (session.busy)

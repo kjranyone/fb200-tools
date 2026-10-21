@@ -1,3 +1,5 @@
+import '../localization.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -143,11 +145,11 @@ class _KnobState extends State<Knob> {
               decoration: InputDecoration(
                 labelText: '${widget.min}–${widget.max}',
                 helperText: widget.format == null
-                    ? 'プリセット値を直接入力'
-                    : '表示：${valid ? widget.format!(parsed) : '—'}',
+                    ? tr("プリセット値を直接入力")
+                    : tr("表示：{0}", [valid ? widget.format!(parsed) : '—']),
                 errorText: valid
                     ? null
-                    : '${widget.min}〜${widget.max}の整数を入力してください',
+                    : tr("{0}〜{1}の整数を入力してください", [widget.min, widget.max]),
               ),
               onChanged: (_) => setDialog(() {}),
               onSubmitted: (text) {
@@ -163,11 +165,11 @@ class _KnobState extends State<Knob> {
               if (widget.defaultValue != null)
                 TextButton(
                   onPressed: () => Navigator.pop(context, widget.defaultValue),
-                  child: const Text('標準に戻す'),
+                  child: Text(tr("標準に戻す")),
                 ),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('キャンセル'),
+                child: Text(tr("キャンセル")),
               ),
               FilledButton(
                 onPressed: !valid
@@ -180,7 +182,7 @@ class _KnobState extends State<Knob> {
                           Navigator.pop(context, value);
                         }
                       },
-                child: const Text('適用'),
+                child: Text(tr("適用")),
               ),
             ],
           );

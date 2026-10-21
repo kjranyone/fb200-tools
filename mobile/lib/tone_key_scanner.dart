@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -38,7 +40,7 @@ class _ToneKeyScannerState extends State<ToneKeyScanner> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Publishable Keyを読み取る')),
+    appBar: AppBar(title: Text(tr("Publishable Keyを読み取る"))),
     body: SafeArea(
       child: Column(
         children: [
@@ -59,18 +61,18 @@ class _ToneKeyScannerState extends State<ToneKeyScanner> {
                       Text(
                         error.errorCode ==
                                 MobileScannerErrorCode.permissionDenied
-                            ? 'カメラの利用を許可してください。端末の設定で許可した後、読み取りを開き直せます。'
-                            : 'カメラを起動できませんでした。読み取りを開き直すか、手入力してください。',
+                            ? tr("カメラの利用を許可してください。端末の設定で許可した後、読み取りを開き直せます。")
+                            : tr("カメラを起動できませんでした。読み取りを開き直すか、手入力してください。"),
                       ),
                       if (error.errorCode ==
                           MobileScannerErrorCode.permissionDenied)
                         TextButton(
                           onPressed: openAppSettings,
-                          child: const Text('端末の設定を開く'),
+                          child: Text(tr("端末の設定を開く")),
                         ),
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('手入力に戻る'),
+                        child: Text(tr("手入力に戻る")),
                       ),
                     ],
                   ),
@@ -83,7 +85,7 @@ class _ToneKeyScannerState extends State<ToneKeyScanner> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Publishable Keyの文字列を入れたQRコードにカメラを向けてください。'),
+                Text(tr("Publishable Keyの文字列を入れたQRコードにカメラを向けてください。")),
                 if (_error.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(

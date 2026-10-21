@@ -1,6 +1,8 @@
 /// Official Select OAuth flow and bounded A2 downloads. No pedal writes here.
 library;
 
+import 'localization.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -27,10 +29,10 @@ class ToneCancelled implements Exception {}
 String validatePublishableKey(String value) {
   final key = value.trim();
   if (key.isEmpty || key.length > 512 || key.contains(RegExp(r'\s'))) {
-    throw const ToneError('TONE3000のPublishable Keyを設定してください。');
+    throw ToneError(tr("TONE3000のPublishable Keyを設定してください。"));
   }
   if (key.startsWith('t3k_cs_')) {
-    throw const ToneError('Secret Keyは使用できません。Publishable Keyを指定してください。');
+    throw ToneError(tr("Secret Keyは使用できません。Publishable Keyを指定してください。"));
   }
   return key;
 }
@@ -38,7 +40,7 @@ String validatePublishableKey(String value) {
 String parsePublishableKeyQr(String value) {
   final key = validatePublishableKey(value);
   if (!RegExp(r'^[A-Za-z0-9._~-]+$').hasMatch(key)) {
-    throw const ToneError('Publishable Keyの文字列を含むQRコードを読み取ってください。');
+    throw ToneError(tr("Publishable Keyの文字列を含むQRコードを読み取ってください。"));
   }
   return key;
 }
@@ -72,7 +74,7 @@ class ToneAuthorization {
   });
 
   ({String code, int toneId}) accept(Uri callback) {
-    if (_used) throw const ToneError('このログインは完了済みです。もう一度選択してください。');
+    if (_used) throw ToneError(tr("このログインは完了済みです。もう一度選択してください。"));
     _used = true;
     if (callback.scheme != 'fb200nam' ||
         callback.host != 'oauth' ||
@@ -82,18 +84,18 @@ class ToneAuthorization {
         callback.hasPort ||
         callback.queryParametersAll.values.any((v) => v.length != 1) ||
         callback.queryParameters['state'] != state) {
-      throw const ToneError('ログインの応答を確認できませんでした。最初からやり直してください。');
+      throw ToneError(tr("ログインの応答を確認できませんでした。最初からやり直してください。"));
     }
     final query = callback.queryParameters;
     if (query['canceled'] == 'true' || query['error'] == 'access_denied') {
       throw ToneCancelled();
     }
     if (query.containsKey('error')) {
-      throw const ToneError('TONE3000のログインに失敗しました。もう一度お試しください。');
+      throw ToneError(tr("TONE3000のログインに失敗しました。もう一度お試しください。"));
     }
     final code = query['code'], id = int.tryParse(query['tone_id'] ?? '');
     if (code == null || code.isEmpty || id == null || id <= 0) {
-      throw const ToneError('選択したトーンを取得できませんでした。');
+      throw ToneError(tr("選択したトーンを取得できませんでした。"));
     }
     return (code: code, toneId: id);
   }
@@ -128,7 +130,7 @@ class TonePack {
     this.description = '',
   });
   factory TonePack.parse(Map<String, dynamic> json) {
-    if (json['format'] != 'nam') throw const ToneError('NAM形式のトーンを選択してください。');
+    if (json['format'] != 'nam') throw ToneError(tr("NAM形式のトーンを選択してください。"));
     final images = json['images'];
     return TonePack(
       id: json['id'] as int,
@@ -187,7 +189,7 @@ class ImportedTone {
 
 Map<String, dynamic> _object(Object? json) {
   if (json is! Map<String, dynamic>) {
-    throw const ToneError('TONE3000からの応答形式を確認できませんでした。');
+    throw ToneError(tr("TONE3000からの応答形式を確認できませんでした。"));
   }
   return json;
 }
@@ -202,7 +204,7 @@ class _Session {
         Duration(seconds: (json['expires_in'] as num).toInt()),
       ) {
     if (access.isEmpty || refresh.isEmpty || !expires.isAfter(DateTime.now())) {
-      throw const ToneError('ログインの有効期限を確認できませんでした。');
+      throw ToneError(tr("ログインの有効期限を確認できませんでした。"));
     }
   }
 }
@@ -239,7 +241,7 @@ class Tone3000Api {
     final tone = TonePack.parse(
       await _json(_endpoint('tones/${result.toneId}')),
     );
-    if (tone.id != result.toneId) throw const ToneError('トーンのIDが一致しません。');
+    if (tone.id != result.toneId) throw ToneError(tr("トーンのIDが一致しません。"));
     final account = ToneCreator.parse(await _json(_endpoint('user')));
     return ToneSelection(tone, account, await listModels(tone.id));
   }
@@ -252,14 +254,14 @@ class Tone3000Api {
     final bytes = await _read(response, 64 * 1024);
     if (response.statusCode != 200) {
       _session = null;
-      throw const ToneError('ログインの有効期限が切れました。TONE3000から選択し直してください。');
+      throw ToneError(tr("ログインの有効期限が切れました。TONE3000から選択し直してください。"));
     }
     return _decode(bytes);
   }
 
   Future<void> _refresh() async {
     final session = _session;
-    if (session == null) throw const ToneError('TONE3000にログインしてください。');
+    if (session == null) throw ToneError(tr("TONE3000にログインしてください。"));
     _session = _Session(
       await _token({
         'grant_type': 'refresh_token',
@@ -269,7 +271,7 @@ class Tone3000Api {
   }
 
   Future<http.StreamedResponse> _get(Uri uri, {bool retry = true}) async {
-    if (_session == null) throw const ToneError('TONE3000にログインしてください。');
+    if (_session == null) throw ToneError(tr("TONE3000にログインしてください。"));
     if (_session!.expires.isBefore(
       DateTime.now().add(const Duration(seconds: 30)),
     )) {
@@ -294,24 +296,24 @@ class Tone3000Api {
     try {
       return await _client.send(request).timeout(const Duration(seconds: 25));
     } on TimeoutException {
-      throw const ToneError('通信がタイムアウトしました。接続を確認して再試行してください。');
+      throw ToneError(tr("通信がタイムアウトしました。接続を確認して再試行してください。"));
     } on http.ClientException {
       if (_closed) throw ToneCancelled();
-      throw const ToneError('TONE3000に接続できません。インターネット接続を確認してください。');
+      throw ToneError(tr("TONE3000に接続できません。インターネット接続を確認してください。"));
     }
   }
 
   Future<Uint8List> _read(http.StreamedResponse response, int limit) async {
     if ((response.contentLength ?? 0) > limit) {
       await response.stream.listen((_) {}).cancel();
-      throw const ToneError('ファイルが大きすぎます。8 MB以下のモデルを選択してください。');
+      throw ToneError(tr("ファイルが大きすぎます。8 MB以下のモデルを選択してください。"));
     }
     Future<Uint8List> collect() async {
       final bytes = BytesBuilder(copy: false);
       await for (final chunk in response.stream) {
         if (_closed) throw ToneCancelled();
         if (bytes.length + chunk.length > limit) {
-          throw const ToneError('ファイルが大きすぎます。8 MB以下のモデルを選択してください。');
+          throw ToneError(tr("ファイルが大きすぎます。8 MB以下のモデルを選択してください。"));
         }
         bytes.add(chunk);
       }
@@ -323,12 +325,12 @@ class Tone3000Api {
         const Duration(seconds: 45),
         onTimeout: () {
           close();
-          throw const ToneError('ダウンロードがタイムアウトしました。');
+          throw ToneError(tr("ダウンロードがタイムアウトしました。"));
         },
       );
     } on http.ClientException {
       if (_closed) throw ToneCancelled();
-      throw const ToneError('ダウンロードが中断されました。もう一度お試しください。');
+      throw ToneError(tr("ダウンロードが中断されました。もう一度お試しください。"));
     }
   }
 
@@ -336,18 +338,18 @@ class Tone3000Api {
     try {
       return _object(jsonDecode(utf8.decode(bytes)));
     } on FormatException {
-      throw const ToneError('TONE3000の応答を読み取れませんでした。');
+      throw ToneError(tr("TONE3000の応答を読み取れませんでした。"));
     }
   }
 
   void _checkStatus(int status) {
     if (status == 200) return;
     throw ToneError(switch (status) {
-      401 => 'ログインの有効期限が切れました。選択し直してください。',
-      403 => 'このモデルへのアクセスが許可されていません。',
-      404 => 'このモデルは見つかりません。別のモデルを選択してください。',
-      429 => 'アクセスが集中しています。少し待ってから再試行してください。',
-      _ => 'TONE3000から取得できませんでした（HTTP $status）。',
+      401 => tr("ログインの有効期限が切れました。選択し直してください。"),
+      403 => tr("このモデルへのアクセスが許可されていません。"),
+      404 => tr("このモデルは見つかりません。別のモデルを選択してください。"),
+      429 => tr("アクセスが集中しています。少し待ってから再試行してください。"),
+      _ => tr("TONE3000から取得できませんでした（HTTP {0}）。", [status]),
     });
   }
 
@@ -368,7 +370,7 @@ class Tone3000Api {
       }),
     );
     final entries = json['data'];
-    if (entries is! List) throw const ToneError('モデル一覧を読み取れませんでした。');
+    if (entries is! List) throw ToneError(tr("モデル一覧を読み取れませんでした。"));
     final models = entries
         .map((entry) => _object(entry))
         .where((entry) => entry['architecture_version'].toString() == '2')
@@ -387,7 +389,7 @@ class Tone3000Api {
     if (model.toneId != tone.id ||
         !_apiOrigin(uri) ||
         !uri.path.startsWith('/api/v1/models/')) {
-      throw const ToneError('モデルのダウンロード先を確認できませんでした。');
+      throw ToneError(tr("モデルのダウンロード先を確認できませんでした。"));
     }
     for (var redirects = 0; redirects <= 5; redirects++) {
       final response = await _get(uri);
@@ -401,7 +403,7 @@ class Tone3000Api {
             next.userInfo.isNotEmpty ||
             next.hasFragment ||
             next.port != 443) {
-          throw const ToneError('安全なダウンロード先を確認できませんでした。');
+          throw ToneError(tr("安全なダウンロード先を確認できませんでした。"));
         }
         uri = next;
         continue;
@@ -415,10 +417,10 @@ class Tone3000Api {
           NamModel.parse(bytes, '${model.name}.nam'),
         );
       } on FormatException catch (e) {
-        throw ToneError('このモデルはFB200で使用できません。${e.message}');
+        throw ToneError(tr("このモデルはFB200で使用できません。{0}", [e.message]));
       }
     }
-    throw const ToneError('ダウンロード先の転送が多すぎます。');
+    throw ToneError(tr("ダウンロード先の転送が多すぎます。"));
   }
 
   void close() {

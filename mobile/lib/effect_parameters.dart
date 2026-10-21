@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:math' as math;
 
 import 'pedal_client.dart';
@@ -81,12 +83,12 @@ abstract final class EffectParameters {
       final slot = type - 10;
       final ir = slots?.where((s) => s.slot == slot).firstOrNull;
       return 'IR$slot · ${ir == null
-          ? '読込待ち'
+          ? tr("読込待ち")
           : ir.used
           ? ir.name
-          : '空き'}';
+          : tr("空き")}';
     }
-    return type == 0 ? '未選択' : '未対応のキャビネット ($type)';
+    return type == 0 ? tr("未選択") : tr("未対応のキャビネット ({0})", [type]);
   }
 
   static double modRate(int type, int value) {
@@ -122,37 +124,37 @@ abstract final class EffectParameters {
     switch (m.command) {
       case 0x80:
         return [
-          knob(2, 'アタック'),
+          knob(2, tr("アタック")),
           knob(
             3,
-            'スレッショルド',
+            tr("スレッショルド"),
             format: (v) => '${(-60 + .6 * v).toStringAsFixed(1)} dB',
           ),
           knob(
             4,
-            'レシオ',
+            tr("レシオ"),
             format: (v) =>
                 '${(1 + 9 * math.sqrt(v / 100)).toStringAsFixed(1)}:1',
           ),
-          knob(5, '出力レベル'),
+          knob(5, tr("出力レベル")),
         ];
       case 0x81:
-        return [knob(2, 'スレッショルド')];
+        return [knob(2, tr("スレッショルド"))];
       case 0x82:
         return [
-          const EffectParameter(1, 'アンプモデル', min: 1, max: 10, choices: amps),
-          knob(2, 'ゲイン'),
-          knob(3, 'ベース'),
-          knob(4, 'ミドル'),
-          const EffectParameter(5, 'ミドル周波数', max: 4, choices: midFrequencies),
-          knob(6, 'トレブル'),
-          knob(7, 'ボリューム'),
+          EffectParameter(1, tr("アンプモデル"), min: 1, max: 10, choices: amps),
+          knob(2, tr("ゲイン")),
+          knob(3, tr("ベース")),
+          knob(4, tr("ミドル")),
+          EffectParameter(5, tr("ミドル周波数"), max: 4, choices: midFrequencies),
+          knob(6, tr("トレブル")),
+          knob(7, tr("ボリューム")),
         ];
       case 0x83:
         return [
           EffectParameter(
             1,
-            'キャビネット / IR',
+            tr("キャビネット / IR"),
             min: 1,
             max: 19,
             choices: {for (var i = 1; i <= 19; i++) i: cabName(i, irSlots)},
@@ -161,37 +163,37 @@ abstract final class EffectParameters {
       case 0x84:
         final type = preset.word(m.offset + 2);
         return [
-          const EffectParameter(1, 'モジュレーション', max: 11, choices: mods),
+          EffectParameter(1, tr("モジュレーション"), max: 11, choices: mods),
           knob(
             2,
-            type == 10 ? 'キャリア周波数' : 'スピード',
+            type == 10 ? tr("キャリア周波数") : tr("スピード"),
             format: (v) => '${modRate(type, v).toStringAsFixed(2)} Hz',
           ),
-          knob(3, type == 6 ? 'ピッチの深さ' : 'ミックス'),
+          knob(3, type == 6 ? tr("ピッチの深さ") : tr("ミックス")),
           knob(
             4,
             switch (type) {
-              0 => 'スイープ幅',
-              1 => 'ステップ幅',
-              2 || 3 => 'フィードバック',
-              11 => '帯域幅',
-              _ => 'トーン',
+              0 => tr("スイープ幅"),
+              1 => tr("ステップ幅"),
+              2 || 3 => tr("フィードバック"),
+              11 => tr("帯域幅"),
+              _ => tr("トーン"),
             },
             format: type == 11
                 ? (v) => '${(10 + v * 1.9).toStringAsFixed(0)} Hz'
                 : null,
           ),
-          if (type == 8 || type == 9) knob(5, 'コーラスの深さ'),
+          if (type == 8 || type == 9) knob(5, tr("コーラスの深さ")),
         ];
       case 0x85:
         // The current DSP uses one bass-delay algorithm; stored type changes
         // only load defaults. Do not offer a selector that cannot change sound.
         return [
-          knob(2, 'ミックス'),
-          knob(3, 'フィードバック'),
-          const EffectParameter(
+          knob(2, tr("ミックス")),
+          knob(3, tr("フィードバック")),
+          EffectParameter(
             4,
-            'ディレイタイム',
+            tr("ディレイタイム"),
             min: 40,
             max: 2500,
             format: _milliseconds,
@@ -199,10 +201,10 @@ abstract final class EffectParameters {
         ];
       case 0x86:
         return [
-          const EffectParameter(1, 'リバーブ', max: 4, choices: reverbs),
-          knob(3, '残響レベル'),
-          knob(4, 'ディケイ'),
-          knob(5, 'トーン'),
+          EffectParameter(1, tr("リバーブ"), max: 4, choices: reverbs),
+          knob(3, tr("残響レベル")),
+          knob(4, tr("ディケイ")),
+          knob(5, tr("トーン")),
         ];
       default:
         return [];

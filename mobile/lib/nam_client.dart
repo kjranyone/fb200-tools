@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -43,12 +45,12 @@ class NamClient {
         p[7] > 64 ||
         read16(p, 8) != packetBytes ||
         (read16(p, 10) & 7) != 7) {
-      throw DeviceError('本体のモデル管理形式に対応していません。対応ファームウェアを確認してください。');
+      throw DeviceError(tr("本体のモデル管理形式に対応していません。対応ファームウェアを確認してください。"));
     }
     _chunkSize = p[7];
     slotCount = p[6];
     capabilityFlags = read16(p, 10);
-    if (p[12] > slotCount) throw DeviceError('不正なモデル選択です。');
+    if (p[12] > slotCount) throw DeviceError(tr("不正なモデル選択です。"));
     return p[12];
   }
 
@@ -56,7 +58,7 @@ class NamClient {
   bool get _pagedList => (capabilityFlags & 32) != 0;
 
   ModelSlot _slotRecord(Uint8List p, int off) {
-    if (p[off + 1] > 1) throw DeviceError('不正なスロット一覧です。');
+    if (p[off + 1] > 1) throw DeviceError(tr("不正なスロット一覧です。"));
     final name = String.fromCharCodes(
       p.sublist(off + 2, off + 26).takeWhile((v) => v != 0),
     );
@@ -87,7 +89,7 @@ class NamClient {
       // Older firmware: one unpaged reply with every (three) slots.
       final p = await transport.request(1, []);
       if (p.length != 1 + slotCount * 30 || p[0] > slotCount) {
-        throw DeviceError('本体の一覧を読み取れませんでした。');
+        throw DeviceError(tr("本体の一覧を読み取れませんでした。"));
       }
       return remember(
         DeviceState(p[0], [
@@ -101,13 +103,13 @@ class NamClient {
     for (var start = 0; start < slotCount;) {
       final p = await transport.request(1, [start]);
       if (p.length < 3 || p[1] != start || p[2] < 1) {
-        throw DeviceError('本体の一覧を読み取れませんでした。');
+        throw DeviceError(tr("本体の一覧を読み取れませんでした。"));
       }
       if (selected < 0) selected = p[0];
-      if (p[0] > slotCount) throw DeviceError('不正なスロット一覧です。');
+      if (p[0] > slotCount) throw DeviceError(tr("不正なスロット一覧です。"));
       final count = p[2];
       if (3 + count * 30 != p.length) {
-        throw DeviceError('不正なスロット一覧です。');
+        throw DeviceError(tr("不正なスロット一覧です。"));
       }
       for (var i = 0; i < count; i++) {
         slots.add(_checkedSlot(_slotRecord(p, 3 + i * 30), start + i + 1));
@@ -115,13 +117,13 @@ class NamClient {
       start += count;
     }
     if (slots.length != slotCount || selected < 0) {
-      throw DeviceError('本体の一覧を読み取れませんでした。');
+      throw DeviceError(tr("本体の一覧を読み取れませんでした。"));
     }
     return remember(DeviceState(selected, slots));
   }
 
   ModelSlot _checkedSlot(ModelSlot s, int expected) {
-    if (s.number != expected) throw DeviceError('不正なスロット一覧です。');
+    if (s.number != expected) throw DeviceError(tr("不正なスロット一覧です。"));
     return s;
   }
 
@@ -149,10 +151,10 @@ class NamClient {
         codes.isEmpty ||
         codes.length > 23 ||
         codes.any((c) => c < 33 || c > 126)) {
-      throw DeviceError('モデル名は半角英数字・記号（空白なし）で1〜23文字にしてください。');
+      throw DeviceError(tr("モデル名は半角英数字・記号（空白なし）で1〜23文字にしてください。"));
     }
     if (!canRename) {
-      throw DeviceError('このファームウェアはモデル名の変更に対応していません。');
+      throw DeviceError(tr("このファームウェアはモデル名の変更に対応していません。"));
     }
     await transport.request(9, [
       slot,
@@ -173,7 +175,7 @@ class NamClient {
     void checkConnection() {
       if (wire != null &&
           (wire.isClosed || wire.connectionGeneration != generation)) {
-        throw DeviceError('転送中に接続が切れました。本体の一覧を確認し、必要なら最初から転送してください。');
+        throw DeviceError(tr("転送中に接続が切れました。本体の一覧を確認し、必要なら最初から転送してください。"));
       }
     }
 
@@ -186,10 +188,10 @@ class NamClient {
         ...u32(crc32(model.packet)),
       ]);
       if (begin.length != 6 || read16(begin, 4) != 0) {
-        throw DeviceError('転送を開始できませんでした。');
+        throw DeviceError(tr("転送を開始できませんでした。"));
       }
       token = read32(begin, 0);
-      if (token == 0) throw DeviceError('転送番号を確認できませんでした。');
+      if (token == 0) throw DeviceError(tr("転送番号を確認できませんでした。"));
       var offset = 0;
       while (offset < model.packet.length) {
         checkConnection();
@@ -203,7 +205,7 @@ class NamClient {
         if (ack.length != 6 ||
             read32(ack, 0) != token ||
             read16(ack, 4) != end) {
-          throw DeviceError('転送位置が一致しません。再転送してください。');
+          throw DeviceError(tr("転送位置が一致しません。再転送してください。"));
         }
         offset = end;
         progress(offset / model.packet.length);
@@ -239,7 +241,7 @@ class DemoTransport implements RpcTransport {
   bool closed = false;
   @override
   Future<Uint8List> request(int op, List<int> a) async {
-    if (closed) throw DeviceError('デモを終了しました。');
+    if (closed) throw DeviceError(tr("デモを終了しました。"));
     await Future<void>.delayed(Duration(milliseconds: op == 3 ? 8 : 80));
     switch (op) {
       case 0:
@@ -255,7 +257,7 @@ class DemoTransport implements RpcTransport {
       case 1:
         // Paged list like the firmware: [selected][start][count] + records.
         final start = a.isEmpty ? 0 : a[0];
-        if (a.length != 1 || start >= 3) throw DeviceError('不正なスロット一覧です。');
+        if (a.length != 1 || start >= 3) throw DeviceError(tr("不正なスロット一覧です。"));
         final out = <int>[_selected, start, 3 - start];
         for (var slot = start + 1; slot <= 3; slot++) {
           final name = _names[slot]?.codeUnits ?? [];
@@ -278,13 +280,13 @@ class DemoTransport implements RpcTransport {
         return Uint8List.fromList([...u32(_token), 0, 0]);
       case 3:
         if (read32(a, 0) != _token || read16(a, 4) != _pending.length) {
-          throw DeviceError('転送位置が不正です。');
+          throw DeviceError(tr("転送位置が不正です。"));
         }
         _pending.addAll(a.sublist(6));
         return Uint8List.fromList([...u32(_token), ...u16(_pending.length)]);
       case 4:
         if (_pending.length != packetBytes || crc32(_pending) != _crc) {
-          throw DeviceError('転送データが不正です。');
+          throw DeviceError(tr("転送データが不正です。"));
         }
         final name = String.fromCharCodes(
           _pending.sublist(24, 48).takeWhile((v) => v != 0),
@@ -298,7 +300,7 @@ class DemoTransport implements RpcTransport {
         return Uint8List(0);
       case 6:
         if (a[0] != 0 && !_names.containsKey(a[0])) {
-          throw DeviceError('空のスロットです。');
+          throw DeviceError(tr("空のスロットです。"));
         }
         _selected = a[0];
         return Uint8List(0);
@@ -309,14 +311,14 @@ class DemoTransport implements RpcTransport {
         return Uint8List(0);
       case 9:
         if (!_names.containsKey(a[0])) {
-          throw DeviceError('空のスロットです。');
+          throw DeviceError(tr("空のスロットです。"));
         }
         _names[a[0]] = String.fromCharCodes(
           a.sublist(1, 25).takeWhile((v) => v != 0),
         );
         return Uint8List(0);
       default:
-        throw DeviceError('未対応の操作です。');
+        throw DeviceError(tr("未対応の操作です。"));
     }
   }
 

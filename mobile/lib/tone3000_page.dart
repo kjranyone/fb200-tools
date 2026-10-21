@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -126,10 +128,10 @@ class _Tone3000PageState extends State<Tone3000Page> {
       if (e.code == 'CANCELED') {
         _showCancellation();
       } else if (mounted) {
-        setState(() => _error = 'ブラウザーを開けませんでした。対応ブラウザーを確認してください。');
+        setState(() => _error = tr("ブラウザーを開けませんでした。対応ブラウザーを確認してください。"));
       }
     } catch (_) {
-      if (mounted) setState(() => _error = '取得できませんでした。接続を確認して再試行してください。');
+      if (mounted) setState(() => _error = tr("取得できませんでした。接続を確認して再試行してください。"));
     } finally {
       if (mounted) {
         setState(() {
@@ -143,7 +145,9 @@ class _Tone3000PageState extends State<Tone3000Page> {
   void _showCancellation() {
     if (mounted) {
       setState(
-        () => _notice = 'TONE3000のログイン・トーン選択を中止しました。もう一度「TONE3000で探す」から続けられます。',
+        () => _notice = tr(
+          "TONE3000のログイン・トーン選択を中止しました。もう一度「TONE3000で探す」から続けられます。",
+        ),
       );
     }
   }
@@ -155,7 +159,7 @@ class _Tone3000PageState extends State<Tone3000Page> {
     return Uri.parse(result);
   }
 
-  Future<void> _browse() => _run('TONE3000でトーンを選択中', () async {
+  Future<void> _browse() => _run(tr("TONE3000でトーンを選択中"), () async {
     final key = validatePublishableKey(_key.text);
     FocusManager.instance.primaryFocus?.unfocus();
     // Only the public application identifier is saved. Tokens remain in memory.
@@ -199,7 +203,7 @@ class _Tone3000PageState extends State<Tone3000Page> {
     }
   }
 
-  Future<void> _more() => _run('モデル一覧を読み込み中', () async {
+  Future<void> _more() => _run(tr("モデル一覧を読み込み中"), () async {
     final page = await _api!.listModels(_selection!.tone.id, page: _page + 1);
     if (mounted) {
       setState(() {
@@ -211,7 +215,7 @@ class _Tone3000PageState extends State<Tone3000Page> {
     }
   });
 
-  Future<void> _import(ToneModel model) => _run('A2-Lite対応を確認中', () async {
+  Future<void> _import(ToneModel model) => _run(tr("A2-Lite対応を確認中"), () async {
     final imported = await _api!.download(_selection!.tone, model);
     if (mounted) Navigator.pop(context, imported);
   });
@@ -226,10 +230,10 @@ class _Tone3000PageState extends State<Tone3000Page> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('TONE3000から読み込む'),
+      title: Text(tr("TONE3000から読み込む")),
       actions: [
         IconButton(
-          tooltip: 'TONE3000連携設定',
+          tooltip: tr("TONE3000連携設定"),
           onPressed: _busy ? null : () => setState(() => _editing = !_editing),
           icon: const Icon(Icons.settings_outlined),
         ),
@@ -275,7 +279,9 @@ class _Tone3000PageState extends State<Tone3000Page> {
                       ? null
                       : _browse,
                   icon: const Icon(Icons.travel_explore),
-                  label: Text(_selection == null ? 'TONE3000で探す' : '別のトーンを探す'),
+                  label: Text(
+                    _selection == null ? tr("TONE3000で探す") : tr("別のトーンを探す"),
+                  ),
                 ),
               ],
             ),
@@ -292,26 +298,30 @@ class _Tone3000PageState extends State<Tone3000Page> {
             children: [
               const Tone3000Logo(),
               const SizedBox(height: 20),
-              const Text(
-                '世界のキャプチャを、FB200へ。',
+              Text(
+                tr("世界のキャプチャを、FB200へ。"),
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              const Text('Publishable Keyはアプリを識別するキーです。キーの設定だけではログインは完了しません。'),
+              Text(tr("Publishable Keyはアプリを識別するキーです。キーの設定だけではログインは完了しません。")),
               const SizedBox(height: 8),
-              const Text(
-                '「TONE3000で探す」を押すとログイン画面が開きます。TONE3000に登録したメールアドレスを入力し、Send Codeで届くコードを使ってログインすると、トーンを選べます。',
+              Text(
+                tr(
+                  "「TONE3000で探す」を押すとログイン画面が開きます。TONE3000に登録したメールアドレスを入力し、Send Codeで届くコードを使ってログインすると、トーンを選べます。",
+                ),
               ),
               if (_loadingSettings) const LinearProgressIndicator(),
               if (_editing && !_loadingSettings) ...[
                 const SizedBox(height: 20),
-                const Text(
-                  '連携の初期設定',
+                Text(
+                  tr("連携の初期設定"),
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'TONE3000のSettings → API Keysにある公開キーを設定します。Redirect URIを登録する場合は次の値を指定してください。',
+                Text(
+                  tr(
+                    "TONE3000のSettings → API Keysにある公開キーを設定します。Redirect URIを登録する場合は次の値を指定してください。",
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const SelectableText(toneCallback),
@@ -328,30 +338,32 @@ class _Tone3000PageState extends State<Tone3000Page> {
                           (!_supported && widget.browser == null)
                       ? null
                       : (_) => _browse(),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Publishable Key（client_id）',
-                    helperText: 'Secret Keyは入力しないでください。',
+                    helperText: tr("Secret Keyは入力しないでください。"),
                   ),
                 ),
                 if (_supported || widget.scanKey != null)
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _scanKey,
                     icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('QRコードから入力'),
+                    label: Text(tr("QRコードから入力")),
                   ),
                 TextButton(
                   onPressed: () => launchUrl(
                     Uri.https('www.tone3000.com', '/settings'),
                     mode: LaunchMode.externalApplication,
                   ),
-                  child: const Text('TONE3000の設定を開く'),
+                  child: Text(tr("TONE3000の設定を開く")),
                 ),
               ],
               if (!_supported && widget.browser == null)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 16),
                   child: Text(
-                    'TONE3000連携はAndroidアプリで利用できます。Webデモではローカルファイルを選択してください。',
+                    tr(
+                      "TONE3000連携はAndroidアプリで利用できます。Webデモではローカルファイルを選択してください。",
+                    ),
                   ),
                 ),
               const SizedBox(height: 20),
@@ -369,7 +381,9 @@ class _Tone3000PageState extends State<Tone3000Page> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text('@${_selection!.account.username} でログイン中'),
+                      child: Text(
+                        tr("@{0} でログイン中", [_selection!.account.username]),
+                      ),
                     ),
                   ],
                 ),
@@ -385,11 +399,11 @@ class _Tone3000PageState extends State<Tone3000Page> {
                     ),
                   ),
                 const SizedBox(height: 16),
-                const Text(
-                  'モデルを選択',
+                Text(
+                  tr("モデルを選択"),
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const Text('取得後に48 kHz・固定A2-Lite構成を確認します。取り込みだけでは本体へ送信されません。'),
+                Text(tr("取得後に48 kHz・固定A2-Lite構成を確認します。取り込みだけでは本体へ送信されません。")),
                 const SizedBox(height: 12),
                 for (final model in _models)
                   Card(
@@ -402,14 +416,14 @@ class _Tone3000PageState extends State<Tone3000Page> {
                     ),
                   ),
                 if (_models.isEmpty)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('A2モデルがありません。別のトーンを選択してください。'),
+                    child: Text(tr("A2モデルがありません。別のトーンを選択してください。")),
                   ),
                 if (_page < _totalPages)
                   OutlinedButton(
                     onPressed: _busy ? null : _more,
-                    child: const Text('さらに読み込む'),
+                    child: Text(tr("さらに読み込む")),
                   ),
               ],
             ],

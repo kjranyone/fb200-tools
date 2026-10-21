@@ -9,6 +9,12 @@ the demo without connecting a pedal.
 
 ## Features
 
+**0.10.7+21** adds a language selector to the disconnected launch screen:
+English (default), Japanese and Simplified Chinese. The selected language is
+saved locally and applies to controls, dialogs, help, connection/transfer
+messages and errors. Model, IR and preset names remain as supplied. See
+[language support and Android verification](../docs/ANDROID_LANGUAGES.md).
+
 **0.10.6+20** adds live NAM knob preview with a coalesced BLE writer and final
 readback, names effect algorithms and their audible parameters, and shows
 actual IR names/assignments in the cabinet selector and IR tab. Unused DSP

@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -35,7 +37,7 @@ class LooperStatus {
     this.writing,
   );
   factory LooperStatus.parse(Uint8List p) {
-    if (p.length != 13) throw DeviceError('ルーパーの状態が不正です。');
+    if (p.length != 13) throw DeviceError(tr("ルーパーの状態が不正です。"));
     return LooperStatus(
       p[0],
       p[1],
@@ -55,7 +57,7 @@ class LooperStatus {
 class PedalPreset {
   final Uint8List bytes;
   PedalPreset(List<int> bytes) : bytes = Uint8List.fromList(bytes) {
-    if (bytes.length != 256) throw DeviceError('プリセットの形式が不正です。');
+    if (bytes.length != 256) throw DeviceError(tr("プリセットの形式が不正です。"));
   }
   String get name =>
       latin1.decode(bytes.take(20).takeWhile((v) => v != 0).toList());
@@ -64,7 +66,7 @@ class PedalPreset {
     if (name.isEmpty ||
         name.length > 20 ||
         name.codeUnits.any((c) => c < 32 || c > 126)) {
-      throw DeviceError('プリセット名は半角英数字・記号で1〜20文字にしてください。');
+      throw DeviceError(tr("プリセット名は半角英数字・記号で1〜20文字にしてください。"));
     }
     final copy = Uint8List.fromList(bytes)..fillRange(0, 20, 0);
     copy.setRange(0, name.length, name.codeUnits);
@@ -145,7 +147,7 @@ class PedalClient extends ChangeNotifier {
     if (v.payload.length != 55 ||
         latin1.decode(v.payload.take(32).toList()).split('\x00').first !=
             'FB200') {
-      throw DeviceError('FB200本体を確認できませんでした。');
+      throw DeviceError(tr("FB200本体を確認できませんでした。"));
     }
     version = latin1.decode(v.payload.sublist(39, 46)).split('\x00').first;
     await refresh();
@@ -160,7 +162,7 @@ class PedalClient extends ChangeNotifier {
       accept: (f) => f.payload.length == 1,
     );
     if (edit == null || settings == null || rhythm == null) {
-      throw DeviceError('本体の状態を読み取れませんでした。');
+      throw DeviceError(tr("本体の状態を読み取れませんでした。"));
     }
   }
 
@@ -209,10 +211,10 @@ class PedalClient extends ChangeNotifier {
       0x99,
       accept: (f) => f.payload.length == 1,
     );
-    if (f.payload[0] != 1) throw DeviceError('プリセットの保存に失敗しました。');
+    if (f.payload[0] != 1) throw DeviceError(tr("プリセットの保存に失敗しました。"));
     final readback = await readPreset(index);
     if (!listEquals(readback.bytes, preset.bytes)) {
-      throw DeviceError('保存内容が一致しません。一覧を更新してください。');
+      throw DeviceError(tr("保存内容が一致しません。一覧を更新してください。"));
     }
     await refresh();
   }
@@ -319,9 +321,9 @@ class PedalClient extends ChangeNotifier {
     for (var s = 0; s < irSlotCount; s++) {
       final o = s * 59;
       if (p[o] != 1 || read16(p, o + 1) != s + 1) {
-        throw DeviceError('IRスロット一覧の形式が不正です。');
+        throw DeviceError(tr("IRスロット一覧の形式が不正です。"));
       }
-      if (p[o + 3] > 1) throw DeviceError('IRスロットの使用状態が不正です。');
+      if (p[o + 3] > 1) throw DeviceError(tr("IRスロットの使用状態が不正です。"));
       result.add(_irRecord(p, o));
     }
     irSlots
@@ -361,7 +363,7 @@ class PedalClient extends ChangeNotifier {
           read16(f.payload, 1) == slot,
     );
     if (f.payload[3] == 0) {
-      throw DeviceError('このIRスロットは空のため、名前を変更できません。');
+      throw DeviceError(tr("このIRスロットは空のため、名前を変更できません。"));
     }
   }
 
@@ -378,7 +380,7 @@ class PedalClient extends ChangeNotifier {
           read16(f.payload, 1) == slot,
     );
     if (f.payload[3] == 0) {
-      throw DeviceError('IRスロットを削除できませんでした。');
+      throw DeviceError(tr("IRスロットを削除できませんでした。"));
     }
   }
 
@@ -397,7 +399,7 @@ class PedalClient extends ChangeNotifier {
     if (samples.length != irLength) throw ArgumentError('IR samples');
     for (final v in samples) {
       if (!v.isFinite) {
-        throw DeviceError('IRに異常な値が含まれています。変換を確認してください。');
+        throw DeviceError(tr("IRに異常な値が含まれています。変換を確認してください。"));
       }
     }
     final nameBytes = latin1.encode(sanitizeIrName(name));
@@ -439,7 +441,7 @@ class PedalClient extends ChangeNotifier {
     if (name.isEmpty ||
         codes.length > 20 ||
         codes.any((c) => c < 0x20 || c > 0x7e)) {
-      throw DeviceError('Bluetooth名は半角英数字・記号で1〜20文字にしてください。');
+      throw DeviceError(tr("Bluetooth名は半角英数字・記号で1〜20文字にしてください。"));
     }
     await transport.sendCommand(0xb3, [
       ...codes,
@@ -452,14 +454,21 @@ class PedalClient extends ChangeNotifier {
   Future<void> setModuleOrder(List<int> order) async {
     if (order.length != 7 ||
         !Set.of(order).containsAll(const [0, 1, 2, 3, 4, 5, 6])) {
-      throw DeviceError('モジュール順序が不正です。');
+      throw DeviceError(tr("モジュール順序が不正です。"));
     }
     await transport.sendCommand(0xa0, order);
   }
 
   // ---- looper (our 0xD7 extension) ----
 
-  static const looperStates = ['利用不可', '空', '録音', '再生', 'ダビング', '停止'];
+  static List<String> get looperStates => [
+    tr("利用不可"),
+    tr("空"),
+    tr("録音"),
+    tr("再生"),
+    tr("ダビング"),
+    tr("停止"),
+  ];
 
   Future<LooperStatus> looperStatus() async {
     final f = await transport.exchange(
@@ -491,7 +500,7 @@ class PedalClient extends ChangeNotifier {
       0xd8,
       accept: (f) => f.payload.length == 1,
     );
-    if (f.payload[0] != 0) throw DeviceError('ルーパーの音量を変更できませんでした。');
+    if (f.payload[0] != 0) throw DeviceError(tr("ルーパーの音量を変更できませんでした。"));
   }
 
   Future<void> looperSave(int slot) async {
@@ -501,7 +510,7 @@ class PedalClient extends ChangeNotifier {
       0xd8,
       accept: (f) => f.payload.length == 1,
     );
-    if (f.payload[0] != 0) throw DeviceError('ループを保存できませんでした。');
+    if (f.payload[0] != 0) throw DeviceError(tr("ループを保存できませんでした。"));
   }
 
   Future<void> looperLoad(int slot) async {
@@ -511,7 +520,7 @@ class PedalClient extends ChangeNotifier {
       0xd8,
       accept: (f) => f.payload.length == 1,
     );
-    if (f.payload[0] != 0) throw DeviceError('ループを読み込めませんでした。');
+    if (f.payload[0] != 0) throw DeviceError(tr("ループを読み込めませんでした。"));
   }
 
   Future<Uint8List> backup() async {
@@ -536,7 +545,7 @@ class PedalClient extends ChangeNotifier {
   }
 
   static List<PedalPreset> parseBackup(List<int> bytes) {
-    if (bytes.length > 65536) throw DeviceError('バックアップが大きすぎます。');
+    if (bytes.length > 65536) throw DeviceError(tr("バックアップが大きすぎます。"));
     try {
       final json = jsonDecode(utf8.decode(bytes));
       if (json is! Map ||
@@ -559,7 +568,7 @@ class PedalClient extends ChangeNotifier {
       }
       return result;
     } catch (_) {
-      throw DeviceError('FB200プリセットのバックアップ形式・整合性を確認してください。');
+      throw DeviceError(tr("FB200プリセットのバックアップ形式・整合性を確認してください。"));
     }
   }
 
@@ -584,60 +593,60 @@ class PedalModule {
   const PedalModule(this.name, this.command, this.offset, this.fields);
 }
 
-const pedalModules = [
-  PedalModule('コンプレッサー', 0x80, 0x14, [
-    PedalField('オン', 1),
-    PedalField('タイプ', 0),
-    PedalField('アタック'),
-    PedalField('スレッショルド'),
-    PedalField('レシオ'),
-    PedalField('レベル'),
+List<PedalModule> get pedalModules => [
+  PedalModule(tr("コンプレッサー"), 0x80, 0x14, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("タイプ"), 0),
+    PedalField(tr("アタック")),
+    PedalField(tr("スレッショルド")),
+    PedalField(tr("レシオ")),
+    PedalField(tr("レベル")),
   ]),
-  PedalModule('ノイズゲート', 0x81, 0x5c, [
-    PedalField('オン', 1),
-    PedalField('タイプ', 0),
-    PedalField('スレッショルド'),
+  PedalModule(tr("ノイズゲート"), 0x81, 0x5c, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("タイプ"), 0),
+    PedalField(tr("スレッショルド")),
   ]),
-  PedalModule('アンプ', 0x82, 0x2c, [
-    PedalField('オン', 1),
-    PedalField('モデル（1〜10）', 10),
-    PedalField('ゲイン'),
-    PedalField('ベース'),
-    PedalField('ミドル'),
-    PedalField('ミドル周波数'),
-    PedalField('トレブル'),
-    PedalField('ボリューム'),
+  PedalModule(tr("アンプ"), 0x82, 0x2c, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("モデル（1〜10）"), 10),
+    PedalField(tr("ゲイン")),
+    PedalField(tr("ベース")),
+    PedalField(tr("ミドル")),
+    PedalField(tr("ミドル周波数")),
+    PedalField(tr("トレブル")),
+    PedalField(tr("ボリューム")),
   ]),
-  PedalModule('キャビネット / IR', 0x83, 0x44, [
-    PedalField('オン', 1),
-    PedalField('タイプ（11〜19：ユーザーIR）', 19),
-    PedalField('パラメーター1', 4),
-    PedalField('パラメーター2'),
-    PedalField('パラメーター3'),
-    PedalField('パラメーター4', 9),
+  PedalModule(tr("キャビネット / IR"), 0x83, 0x44, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("タイプ（11〜19：ユーザーIR）"), 19),
+    PedalField(tr("パラメーター1"), 4),
+    PedalField(tr("パラメーター2")),
+    PedalField(tr("パラメーター3")),
+    PedalField(tr("パラメーター4"), 9),
   ]),
-  PedalModule('モジュレーション', 0x84, 0x74, [
-    PedalField('オン', 1),
-    PedalField('タイプ', 11),
-    PedalField('レート'),
-    PedalField('ミックス'),
-    PedalField('パラメーター3'),
-    PedalField('パラメーター4'),
-    PedalField('パラメーター5', 240),
+  PedalModule(tr("モジュレーション"), 0x84, 0x74, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("タイプ"), 11),
+    PedalField(tr("レート")),
+    PedalField(tr("ミックス")),
+    PedalField(tr("パラメーター3")),
+    PedalField(tr("パラメーター4")),
+    PedalField(tr("パラメーター5"), 240),
   ]),
-  PedalModule('ディレイ', 0x85, 0x8c, [
-    PedalField('オン', 1),
-    PedalField('タイプ', 6),
-    PedalField('ミックス'),
-    PedalField('フィードバック'),
-    PedalField('タイム (ms)', 2500, 40),
+  PedalModule(tr("ディレイ"), 0x85, 0x8c, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("タイプ"), 6),
+    PedalField(tr("ミックス")),
+    PedalField(tr("フィードバック")),
+    PedalField(tr("タイム (ms)"), 2500, 40),
   ]),
-  PedalModule('リバーブ', 0x86, 0xa4, [
-    PedalField('オン', 1),
-    PedalField('タイプ', 4),
-    PedalField('パラメーター1', 200),
-    PedalField('レベル'),
-    PedalField('ディケイ'),
-    PedalField('トーン'),
+  PedalModule(tr("リバーブ"), 0x86, 0xa4, [
+    PedalField(tr("オン"), 1),
+    PedalField(tr("タイプ"), 4),
+    PedalField(tr("パラメーター1"), 200),
+    PedalField(tr("レベル")),
+    PedalField(tr("ディケイ")),
+    PedalField(tr("トーン")),
   ]),
 ];

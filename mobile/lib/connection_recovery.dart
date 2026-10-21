@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -152,7 +154,7 @@ class ConnectionRecovery extends ChangeNotifier {
           if (_disposed || epoch != generation) return;
           if (_resynchronizers.contains(callback)) await callback();
         }
-        if (transport.isClosed) throw DeviceError('再同期中に接続が切れました。');
+        if (transport.isClosed) throw DeviceError(tr("再同期中に接続が切れました。"));
         if (_disposed || epoch != generation) return;
         phase = RecoveryPhase.connected;
         _missedProbes = 0;
@@ -164,7 +166,7 @@ class ConnectionRecovery extends ChangeNotifier {
         if (_disposed || epoch != generation) return;
         error = e is DeviceError
             ? e.message
-            : '本体との通信を復旧できませんでした。電源とBluetoothを確認してください。';
+            : tr("本体との通信を復旧できませんでした。電源とBluetoothを確認してください。");
         debugPrint('FB200 recovery: attempt=$attempt failed: $error');
       }
     }
@@ -180,7 +182,7 @@ class ConnectionRecovery extends ChangeNotifier {
     if (_delayDone case final done? when !done.isCompleted) done.complete();
     _recovering = null;
     phase = RecoveryPhase.failed;
-    error = '再接続を中止しました。準備ができたら再試行できます。';
+    error = tr("再接続を中止しました。準備ができたら再試行できます。");
     notifyListeners();
     if (cancelOpening case final cancel?) {
       unawaited(cancel().catchError((Object _) {}));

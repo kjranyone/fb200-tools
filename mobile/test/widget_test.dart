@@ -11,6 +11,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(const MainApp());
+      await tester.pumpAndSettle();
       expect(find.text('接続せず試す'), findsOneWidget);
       expect(find.text('DEMO'), findsNothing);
       await tester.ensureVisible(find.text('接続せず試す'));
@@ -70,6 +71,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const MainApp());
+    await tester.pumpAndSettle();
     await tester.tap(find.text('接続せず試す'));
     await tester.pumpAndSettle();
     // Enter model management to see the slot cards.

@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -60,7 +62,7 @@ void require(bool ok, String message) {
 }
 
 Map<String, dynamic> object(Object? value) {
-  require(value is Map<String, dynamic>, 'モデルの構造が正しくありません。');
+  require(value is Map<String, dynamic>, tr("モデルの構造が正しくありません。"));
   return value as Map<String, dynamic>;
 }
 
@@ -76,12 +78,12 @@ class NamModel {
   NamModel(this.name, this.packet);
 
   factory NamModel.parse(Uint8List bytes, String filename) {
-    require(bytes.length <= 8 * 1024 * 1024, 'ファイルが大きすぎます（上限8 MB）。');
+    require(bytes.length <= 8 * 1024 * 1024, tr("ファイルが大きすぎます（上限8 MB）。"));
     final document = object(jsonDecode(utf8.decode(bytes)));
     var model = document;
     if (document['architecture'] == 'SlimmableContainer') {
       final submodels = object(document['config'])['submodels'];
-      require(submodels is List, 'A2モデルの構造が正しくありません。');
+      require(submodels is List, tr("A2モデルの構造が正しくありません。"));
       final candidates = <Map<String, dynamic>>[];
       for (final entry in submodels as List) {
         final m = object(object(entry)['model']);
@@ -93,16 +95,19 @@ class NamModel {
           candidates.add(m);
         }
       }
-      require(candidates.length == 1, 'A2-Liteモデルを一意に選択できません。');
+      require(candidates.length == 1, tr("A2-Liteモデルを一意に選択できません。"));
       model = candidates.single;
     }
-    require(model['architecture'] == 'WaveNet', '48 kHzのA2-Liteモデルを選んでください。');
+    require(
+      model['architecture'] == 'WaveNet',
+      tr("48 kHzのA2-Liteモデルを選んでください。"),
+    );
     final rate = model.containsKey('sample_rate')
         ? model['sample_rate']
         : document['sample_rate'];
-    require(rate == 48000 && finite(rate), '48 kHzのモデルが必要です。');
+    require(rate == 48000 && finite(rate), tr("48 kHzのモデルが必要です。"));
     if (!identical(model, document) && document.containsKey('sample_rate')) {
-      require(document['sample_rate'] == rate, 'モデルのサンプルレートが一致しません。');
+      require(document['sample_rate'] == rate, tr("モデルのサンプルレートが一致しません。"));
     }
     final config = object(model['config']);
     require(
@@ -115,17 +120,17 @@ class NamModel {
           'condition_dsp',
         }.contains,
       ),
-      '未対応のモデル設定が含まれています。',
+      tr("未対応のモデル設定が含まれています。"),
     );
     require(
       config['head'] == null &&
           config['condition_dsp'] == null &&
           (config['in_channels'] ?? 1) == 1 &&
           finite(config['head_scale']),
-      '未対応のモデル構造です。',
+      tr("未対応のモデル構造です。"),
     );
     final layers = config['layers'];
-    require(layers is List && layers.length == 1, '固定A2-Liteモデルが必要です。');
+    require(layers is List && layers.length == 1, tr("固定A2-Liteモデルが必要です。"));
     final layer = object((layers as List).single);
     const films = {
       'conv_pre_film',
@@ -159,7 +164,7 @@ class NamModel {
           'slimmable',
         }.contains,
       ),
-      '未対応のモデル設定が含まれています。',
+      tr("未対応のモデル設定が含まれています。"),
     );
     require(
       layer['input_size'] == 1 &&
@@ -168,7 +173,7 @@ class NamModel {
           layer['bottleneck'] == 3 &&
           sameList(layer['kernel_sizes'], kernels) &&
           sameList(layer['dilations'], dilations),
-      '3チャンネルの固定A2-Liteモデルが必要です。',
+      tr("3チャンネルの固定A2-Liteモデルが必要です。"),
     );
     final activation = layer['activation'];
     require(
@@ -181,7 +186,7 @@ class NamModel {
                 a['type'] == 'LeakyReLU' &&
                 a['negative_slope'] == 0.01,
           ),
-      '未対応の活性化関数です。',
+      tr("未対応の活性化関数です。"),
     );
     require(
       (layer['gating_mode'] == null ||
@@ -189,7 +194,7 @@ class NamModel {
           (layer['gated'] ?? false) == false &&
           (layer['secondary_activation'] == null ||
               sameList(layer['secondary_activation'], List.filled(23, null))),
-      '未対応のゲート構造です。',
+      tr("未対応のゲート構造です。"),
     );
     for (final key in {...films, 'head1x1'}) {
       final v = layer[key];
@@ -197,7 +202,7 @@ class NamModel {
         v == null ||
             v == false ||
             (v is Map && (v['active'] ?? false) == false),
-        '未対応のモデル機能です。',
+        tr("未対応のモデル機能です。"),
       );
     }
     final linear = object(layer['layer1x1']), head = object(layer['head']);
@@ -205,7 +210,7 @@ class NamModel {
       linear['active'] == true &&
           (linear['groups'] ?? 1) == 1 &&
           linear.keys.every({'active', 'groups'}.contains),
-      '未対応の残差構造です。',
+      tr("未対応の残差構造です。"),
     );
     require(
       head['out_channels'] == 1 &&
@@ -215,18 +220,18 @@ class NamModel {
           head.keys.every(
             {'out_channels', 'kernel_size', 'bias', 'head_dilation'}.contains,
           ),
-      '未対応の出力構造です。',
+      tr("未対応の出力構造です。"),
     );
     require(
       (layer['groups_input'] ?? 1) == 1 &&
           (layer['groups_input_mixin'] ?? 1) == 1 &&
           layer['slimmable'] == null,
-      '固定A2-Liteモデルが必要です。',
+      tr("固定A2-Liteモデルが必要です。"),
     );
     final weights = model['weights'];
     require(
       weights is List && weights.length == weightCount,
-      'モデルの重み数が一致しません。',
+      tr("モデルの重み数が一致しません。"),
     );
     final packet = Uint8List(packetBytes);
     final view = ByteData.sublistView(packet);
@@ -234,7 +239,7 @@ class NamModel {
       final w = (weights as List)[i];
       require(
         finite(w) && (w as num).abs() <= 3.402823466e38,
-        '不正なモデル重みが含まれています。',
+        tr("不正なモデル重みが含まれています。"),
       );
       view.setFloat32(64 + i * 4, (w as num).toDouble(), Endian.little);
     }

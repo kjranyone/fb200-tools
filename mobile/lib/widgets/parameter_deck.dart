@@ -1,3 +1,5 @@
+import '../localization.dart';
+
 import 'package:flutter/material.dart';
 
 /// A bounded control surface. Short screens use explicit parameter pages;
@@ -88,18 +90,18 @@ class _ParameterDeckState extends State<ParameterDeck> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
-                    tooltip: '前のパラメーター',
+                    tooltip: tr("前のパラメーター"),
                     onPressed: page == 0
                         ? null
                         : () => setState(() => _page = page - 1),
                     icon: const Icon(Icons.chevron_left),
                   ),
                   Text(
-                    'パラメーター ${page + 1} / $pages',
+                    tr("パラメーター {0} / {1}", [page + 1, pages]),
                     style: const TextStyle(fontSize: 12),
                   ),
                   IconButton(
-                    tooltip: '次のパラメーター',
+                    tooltip: tr("次のパラメーター"),
                     onPressed: page == pages - 1
                         ? null
                         : () => setState(() => _page = page + 1),

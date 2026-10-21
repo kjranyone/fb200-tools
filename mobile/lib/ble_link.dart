@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:async';
 import 'dart:math';
 
@@ -33,7 +35,9 @@ class BleConnector {
   FlutterReactiveBle get ble => _instance ??= FlutterReactiveBle();
 
   Future<void> prepare() async {
-    if (!supported) throw DeviceError('実機へのBluetooth接続はAndroid / iOSで利用できます。');
+    if (!supported) {
+      throw DeviceError(tr("実機へのBluetooth接続はAndroid / iOSで利用できます。"));
+    }
     List<Permission> permissions;
     if (defaultTargetPlatform == TargetPlatform.android) {
       final sdk = await const MethodChannel('dev.fb200/platform')
@@ -46,7 +50,7 @@ class BleConnector {
     }
     final result = await permissions.request();
     if (result.values.any((v) => !v.isGranted && !v.isLimited)) {
-      throw DeviceError('Bluetoothの利用を許可してください。拒否済みの場合は端末の設定から変更できます。');
+      throw DeviceError(tr("Bluetoothの利用を許可してください。拒否済みの場合は端末の設定から変更できます。"));
     }
     await ble.initialize();
     if (ble.status != BleStatus.ready) {
@@ -55,7 +59,7 @@ class BleConnector {
             .firstWhere((s) => s == BleStatus.ready)
             .timeout(const Duration(seconds: 10));
       } on TimeoutException {
-        throw DeviceError('Bluetoothをオンにしてください。');
+        throw DeviceError(tr("Bluetoothをオンにしてください。"));
       }
     }
   }
@@ -71,7 +75,7 @@ class BleConnector {
   Future<FrameLink> openLink(String id) async {
     final generation = ++_openingGeneration;
     await prepare();
-    if (generation != _openingGeneration) throw DeviceError('再接続を中止しました。');
+    if (generation != _openingGeneration) throw DeviceError(tr("再接続を中止しました。"));
     final connected = Completer<void>();
     _BleFrameLink? link;
     var disconnected = false;
@@ -87,7 +91,7 @@ class BleConnector {
             if (s.connectionState == DeviceConnectionState.disconnected) {
               disconnected = true;
               if (!connected.isCompleted) {
-                connected.completeError(DeviceError('本体に接続できませんでした。'));
+                connected.completeError(DeviceError(tr("本体に接続できませんでした。")));
               }
               link?.lost();
             }
@@ -95,14 +99,14 @@ class BleConnector {
           onError: (Object error) {
             disconnected = true;
             if (!connected.isCompleted) {
-              connected.completeError(DeviceError('本体への接続に失敗しました。'));
+              connected.completeError(DeviceError(tr("本体への接続に失敗しました。")));
             }
             link?.lost();
           },
           onDone: () {
             disconnected = true;
             if (!connected.isCompleted) {
-              connected.completeError(DeviceError('本体への接続が終了しました。'));
+              connected.completeError(DeviceError(tr("本体への接続が終了しました。")));
             }
             link?.lost();
           },
@@ -110,7 +114,7 @@ class BleConnector {
     Future<void> cancel() async {
       disconnected = true;
       if (!connected.isCompleted) {
-        connected.completeError(DeviceError('再接続を中止しました。'));
+        connected.completeError(DeviceError(tr("再接続を中止しました。")));
       }
       await subscription.cancel();
     }
@@ -123,7 +127,7 @@ class BleConnector {
           .getDiscoveredServices(id)
           .timeout(const Duration(seconds: 10));
       if (disconnected || generation != _openingGeneration) {
-        throw DeviceError('通信の準備中に接続が切れました。');
+        throw DeviceError(tr("通信の準備中に接続が切れました。"));
       }
       final route = selectFb200Uart([
         for (final service in services)
@@ -137,7 +141,9 @@ class BleConnector {
             ),
       ]);
       if (route == null) {
-        throw DeviceError('FB200のモデル転送用Bluetooth通信が見つかりませんでした。FB200を選んでください。');
+        throw DeviceError(
+          tr("FB200のモデル転送用Bluetooth通信が見つかりませんでした。FB200を選んでください。"),
+        );
       }
       link = _BleFrameLink(
         _ChannelPair(route.writer, route.reader),
@@ -146,7 +152,7 @@ class BleConnector {
       link.start();
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (disconnected || link._closed || generation != _openingGeneration) {
-        throw DeviceError('通信の準備中に接続が切れました。');
+        throw DeviceError(tr("通信の準備中に接続が切れました。"));
       }
       return link;
     } catch (_) {
@@ -183,7 +189,7 @@ class _BleFrameLink implements FrameLink {
   void lost() {
     if (_closed) return;
     _closed = true;
-    _bytes.addError(DeviceError('Bluetooth接続が切れました。'));
+    _bytes.addError(DeviceError(tr("Bluetooth接続が切れました。")));
     unawaited(_bytes.close());
   }
 
@@ -191,9 +197,9 @@ class _BleFrameLink implements FrameLink {
   Stream<List<int>> get bytes => _bytes.stream;
   @override
   Future<void> write(Uint8List value) async {
-    if (_closed) throw DeviceError('Bluetooth接続が切れています。');
+    if (_closed) throw DeviceError(tr("Bluetooth接続が切れています。"));
     for (var offset = 0; offset < value.length; offset += 20) {
-      if (_closed) throw DeviceError('Bluetooth接続が切れています。');
+      if (_closed) throw DeviceError(tr("Bluetooth接続が切れています。"));
       try {
         await channel.writer
             .write(
@@ -203,7 +209,7 @@ class _BleFrameLink implements FrameLink {
             .timeout(const Duration(seconds: 3));
       } catch (_) {
         lost();
-        throw DeviceError('Bluetooth通信が中断されました。再接続後に操作結果を確認してください。');
+        throw DeviceError(tr("Bluetooth通信が中断されました。再接続後に操作結果を確認してください。"));
       }
       if (!channel.writer.isWritableWithResponse) {
         await Future<void>.delayed(const Duration(milliseconds: 15));

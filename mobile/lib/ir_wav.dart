@@ -5,6 +5,8 @@
 /// the first 512 of them (CAB_TAPS).
 library;
 
+import 'localization.dart';
+
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -49,7 +51,7 @@ _WavHead _readWav(Uint8List raw) {
       raw[9] != 0x41 ||
       raw[10] != 0x56 ||
       raw[11] != 0x45) {
-    throw WavError('WAVファイルではありません。');
+    throw WavError(tr("WAVファイルではありません。"));
   }
   final view = ByteData.sublistView(raw);
   Uint8List? fmt, data;
@@ -57,7 +59,7 @@ _WavHead _readWav(Uint8List raw) {
   while (pos + 8 <= raw.length) {
     final size = view.getUint32(pos + 4, Endian.little);
     if (pos + 8 + size > raw.length) {
-      throw WavError('WAVファイルが壊れています。');
+      throw WavError(tr("WAVファイルが壊れています。"));
     }
     final id = raw.sublist(pos, pos + 4);
     if (id[0] == 0x66 && id[1] == 0x6d && id[2] == 0x74 && id[3] == 0x20) {
@@ -71,10 +73,10 @@ _WavHead _readWav(Uint8List raw) {
     pos += 8 + size + (size & 1);
   }
   if (fmt == null || data == null) {
-    throw WavError('WAVファイルに音声データがありません。');
+    throw WavError(tr("WAVファイルに音声データがありません。"));
   }
   if (fmt.length < 16) {
-    throw WavError('WAVファイルが壊れています。');
+    throw WavError(tr("WAVファイルが壊れています。"));
   }
   final f = ByteData.sublistView(fmt);
   var audioFormat = f.getUint16(0, Endian.little);
@@ -85,10 +87,10 @@ _WavHead _readWav(Uint8List raw) {
   if (audioFormat == 0xfffe && fmt.length >= 26) {
     audioFormat = f.getUint16(24, Endian.little);
   }
-  if (channels < 1) throw WavError('WAVのチャンネル数が不正です。');
-  if (rate <= 0) throw WavError('WAVのサンプルレートが不正です。');
-  if (bits <= 0) throw WavError('WAVのビット深度が不正です。');
-  if (data.isEmpty) throw WavError('WAVファイルに音声データがありません。');
+  if (channels < 1) throw WavError(tr("WAVのチャンネル数が不正です。"));
+  if (rate <= 0) throw WavError(tr("WAVのサンプルレートが不正です。"));
+  if (bits <= 0) throw WavError(tr("WAVのビット深度が不正です。"));
+  if (data.isEmpty) throw WavError(tr("WAVファイルに音声データがありません。"));
   return _WavHead(audioFormat, channels, rate, bits, data);
 }
 
@@ -144,7 +146,7 @@ List<double> resample(
   int? maxOut,
 }) {
   if (srcRate <= 0 || dstRate <= 0) {
-    throw WavError('サンプルレートが不正です。');
+    throw WavError(tr("サンプルレートが不正です。"));
   }
   final n = samples.length;
   var outLen = _roundRatio(n, dstRate, srcRate);
@@ -226,7 +228,7 @@ List<double> _decodeAll(_WavHead head) {
     ];
   }
   if (audioFormat != 1) {
-    throw WavError('対応していないWAV形式です (format $audioFormat)。');
+    throw WavError(tr("対応していないWAV形式です (format {0})。", [audioFormat]));
   }
   switch (bits) {
     case 8:
@@ -247,7 +249,7 @@ List<double> _decodeAll(_WavHead head) {
           view.getInt32(i * 4, Endian.little) / 2147483648.0,
       ];
     default:
-      throw WavError('対応していないビット深度です ($bits bit)。');
+      throw WavError(tr("対応していないビット深度です ({0} bit)。", [bits]));
   }
 }
 
@@ -267,7 +269,7 @@ Float32List wavToIr(Uint8List bytes) {
   final out = Float32List(irLength);
   for (var i = 0; i < headSamples.length && i < irLength; i++) {
     final v = headSamples[i];
-    if (!v.isFinite) throw WavError('WAVに異常な値が含まれています。');
+    if (!v.isFinite) throw WavError(tr("WAVに異常な値が含まれています。"));
     out[i] = v;
   }
   return out;

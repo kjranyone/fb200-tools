@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
@@ -189,7 +191,7 @@ class WireTransport implements RpcTransport {
   Future<void> detach() async {
     _closed = true;
     _binding++;
-    _fail('接続が切れました。操作結果を再接続後に確認してください。');
+    _fail(tr("接続が切れました。操作結果を再接続後に確認してください。"));
     _pending = null;
     _legacyPending = null;
     _legacyAccept = null;
@@ -205,7 +207,7 @@ class WireTransport implements RpcTransport {
   Future<void> replaceLink(FrameLink next) async {
     if (_disposed) {
       await next.close();
-      throw DeviceError('接続は終了しています。');
+      throw DeviceError(tr("接続は終了しています。"));
     }
     try {
       await detach();
@@ -215,7 +217,7 @@ class WireTransport implements RpcTransport {
     }
     if (_disposed) {
       await next.close();
-      throw DeviceError('接続は終了しています。');
+      throw DeviceError(tr("接続は終了しています。"));
     }
     link = next;
     _decoder = FrameDecoder();
@@ -240,7 +242,7 @@ class WireTransport implements RpcTransport {
     if (_closed) return;
     debugPrint('FB200 transport: disconnected ($reason), generation=$_binding');
     _closed = true;
-    _fail('接続が切れました。再接続して一覧を確認してください。');
+    _fail(tr("接続が切れました。再接続して一覧を確認してください。"));
     onDisconnected?.call();
   }
 
@@ -256,9 +258,9 @@ class WireTransport implements RpcTransport {
   }
 
   void _checkAvailable() {
-    if (_closed) throw DeviceError('再接続してください。');
+    if (_closed) throw DeviceError(tr("再接続してください。"));
     if (_pending != null || _legacyPending != null || _legacyWriting) {
-      throw DeviceError('別の操作の完了を待ってください。');
+      throw DeviceError(tr("別の操作の完了を待ってください。"));
     }
   }
 
@@ -304,7 +306,7 @@ class WireTransport implements RpcTransport {
       if (disconnectOnTimeout && identical(_legacyPending, pending)) {
         _disconnected('legacy reply timeout');
       }
-      throw DeviceError('本体から応答がありません。再接続後に操作結果を確認してください。');
+      throw DeviceError(tr("本体から応答がありません。再接続後に操作結果を確認してください。"));
     } catch (_) {
       if (identical(_legacyPending, pending)) _disconnected();
       rethrow;
@@ -342,15 +344,15 @@ class WireTransport implements RpcTransport {
       }
       final p = result!;
       if (p[4] != 0) {
-        const messages = {
-          1: 'モデルまたは送信内容を確認してください。',
-          2: '本体が別の転送を処理中です。少し待ってから再試行してください。',
-          3: 'モデルの整合性を確認できませんでした。再転送してください。',
-          4: '本体の保存・読み込みに失敗しました。電池残量とスロットを確認してください。',
-          5: 'この機能に対応するファームウェアが必要です。',
-          6: '転送が中断されました。最初から再転送してください。',
+        final messages = {
+          1: tr("モデルまたは送信内容を確認してください。"),
+          2: tr("本体が別の転送を処理中です。少し待ってから再試行してください。"),
+          3: tr("モデルの整合性を確認できませんでした。再転送してください。"),
+          4: tr("本体の保存・読み込みに失敗しました。電池残量とスロットを確認してください。"),
+          5: tr("この機能に対応するファームウェアが必要です。"),
+          6: tr("転送が中断されました。最初から再転送してください。"),
         };
-        throw DeviceError(messages[p[4]] ?? '本体が操作を受け付けませんでした。', p[4]);
+        throw DeviceError(messages[p[4]] ?? tr("本体が操作を受け付けませんでした。"), p[4]);
       }
       return Uint8List.sublistView(p, 5);
     } on TimeoutException {
@@ -359,7 +361,7 @@ class WireTransport implements RpcTransport {
       if (operation != 0 && identical(_pending, pending)) {
         _disconnected('NAM reply timeout');
       }
-      throw DeviceError('本体から応答がありません。対応ファームウェアと接続を確認してください。');
+      throw DeviceError(tr("本体から応答がありません。対応ファームウェアと接続を確認してください。"));
     } finally {
       if (identical(_pending, pending)) _pending = null;
       _finishOperation(done);

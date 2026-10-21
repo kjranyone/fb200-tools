@@ -1,3 +1,5 @@
+import 'localization.dart';
+
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -83,7 +85,7 @@ class _PedalPageState extends State<PedalPage> {
     widget.recovery?.addListener(_connectionChanged);
     widget.recovery?.addResynchronizer(_resynchronize);
     unawaited(
-      _run('本体を読み込み中', () async {
+      _run(tr("本体を読み込み中"), () async {
         await _pedal.initialize();
         _bank = _pedal.selected ~/ 4;
         await _pedal.loadBank(_bank);
@@ -96,7 +98,7 @@ class _PedalPageState extends State<PedalPage> {
     _timer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (_ready && !_busy && !_libraryOpen && _pedal.refreshRequired) {
         unawaited(
-          _run('本体を同期中', () async {
+          _run(tr("本体を同期中"), () async {
             await _pedal.refresh();
             _bank = _pedal.selected ~/ 4;
             await _pedal.loadBank(_bank);
@@ -173,13 +175,15 @@ class _PedalPageState extends State<PedalPage> {
     final draft = recovery?.draft;
     if (_busy || recovery == null || draft == null) return;
     if (!await _confirm(
-      '${PedalClient.address(draft.preset)}へ下書きの編集を戻します。音色が切り替わります。プリセットへの記録は、その後「保存」で行ってください。',
-      title: '下書きを本体へ戻す',
-      accept: '編集を戻す',
+      tr("{0}へ下書きの編集を戻します。音色が切り替わります。プリセットへの記録は、その後「保存」で行ってください。", [
+        PedalClient.address(draft.preset),
+      ]),
+      title: tr("下書きを本体へ戻す"),
+      accept: tr("編集を戻す"),
     )) {
       return;
     }
-    await _run('下書きを復元中', () async {
+    await _run(tr("下書きを復元中"), () async {
       await _pedal.select(draft.preset);
       var restored = PedalPreset(draft.bytes);
       if (widget.restrictedNam && restored.word(0xde) != 0x414e) {
@@ -189,7 +193,7 @@ class _PedalPageState extends State<PedalPage> {
       await _pedal.refresh();
       if (_pedal.selected != draft.preset ||
           !listEquals(restored.bytes, _pedal.edit!.bytes)) {
-        throw DeviceError('下書きの復元結果を確認できませんでした。下書きは保持しています。');
+        throw DeviceError(tr("下書きの復元結果を確認できませんでした。下書きは保持しています。"));
       }
       _bank = _pedal.selected ~/ 4;
       await _pedal.loadBank(_bank);
@@ -245,13 +249,13 @@ class _PedalPageState extends State<PedalPage> {
     if (index == _pedal.selected || _busy) return;
     if (_dirty &&
         !await _confirm(
-          '未保存の編集を破棄してプリセットを切り替えますか？',
-          title: 'プリセットを切り替え',
-          accept: '切り替える',
+          tr("未保存の編集を破棄してプリセットを切り替えますか？"),
+          title: tr("プリセットを切り替え"),
+          accept: tr("切り替える"),
         )) {
       return;
     }
-    await _run('プリセットを選択中', () async {
+    await _run(tr("プリセットを選択中"), () async {
       await _pedal.select(index);
       _bank = index ~/ 4;
       await _pedal.loadBank(_bank);
@@ -267,7 +271,7 @@ class _PedalPageState extends State<PedalPage> {
       if (!mounted) return;
       await widget.onOpenModels!();
       if (mounted) {
-        await _run('モデルを同期中', () async {
+        await _run(tr("モデルを同期中"), () async {
           await _pedal.refresh();
           await _pedal.loadBank(_bank);
           await _refreshNam(reloadSlots: true);
@@ -297,7 +301,7 @@ class _PedalPageState extends State<PedalPage> {
       await widget.transport.waitIdle();
       if (widget.transport.isClosed ||
           binding != widget.transport.connectionGeneration) {
-        throw DeviceError('接続が切り替わりました。復旧後に操作をやり直してください。');
+        throw DeviceError(tr("接続が切り替わりました。復旧後に操作をやり直してください。"));
       }
       await action();
     } catch (e) {
@@ -305,7 +309,7 @@ class _PedalPageState extends State<PedalPage> {
         setState(
           () => _error = e is DeviceError
               ? e.message
-              : '操作を完了できませんでした。接続と本体の状態を確認してください。',
+              : tr("操作を完了できませんでした。接続と本体の状態を確認してください。"),
         );
       }
     } finally {
@@ -358,24 +362,20 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
-  Future<bool> _confirm(
-    String text, {
-    String title = '本体へ保存',
-    String accept = '保存する',
-  }) async =>
+  Future<bool> _confirm(String text, {String? title, String? accept}) async =>
       await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(title),
+          title: Text(title ?? tr("本体へ保存")),
           content: Text(text),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('キャンセル'),
+              child: Text(tr("キャンセル")),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: Text(accept),
+              child: Text(accept ?? tr("保存する")),
             ),
           ],
         ),
@@ -384,11 +384,14 @@ class _PedalPageState extends State<PedalPage> {
 
   Future<void> _save(int destination, PedalPreset preset) async {
     if (!await _confirm(
-      '${PedalClient.address(destination)} を「${preset.name}」で上書きします。このプリセットを使っている音色が変わります。',
+      tr("{0} を「{1}」で上書きします。このプリセットを使っている音色が変わります。", [
+        PedalClient.address(destination),
+        preset.name,
+      ]),
     )) {
       return;
     }
-    await _run('プリセットを保存・照合中', () async {
+    await _run(tr("プリセットを保存・照合中"), () async {
       await _pedal.store(destination, preset);
       await _pedal.loadBank(_bank);
       await _refreshNam();
@@ -402,20 +405,20 @@ class _PedalPageState extends State<PedalPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${PedalClient.address(index)} の名前'),
+        title: Text(tr("{0} の名前", [PedalClient.address(index)])),
         content: TextField(
           controller: controller,
           maxLength: 20,
-          decoration: const InputDecoration(helperText: '半角英数字・記号'),
+          decoration: InputDecoration(helperText: tr("半角英数字・記号")),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
+            child: Text(tr("キャンセル")),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('次へ'),
+            child: Text(tr("次へ")),
           ),
         ],
       ),
@@ -431,7 +434,7 @@ class _PedalPageState extends State<PedalPage> {
     final destination = await showDialog<int>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: Text('${PedalClient.address(index)} のコピー先'),
+        title: Text(tr("{0} のコピー先", [PedalClient.address(index)])),
         children: [
           for (var i = 0; i < 40; i++)
             if (i != index)
@@ -445,7 +448,7 @@ class _PedalPageState extends State<PedalPage> {
     if (destination != null && mounted) await _save(destination, source);
   }
 
-  Future<void> _backup() => _run('40プリセットをバックアップ中', () async {
+  Future<void> _backup() => _run(tr("40プリセットをバックアップ中"), () async {
     final data = await _pedal.backup();
     await FilePicker.saveFile(
       fileName: 'fb200-presets.json',
@@ -459,21 +462,23 @@ class _PedalPageState extends State<PedalPage> {
     final bytes = BytesBuilder();
     await for (final chunk in file.readAsByteStream()) {
       if (bytes.length + chunk.length > 65536) {
-        throw DeviceError('64 KB以下のバックアップを選択してください。');
+        throw DeviceError(tr("64 KB以下のバックアップを選択してください。"));
       }
       bytes.add(chunk);
     }
     final presets = PedalClient.parseBackup(bytes.takeBytes());
     if (!mounted ||
         !await _confirm(
-          '全40プリセットをバックアップの内容で上書きします。復元中は接続を維持してください。途中で切れた場合、完了したプリセットだけが復元されます。NAMモデル本体やIRデータは含みません。',
+          tr(
+            "全40プリセットをバックアップの内容で上書きします。復元中は接続を維持してください。途中で切れた場合、完了したプリセットだけが復元されます。NAMモデル本体やIRデータは含みません。",
+          ),
         )) {
       return;
     }
-    await _run('プリセットを復元中', () async {
+    await _run(tr("プリセットを復元中"), () async {
       final original = _pedal.selected;
       for (var i = 0; i < 40; i++) {
-        if (mounted) setState(() => _status = '${i + 1}/40 を復元・照合中');
+        if (mounted) setState(() => _status = tr("{0}/40 を復元・照合中", [i + 1]));
         await _pedal.store(i, presets[i]);
       }
       await _pedal.select(original);
@@ -497,16 +502,16 @@ class _PedalPageState extends State<PedalPage> {
         content: TextField(
           controller: controller,
           maxLength: maxLength,
-          decoration: const InputDecoration(helperText: '半角英数字・記号'),
+          decoration: InputDecoration(helperText: tr("半角英数字・記号")),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
+            child: Text(tr("キャンセル")),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('次へ'),
+            child: Text(tr("次へ")),
           ),
         ],
       ),
@@ -525,30 +530,36 @@ class _PedalPageState extends State<PedalPage> {
     final bytes = BytesBuilder();
     await for (final chunk in file.readAsByteStream()) {
       if (bytes.length + chunk.length > 8 * 1024 * 1024) {
-        throw DeviceError('8MB以下のWAVファイルを選択してください。');
+        throw DeviceError(tr("8MB以下のWAVファイルを選択してください。"));
       }
       bytes.add(chunk);
     }
     final samples = _guardWav(bytes.takeBytes());
     if (!mounted) return;
     final stem = file.name.replaceFirst(RegExp(r'\.[^.]+$'), '');
-    final name = await _askName('IR${slot.slot} の名前', stem, 50);
+    final name = await _askName(tr("IR{0} の名前", [slot.slot]), stem, 50);
     if (name == null || name.trim().isEmpty || !mounted) return;
     if (slot.used &&
         !await _confirm(
-          'IR${slot.slot} 「${slot.name}」を「${PedalClient.sanitizeIrName(name)}」で上書きします。',
-          title: 'IRを上書き',
-          accept: '上書きする',
+          tr("IR{0} 「{1}」を「{2}」で上書きします。", [
+            slot.slot,
+            slot.name,
+            PedalClient.sanitizeIrName(name),
+          ]),
+          title: tr("IRを上書き"),
+          accept: tr("上書きする"),
         )) {
       return;
     }
-    await _run('IRを転送中', () async {
+    await _run(tr("IRを転送中"), () async {
       await _pedal.irUpload(
         slot.slot,
         name,
         samples,
         progress: (sent, total) {
-          if (mounted) setState(() => _status = 'IRを転送中 ($sent/$total)');
+          if (mounted) {
+            setState(() => _status = tr("IRを転送中 ({0}/{1})", [sent, total]));
+          }
         },
       );
       await _irReload();
@@ -564,9 +575,9 @@ class _PedalPageState extends State<PedalPage> {
   }
 
   Future<void> _irRename(IrSlotInfo slot) async {
-    final name = await _askName('IR${slot.slot} の名前', slot.name, 50);
+    final name = await _askName(tr("IR{0} の名前", [slot.slot]), slot.name, 50);
     if (name == null || name.trim().isEmpty || !mounted) return;
-    await _run('IR名を変更中', () async {
+    await _run(tr("IR名を変更中"), () async {
       await _pedal.irRename(slot.slot, name);
       await _irReload();
     });
@@ -574,35 +585,33 @@ class _PedalPageState extends State<PedalPage> {
 
   Future<void> _irDelete(IrSlotInfo slot) async {
     if (!await _confirm(
-      'IR${slot.slot} 「${slot.name}」を削除します。このIRを使うプリセットの音が変わります。',
-      title: 'IRを削除',
-      accept: '削除する',
+      tr("IR{0} 「{1}」を削除します。このIRを使うプリセットの音が変わります。", [slot.slot, slot.name]),
+      title: tr("IRを削除"),
+      accept: tr("削除する"),
     )) {
       return;
     }
-    await _run('IRを削除中', () async {
+    await _run(tr("IRを削除中"), () async {
       await _pedal.irDelete(slot.slot);
       await _irReload();
     });
   }
 
   Future<void> _btName() async {
-    final name = await _askName('Bluetooth名', '', 20);
+    final name = await _askName(tr("Bluetooth名"), '', 20);
     if (name == null || name.isEmpty || !mounted) return;
-    await _run('Bluetooth名を送信中', () async {
+    await _run(tr("Bluetooth名を送信中"), () async {
       await _pedal.setBtName(name);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bluetooth名を送信しました。反映を確認するには再接続してください。'),
-          ),
+          SnackBar(content: Text(tr("Bluetooth名を送信しました。反映を確認するには再接続してください。"))),
         );
       }
     });
   }
 
   Future<void> _rhythm({bool? on, int? pattern, int? level, int? bpm}) =>
-      _run('ドラムを設定中', () async {
+      _run(tr("ドラムを設定中"), () async {
         final r = _pedal.rhythm!;
         await _pedal.setRhythm(
           on: on ?? r[0] != 0,
@@ -612,7 +621,7 @@ class _PedalPageState extends State<PedalPage> {
         );
       });
   Future<void> _tuner({bool? on, bool? mute, int? a4}) =>
-      _run('チューナーを設定中', () async {
+      _run(tr("チューナーを設定中"), () async {
         final s = _pedal.settings!;
         await _pedal.setTuner(
           on: on ?? s[8] != 0,
@@ -620,7 +629,7 @@ class _PedalPageState extends State<PedalPage> {
           a4: a4 ?? 435 + s[7],
         );
       });
-  Future<void> _setting(int index, int value) => _run('本体設定を更新中', () async {
+  Future<void> _setting(int index, int value) => _run(tr("本体設定を更新中"), () async {
     final s = Uint8List.fromList(_pedal.settings!)..[index] = value;
     await _pedal.setSettings(s);
   });
@@ -654,7 +663,7 @@ class _PedalPageState extends State<PedalPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
-          title: const Text('モジュールの接続順'),
+          title: Text(tr("モジュールの接続順")),
           content: SizedBox(
             width: 320,
             child: SingleChildScrollView(
@@ -662,10 +671,10 @@ class _PedalPageState extends State<PedalPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (repaired)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'プリセットの順序データが壊れていたため、標準順で補いました。',
+                        tr("プリセットの順序データが壊れていたため、標準順で補いました。"),
                         style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -702,32 +711,32 @@ class _PedalPageState extends State<PedalPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('キャンセル'),
+              child: Text(tr("キャンセル")),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('変更'),
+              child: Text(tr("変更")),
             ),
           ],
         ),
       ),
     );
     if (changed != true || !mounted) return;
-    await _run('モジュール順序を変更中', () async {
+    await _run(tr("モジュール順序を変更中"), () async {
       await _pedal.setModuleOrder(order);
       await _pedal.refresh();
     });
   }
 
   static String moduleName(int index) {
-    const names = [
-      'コンプレッサー',
-      'ノイズゲート',
-      'アンプ',
-      'キャビネット / IR',
-      'モジュレーション',
-      'ディレイ',
-      'リバーブ',
+    final names = [
+      tr("コンプレッサー"),
+      tr("ノイズゲート"),
+      tr("アンプ"),
+      tr("キャビネット / IR"),
+      tr("モジュレーション"),
+      tr("ディレイ"),
+      tr("リバーブ"),
     ];
     return names[index.clamp(0, 6)];
   }
@@ -753,21 +762,21 @@ class _PedalPageState extends State<PedalPage> {
 
   Future<void> _looperAct(int op, String label) => _run(label, () async {
     final code = await _pedal.looperAction(op);
-    if (code == 1) throw DeviceError('今は実行できません（録音中の確定待ちなど）。');
-    if (code == 2) throw DeviceError('ルーパー用のフラッシュ領域がありません。');
-    if (code == 3) throw DeviceError('フラッシュの準備中です。少し待って再試行してください。');
+    if (code == 1) throw DeviceError(tr("今は実行できません（録音中の確定待ちなど）。"));
+    if (code == 2) throw DeviceError(tr("ルーパー用のフラッシュ領域がありません。"));
+    if (code == 3) throw DeviceError(tr("フラッシュの準備中です。少し待って再試行してください。"));
     await _refreshLoop();
   });
 
   Future<void> _looperClear() async {
     if (!await _confirm(
-      'ループを消去します。取り消せません。',
-      title: 'ループを消去',
-      accept: '消去する',
+      tr("ループを消去します。取り消せません。"),
+      title: tr("ループを消去"),
+      accept: tr("消去する"),
     )) {
       return;
     }
-    await _looperAct(7, 'ループを消去中');
+    await _looperAct(7, tr("ループを消去中"));
   }
 
   @override
@@ -793,7 +802,7 @@ class _PedalPageState extends State<PedalPage> {
       actions: [
         if (_ready && MediaQuery.sizeOf(context).height < 480)
           IconButton(
-            tooltip: '保存',
+            tooltip: tr("保存"),
             onPressed: _busy
                 ? null
                 : () => _save(_pedal.selected, _pedal.edit!),
@@ -810,10 +819,10 @@ class _PedalPageState extends State<PedalPage> {
             ),
           ),
         IconButton(
-          tooltip: '本体と同期',
+          tooltip: tr("本体と同期"),
           onPressed: _busy
               ? null
-              : () => _run('同期中', () async {
+              : () => _run(tr("同期中"), () async {
                   await _pedal.refresh();
                   _bank = _pedal.selected ~/ 4;
                   await _pedal.loadBank(_bank);
@@ -832,14 +841,14 @@ class _PedalPageState extends State<PedalPage> {
           height: MediaQuery.sizeOf(context).height < 480 ? 50 : 68,
           child: LayoutBuilder(
             builder: (context, box) {
-              const labels = [
-                'プリセット',
-                'エフェクト',
-                'ドラム',
-                'チューナー',
-                'ルーパー',
+              final labels = [
+                tr("プリセット"),
+                tr("エフェクト"),
+                tr("ドラム"),
+                tr("チューナー"),
+                tr("ルーパー"),
                 'IR',
-                '設定',
+                tr("設定"),
               ];
               const icons = [
                 Icons.grid_view_outlined,
@@ -865,7 +874,7 @@ class _PedalPageState extends State<PedalPage> {
                                 : () {
                                     setState(() => _tab = i);
                                     if (i == 5 && _irs == null && !_busy) {
-                                      _run('IR一覧を読み込み中', _irReload);
+                                      _run(tr("IR一覧を読み込み中"), _irReload);
                                     }
                                   },
                             child: Column(
@@ -974,7 +983,7 @@ class _PedalPageState extends State<PedalPage> {
                   );
                 },
               ),
-            if (_working && _blocking && _status != 'エフェクトを更新中') ...[
+            if (_working && _blocking && _status != tr("エフェクトを更新中")) ...[
               const ModalBarrier(color: Color(0x99090d12), dismissible: false),
               Center(
                 child: Card(
@@ -1012,16 +1021,16 @@ class _PedalPageState extends State<PedalPage> {
                   spacing: 12,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Text('切断前の未保存の下書きがあります'),
+                    Text(tr("切断前の未保存の下書きがあります")),
                     TextButton(
                       onPressed: _busy ? null : _restoreDraft,
-                      child: const Text('下書きを本体へ戻す'),
+                      child: Text(tr("下書きを本体へ戻す")),
                     ),
                     TextButton(
                       onPressed: _busy
                           ? null
                           : () => widget.recovery!.clearDraft(),
-                      child: const Text('本体の状態を使う'),
+                      child: Text(tr("本体の状態を使う")),
                     ),
                   ],
                 ),
@@ -1055,7 +1064,7 @@ class _PedalPageState extends State<PedalPage> {
             ),
             const SizedBox(height: 3),
             Text(
-              _dirty ? '●  EDITED · 未保存' : 'PRESET · 本体と同期済み',
+              _dirty ? tr("●  EDITED · 未保存") : tr("PRESET · 本体と同期済み"),
               style: TextStyle(
                 fontSize: 10,
                 letterSpacing: .8,
@@ -1073,7 +1082,7 @@ class _PedalPageState extends State<PedalPage> {
         ),
         onPressed: _busy ? null : () => _save(_pedal.selected, _pedal.edit!),
         icon: const Icon(Icons.save_outlined, size: 17),
-        label: const Text('保存'),
+        label: Text(tr("保存")),
       ),
     ],
   );
@@ -1089,14 +1098,14 @@ class _PedalPageState extends State<PedalPage> {
       DropdownButtonFormField<int>(
         key: ValueKey(_bank),
         initialValue: _bank,
-        decoration: const InputDecoration(labelText: 'バンク'),
+        decoration: InputDecoration(labelText: tr("バンク")),
         items: [
           for (var i = 0; i < 10; i++)
             DropdownMenuItem(value: i, child: Text('BANK $i')),
         ],
         onChanged: _busy
             ? null
-            : (v) => _run('バンクを読み込み中', () async {
+            : (v) => _run(tr("バンクを読み込み中"), () async {
                 _bank = v!;
                 await _pedal.loadBank(_bank);
               }),
@@ -1124,7 +1133,7 @@ class _PedalPageState extends State<PedalPage> {
                 ),
               ),
               title: Text(
-                _pedal.presets[i]?.name ?? '読み込み前',
+                _pedal.presets[i]?.name ?? tr("読み込み前"),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 13),
@@ -1136,13 +1145,13 @@ class _PedalPageState extends State<PedalPage> {
       const Divider(height: 32),
       TextButton(
         onPressed: () => setState(() => _tab = 0),
-        child: const Text('プリセットを管理'),
+        child: Text(tr("プリセットを管理")),
       ),
       if (widget.onOpenModels != null)
         OutlinedButton.icon(
           onPressed: _busy ? null : _openModels,
           icon: const Icon(Icons.library_music_outlined, size: 18),
-          label: const Text('NAMライブラリ'),
+          label: Text(tr("NAMライブラリ")),
         ),
       const SizedBox(height: 20),
       Text(
@@ -1174,7 +1183,7 @@ class _PedalPageState extends State<PedalPage> {
               child: DropdownButtonFormField<int>(
                 key: ValueKey(_bank),
                 initialValue: _bank,
-                decoration: const InputDecoration(labelText: 'バンク'),
+                decoration: InputDecoration(labelText: tr("バンク")),
                 isExpanded: true,
                 items: [
                   for (var i = 0; i < 10; i++)
@@ -1182,7 +1191,7 @@ class _PedalPageState extends State<PedalPage> {
                 ],
                 onChanged: _busy
                     ? null
-                    : (v) => _run('バンクを読み込み中', () async {
+                    : (v) => _run(tr("バンクを読み込み中"), () async {
                         _bank = v!;
                         await _pedal.loadBank(_bank);
                       }),
@@ -1191,11 +1200,15 @@ class _PedalPageState extends State<PedalPage> {
             const SizedBox(width: 8),
             PopupMenuButton<String>(
               enabled: !_busy,
-              onSelected: (v) =>
-                  v == 'backup' ? _run('バックアップ中', _backup) : _guard(_restore),
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'backup', child: Text('全プリセットをファイルへ保存')),
-                PopupMenuItem(value: 'restore', child: Text('バックアップから復元')),
+              onSelected: (v) => v == 'backup'
+                  ? _run(tr("バックアップ中"), _backup)
+                  : _guard(_restore),
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'backup',
+                  child: Text(tr("全プリセットをファイルへ保存")),
+                ),
+                PopupMenuItem(value: 'restore', child: Text(tr("バックアップから復元"))),
               ],
             ),
           ],
@@ -1242,7 +1255,7 @@ class _PedalPageState extends State<PedalPage> {
                           ],
                         ),
                         Text(
-                          _pedal.presets[i]?.name ?? '読み込み前',
+                          _pedal.presets[i]?.name ?? tr("読み込み前"),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleMedium,
@@ -1254,26 +1267,26 @@ class _PedalPageState extends State<PedalPage> {
               ),
           ],
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        Wrap(
+          alignment: WrapAlignment.spaceEvenly,
           children: [
             TextButton(
               onPressed: _busy
                   ? null
                   : () => _save(_pedal.selected, _pedal.edit!),
-              child: const Text('編集内容を保存'),
+              child: Text(tr("編集内容を保存")),
             ),
             TextButton(
               onPressed: _busy
                   ? null
                   : () => _guard(() => _rename(_presetMenuTarget())),
-              child: const Text('名前の変更'),
+              child: Text(tr("名前の変更")),
             ),
             TextButton(
               onPressed: _busy
                   ? null
                   : () => _guard(() => _copy(_presetMenuTarget())),
-              child: const Text('コピー'),
+              child: Text(tr("コピー")),
             ),
           ],
         ),
@@ -1289,7 +1302,7 @@ class _PedalPageState extends State<PedalPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => _error = e is DeviceError ? e.message : '操作を完了できませんでした。',
+          () => _error = e is DeviceError ? e.message : tr("操作を完了できませんでした。"),
         );
       }
     }
@@ -1304,7 +1317,7 @@ class _PedalPageState extends State<PedalPage> {
     if (module.command == 0x85) wanted = wanted.setWord(0x96, 0x4c44);
     _pendingEdit = RecoveryDraft(_pedal.selected, wanted.bytes);
     try {
-      await _run('エフェクトを更新中', () => _pedal.module(module, values));
+      await _run(tr("エフェクトを更新中"), () => _pedal.module(module, values));
     } finally {
       _pendingEdit = null;
     }
@@ -1369,7 +1382,7 @@ class _PedalPageState extends State<PedalPage> {
       _toneQueued = null;
       if (mounted) {
         setState(
-          () => _error = e is DeviceError ? e.message : '音色の反映を確認できませんでした。',
+          () => _error = e is DeviceError ? e.message : tr("音色の反映を確認できませんでした。"),
         );
       }
     }
@@ -1389,10 +1402,10 @@ class _PedalPageState extends State<PedalPage> {
     ); // flush the final value even below the 80 ms interval
     setState(() => _toneDraft = null);
     try {
-      await _run('NAM音色を確認中', () async {
+      await _run(tr("NAM音色を確認中"), () async {
         await _pedal.refresh();
         if (_pedal.edit!.word(0x2c + field * 2) != value) {
-          throw DeviceError('本体への反映を確認できませんでした。表示値を確認して再操作してください。');
+          throw DeviceError(tr("本体への反映を確認できませんでした。表示値を確認して再操作してください。"));
         }
         await _refreshNam();
       }, blocking: false);
@@ -1422,14 +1435,17 @@ class _PedalPageState extends State<PedalPage> {
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('音作りの操作'),
-          content: const Text(
-            '上下ドラッグで値を調整します。NAMノブはドラッグ中も音に反映し、指を離すと本体の値を確認します。他のエフェクトは指を離すと反映します。横に指を離すと微調整できます。数値タップで直接入力・標準値への復帰ができます。\n\nNAMのGAINはモデル前の入力ドライブ、BASS・MID・TREBLEはモデル後のEQ、MID FREQはMIDの中心周波数、VOLUMEはモデル後の出力レベルです。NAMがOFFまたはBYPASSの間は効きません。Bluetoothの再生音と通常のUSB再生音はNAMを通りません。\n\nモデル選択は試聴です。「保存」でモデルとパラメーターをプリセットに記録します。音声の接続順は固定です。',
+          scrollable: true,
+          title: Text(tr("音作りの操作")),
+          content: Text(
+            tr(
+              "上下ドラッグで値を調整します。NAMノブはドラッグ中も音に反映し、指を離すと本体の値を確認します。他のエフェクトは指を離すと反映します。横に指を離すと微調整できます。数値タップで直接入力・標準値への復帰ができます。\n\nNAMのGAINはモデル前の入力ドライブ、BASS・MID・TREBLEはモデル後のEQ、MID FREQはMIDの中心周波数、VOLUMEはモデル後の出力レベルです。NAMがOFFまたはBYPASSの間は効きません。Bluetoothの再生音と通常のUSB再生音はNAMを通りません。\n\nモデル選択は試聴です。「保存」でモデルとパラメーターをプリセットに記録します。音声の接続順は固定です。",
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('閉じる'),
+              child: Text(tr("閉じる")),
             ),
           ],
         ),
@@ -1440,7 +1456,7 @@ class _PedalPageState extends State<PedalPage> {
   Widget _editorMenu(List<int> modules, {bool includeModules = false}) =>
       PopupMenuButton<int>(
         enabled: !_busy,
-        tooltip: includeModules ? 'エフェクトを選ぶ' : 'エディターの詳細',
+        tooltip: includeModules ? tr("エフェクトを選ぶ") : tr("エディターの詳細"),
         icon: Icon(
           includeModules ? Icons.account_tree_outlined : Icons.more_horiz,
         ),
@@ -1458,8 +1474,8 @@ class _PedalPageState extends State<PedalPage> {
               ),
             const PopupMenuDivider(),
           ],
-          const PopupMenuItem(value: -2, child: Text('操作方法')),
-          const PopupMenuItem(value: -1, child: Text('モジュールの接続順')),
+          PopupMenuItem(value: -2, child: Text(tr("操作方法"))),
+          PopupMenuItem(value: -1, child: Text(tr("モジュールの接続順"))),
         ],
       );
 
@@ -1506,7 +1522,17 @@ class _PedalPageState extends State<PedalPage> {
     );
     return LayoutBuilder(
       builder: (context, box) {
-        final tight = box.maxHeight < 440;
+        // A short translated header can make the chain just fit its old
+        // height threshold while its wrapped rows crowd out the controls.
+        // Account for the actual chain width before choosing that layout.
+        final chainMinimum =
+            40 + MediaQuery.textScalerOf(context).scale(11) * 4;
+        final chainColumns = (box.maxWidth / chainMinimum).floor().clamp(
+          1,
+          visible.length,
+        );
+        final chainRows = (visible.length / chainColumns).ceil();
+        final tight = box.maxHeight < 440 + (chainRows - 1) * 80;
         final veryShort = box.maxHeight < 270;
         return Column(
           key: const ValueKey('fixed-editor'),
@@ -1584,13 +1610,13 @@ class _PedalPageState extends State<PedalPage> {
                       if (isNam &&
                           widget.namClient?.canToneEq != true &&
                           !veryShort)
-                        const Text(
-                          'このファームウェアではGAIN / VOLUMEのみ対応',
+                        Text(
+                          tr("このファームウェアではGAIN / VOLUMEのみ対応"),
                           style: TextStyle(fontSize: 11),
                         ),
                       if (unsupported)
-                        const Text(
-                          'このファームウェアでは、このエフェクトの音声処理は利用できません。',
+                        Text(
+                          tr("このファームウェアでは、このエフェクトの音声処理は利用できません。"),
                           style: TextStyle(fontSize: 11),
                         ),
                       const SizedBox(height: 6),
@@ -1608,7 +1634,8 @@ class _PedalPageState extends State<PedalPage> {
                               );
                               return EffectChoice(
                                 label: parameter!.label,
-                                value: choices[value] ?? '未選択 ($value)',
+                                value:
+                                    choices[value] ?? tr("未選択 ({0})", [value]),
                                 enabled: !_busy && !unsupported,
                                 onPressed: () =>
                                     _pickEffectParameter(module, parameter),
@@ -1700,14 +1727,14 @@ class _PedalPageState extends State<PedalPage> {
     }
     if (generation != widget.recovery?.generation ||
         preset != _pedal.selected) {
-      setState(() => _error = '本体のプリセットが切り替わりました。モデルを選び直してください。');
+      setState(() => _error = tr("本体のプリセットが切り替わりました。モデルを選び直してください。"));
       return;
     }
     if (choice == state.selected) return;
     var wanted = _pedal.edit!.setWord(0xde, 0x414e).setWord(0xe0, choice);
     if (choice != 0) wanted = wanted.setWord(0x2c, 1);
     _pendingEdit = RecoveryDraft(_pedal.selected, wanted.bytes);
-    await _run('NAMモデルをロード中', () async {
+    await _run(tr("NAMモデルをロード中"), () async {
       await client.select(choice!);
       await _pedal.refresh();
       await _refreshNam();
@@ -1721,16 +1748,16 @@ class _PedalPageState extends State<PedalPage> {
     final name = _activeModel;
     final empty = state != null && !state.slots.any((s) => s.name != null);
     final status = state == null
-        ? 'モデルの状態を取得できません'
+        ? tr("モデルの状態を取得できません")
         : empty
-        ? '保存済みモデルなし · 追加・転送へ'
+        ? tr("保存済みモデルなし · 追加・転送へ")
         : selected == 0
-        ? 'NAMをバイパス中'
+        ? tr("NAMをバイパス中")
         : name == null
-        ? '選択したスロットは空です。モデルを選び直してください'
+        ? tr("選択したスロットは空です。モデルを選び直してください")
         : _pedal.edit!.word(0x2c) == 0
-        ? 'ロード済み · NAMはOFF'
-        : 'NAM有効 · ドラッグ中も音に反映';
+        ? tr("ロード済み · NAMはOFF")
+        : tr("NAM有効 · ドラッグ中も音に反映");
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -1750,7 +1777,7 @@ class _PedalPageState extends State<PedalPage> {
                         ? widget.namModel ?? 'NAM MODEL'
                         : selected == 0
                         ? '00  BYPASS'
-                        : '${selected.toString().padLeft(2, '0')}  ${name ?? 'モデルなし'}',
+                        : '${selected.toString().padLeft(2, '0')}  ${name ?? tr("モデルなし")}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1782,12 +1809,12 @@ class _PedalPageState extends State<PedalPage> {
                   ? null
                   : _chooseNamModel,
               icon: const Icon(Icons.swap_horiz, size: 18),
-              label: Text(box.maxWidth >= 560 ? 'モデルを選ぶ' : '選ぶ'),
+              label: Text(box.maxWidth >= 560 ? tr("モデルを選ぶ") : tr("選ぶ")),
             ),
             if (widget.onOpenModels != null)
               IconButton(
                 key: const ValueKey('open-nam-library'),
-                tooltip: '追加・転送',
+                tooltip: tr("追加・転送"),
                 onPressed: _busy ? null : () => _guard(_openModels),
                 icon: const Icon(Icons.add),
               ),
@@ -1845,7 +1872,7 @@ class _PedalPageState extends State<PedalPage> {
                         ),
                         title: Text(option.value),
                         subtitle: module.command == 0x83 && option.key >= 11
-                            ? Text('ユーザーIR ${option.key - 10}')
+                            ? Text(tr("ユーザーIR {0}", [option.key - 10]))
                             : null,
                         onTap: () => Navigator.pop(context, option.key),
                       ),
@@ -1860,7 +1887,7 @@ class _PedalPageState extends State<PedalPage> {
     if (!mounted || choice == null || _busy) return;
     if (generation != widget.transport.connectionGeneration ||
         preset != _pedal.selected) {
-      setState(() => _error = '本体の状態が変わりました。もう一度選択してください。');
+      setState(() => _error = tr("本体の状態が変わりました。もう一度選択してください。"));
       return;
     }
     await _changeModule(module, [
@@ -1908,7 +1935,7 @@ class _PedalPageState extends State<PedalPage> {
   Widget _drums() {
     final r = _pedal.rhythm!;
     if (!widget.toolsAvailable) {
-      return Center(child: const Text('ドラムは本体の更新後に利用できます。'));
+      return Center(child: Text(tr("ドラムは本体の更新後に利用できます。")));
     }
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1917,9 +1944,9 @@ class _PedalPageState extends State<PedalPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _value('パターン', r[2] + 1, 1, 40, (v) => _rhythm(pattern: v - 1)),
-            _value('テンポ', read16(r, 4), 40, 260, (v) => _rhythm(bpm: v)),
-            _value('音量', r[3], 0, 100, (v) => _rhythm(level: v)),
+            _value(tr("パターン"), r[2] + 1, 1, 40, (v) => _rhythm(pattern: v - 1)),
+            _value(tr("テンポ"), read16(r, 4), 40, 260, (v) => _rhythm(bpm: v)),
+            _value(tr("音量"), r[3], 0, 100, (v) => _rhythm(level: v)),
           ],
         ),
         const SizedBox(height: 16),
@@ -1928,7 +1955,7 @@ class _PedalPageState extends State<PedalPage> {
           children: [
             FilledButton.tonal(
               onPressed: _busy ? null : () => _rhythm(on: r[0] == 0),
-              child: Text(r[0] != 0 ? '停止' : '再生'),
+              child: Text(r[0] != 0 ? tr("停止") : tr("再生")),
             ),
             OutlinedButton(
               onPressed: _busy
@@ -1943,7 +1970,7 @@ class _PedalPageState extends State<PedalPage> {
                         }
                       }
                     },
-              child: const Text('タップテンポ'),
+              child: Text(tr("タップテンポ")),
             ),
           ],
         ),
@@ -1954,7 +1981,7 @@ class _PedalPageState extends State<PedalPage> {
   Widget _tunerTab() {
     final s = _pedal.settings!;
     if (!widget.toolsAvailable) {
-      return Center(child: const Text('チューナーは本体の更新後に利用できます。'));
+      return Center(child: Text(tr("チューナーは本体の更新後に利用できます。")));
     }
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1971,7 +1998,7 @@ class _PedalPageState extends State<PedalPage> {
           )
         else
           Text(
-            '音程は本体のディスプレイで確認できます。',
+            tr("音程は本体のディスプレイで確認できます。"),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
@@ -1986,16 +2013,16 @@ class _PedalPageState extends State<PedalPage> {
                   value: s[8] != 0,
                   onChanged: _busy ? null : (v) => _tuner(on: v),
                 ),
-                const Text('チューナー'),
+                Text(tr("チューナー")),
               ],
             ),
-            _value('基準 A4', 435 + s[7], 435, 450, (v) => _tuner(a4: v)),
+            _value(tr("基準 A4"), 435 + s[7], 435, 450, (v) => _tuner(a4: v)),
           ],
         ),
         SwitchListTile(
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 48),
-          title: const Text('チューニング中はミュート'),
+          title: Text(tr("チューニング中はミュート")),
           value: s[9] != 0,
           onChanged: _busy ? null : (v) => _tuner(mute: v),
         ),
@@ -2005,19 +2032,24 @@ class _PedalPageState extends State<PedalPage> {
 
   Widget _looper() {
     if (!_looperAvailable) {
-      return const Center(child: Text('ルーパーはこのファームウェアでは利用できません。'));
+      return Center(child: Text(tr("ルーパーはこのファームウェアでは利用できません。")));
     }
     final s = _loop;
     final status = () {
-      if (s == null) return '状態を確認中…';
+      if (s == null) return tr("状態を確認中…");
       final undo = s.undo == 0
           ? ''
           : s.undo == 1
-          ? '・元に戻す可'
-          : '・やり直し可';
-      return '${PedalClient.looperStates[s.state.clamp(0, 5)]}'
-          '  長さ ${s.lenS}秒 / 最大 ${s.maxS}秒$undo'
-          '${s.storeBusy ? '・保存中' : ''}${s.writing ? '・書込中' : ''}';
+          ? tr("・元に戻す可")
+          : tr("・やり直し可");
+      return tr("{0}  長さ {1}秒 / 最大 {2}秒{3}{4}{5}", [
+        PedalClient.looperStates[s.state.clamp(0, 5)],
+        s.lenS,
+        s.maxS,
+        undo,
+        s.storeBusy ? tr("・保存中") : '',
+        s.writing ? tr("・書込中") : '',
+      ]);
     }();
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -2035,43 +2067,43 @@ class _PedalPageState extends State<PedalPage> {
           runSpacing: 8,
           children: [
             FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(1, 'ルーパーを操作中'),
-              child: const Text('タップ'),
+              onPressed: _busy ? null : () => _looperAct(1, tr("ルーパーを操作中")),
+              child: Text(tr("タップ")),
             ),
             FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(2, 'ルーパーを操作中'),
-              child: const Text('録音'),
+              onPressed: _busy ? null : () => _looperAct(2, tr("ルーパーを操作中")),
+              child: Text(tr("録音")),
             ),
             FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(3, 'ルーパーを操作中'),
-              child: const Text('再生'),
+              onPressed: _busy ? null : () => _looperAct(3, tr("ルーパーを操作中")),
+              child: Text(tr("再生")),
             ),
             FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(4, 'ルーパーを操作中'),
-              child: const Text('ダビング'),
+              onPressed: _busy ? null : () => _looperAct(4, tr("ルーパーを操作中")),
+              child: Text(tr("ダビング")),
             ),
             TextButton(
-              onPressed: _busy ? null : () => _looperAct(5, 'ルーパーを操作中'),
-              child: const Text('停止'),
+              onPressed: _busy ? null : () => _looperAct(5, tr("ルーパーを操作中")),
+              child: Text(tr("停止")),
             ),
             TextButton(
-              onPressed: _busy ? null : () => _looperAct(6, 'ルーパーを操作中'),
-              child: const Text('元に戻す'),
+              onPressed: _busy ? null : () => _looperAct(6, tr("ルーパーを操作中")),
+              child: Text(tr("元に戻す")),
             ),
             TextButton(
               onPressed: _busy ? null : _looperClear,
-              child: const Text('消去'),
+              child: Text(tr("消去")),
             ),
           ],
         ),
         const SizedBox(height: 8),
         Center(
           child: _value(
-            'ループの音量',
+            tr("ループの音量"),
             s?.level ?? 100,
             0,
             100,
-            (v) => _run('ループ音量を変更中', () async {
+            (v) => _run(tr("ループ音量を変更中"), () async {
               await _pedal.looperLevel(v);
               await _refreshLoop();
             }),
@@ -2086,17 +2118,20 @@ class _PedalPageState extends State<PedalPage> {
               TextButton(
                 onPressed: _busy
                     ? null
-                    : () => _run('ループ$slotを保存中', () => _pedal.looperSave(slot)),
-                child: Text('$slotへ保存'),
+                    : () => _run(
+                        tr("ループ{0}を保存中", [slot]),
+                        () => _pedal.looperSave(slot),
+                      ),
+                child: Text(tr("{0}へ保存", [slot])),
               ),
               TextButton(
                 onPressed: _busy
                     ? null
-                    : () => _run('ループ$slotを読込中', () async {
+                    : () => _run(tr("ループ{0}を読込中", [slot]), () async {
                         await _pedal.looperLoad(slot);
                         await _refreshLoop();
                       }),
-                child: Text('$slotから読込'),
+                child: Text(tr("{0}から読込", [slot])),
               ),
             ],
           ],
@@ -2110,9 +2145,9 @@ class _PedalPageState extends State<PedalPage> {
     if (slots == null) {
       return Center(
         child: OutlinedButton.icon(
-          onPressed: _busy ? null : () => _run('IR一覧を読み込み中', _irReload),
+          onPressed: _busy ? null : () => _run(tr("IR一覧を読み込み中"), _irReload),
           icon: const Icon(Icons.refresh),
-          label: const Text('IR一覧を読み込む'),
+          label: Text(tr("IR一覧を読み込む")),
         ),
       );
     }
@@ -2120,10 +2155,12 @@ class _PedalPageState extends State<PedalPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.restrictedNam && !widget.effectsAvailable)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: 6),
             child: Text(
-              '現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。',
+              tr(
+                "現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。",
+              ),
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12),
             ),
@@ -2157,11 +2194,11 @@ class _PedalPageState extends State<PedalPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'IR${s.slot}${_pedal.edit!.word(0x46) == s.slot + 10 ? ' · CABに割当（${_pedal.edit!.word(0x44) == 0 ? 'OFF' : 'ON'}）' : ''}',
+                          'IR${s.slot}${_pedal.edit!.word(0x46) == s.slot + 10 ? tr(" · CABに割当（{0}）", [_pedal.edit!.word(0x44) == 0 ? 'OFF' : 'ON']) : ''}',
                           style: Theme.of(context).textTheme.labelMedium,
                         ),
                         Text(
-                          s.used ? s.name : '空き',
+                          s.used ? s.name : tr("空き"),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall
@@ -2178,8 +2215,10 @@ class _PedalPageState extends State<PedalPage> {
               ),
           ],
         ),
-        const Text(
-          'スロットをタップしてWAV取り込み・名前変更・削除。変換は公式エディタと同じ44.1 kHz・チャンネル0・1024サンプルです。',
+        Text(
+          tr(
+            "スロットをタップしてWAV取り込み・名前変更・削除。変換は公式エディタと同じ44.1 kHz・チャンネル0・1024サンプルです。",
+          ),
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12),
         ),
@@ -2198,24 +2237,24 @@ class _PedalPageState extends State<PedalPage> {
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                'IR${s.slot}  ${s.used ? s.name : '空き'}',
+                'IR${s.slot}  ${s.used ? s.name : tr("空き")}',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             ListTile(
               leading: const Icon(Icons.upload_file),
-              title: const Text('WAVから取り込み'),
+              title: Text(tr("WAVから取り込み")),
               onTap: () => Navigator.pop(context, 'import'),
             ),
             if (s.used) ...[
               ListTile(
                 leading: const Icon(Icons.text_fields),
-                title: const Text('名前の変更'),
+                title: Text(tr("名前の変更")),
                 onTap: () => Navigator.pop(context, 'rename'),
               ),
               ListTile(
                 leading: const Icon(Icons.delete_outline),
-                title: const Text('削除'),
+                title: Text(tr("削除")),
                 onTap: () => Navigator.pop(context, 'delete'),
               ),
             ],
@@ -2242,15 +2281,27 @@ class _PedalPageState extends State<PedalPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _value('入力ゲイン', s[2], 0, 25, (v) => _setting(2, v)),
-            _value('LED色', s[11], 0, 9, (v) => _setting(11, v)),
-            _value('LED明るさ', s[12], 0, 100, (v) => _setting(12, v)),
+            Expanded(
+              child: _value(tr("入力ゲイン"), s[2], 0, 25, (v) => _setting(2, v)),
+            ),
+            Expanded(
+              child: _value(tr("LED色"), s[11], 0, 9, (v) => _setting(11, v)),
+            ),
+            Expanded(
+              child: _value(
+                tr("LED明るさ"),
+                s[12],
+                0,
+                100,
+                (v) => _setting(12, v),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         SwitchListTile(
           dense: true,
-          title: const Text('グローバル・キャビネット'),
+          title: Text(tr("グローバル・キャビネット")),
           value: s[1] != 0,
           onChanged: _busy || (widget.restrictedNam && !widget.effectsAvailable)
               ? null
@@ -2258,7 +2309,7 @@ class _PedalPageState extends State<PedalPage> {
         ),
         SwitchListTile(
           dense: true,
-          title: const Text('Bluetoothオーディオ'),
+          title: Text(tr("Bluetoothオーディオ")),
           value: s[10] != 0,
           onChanged: _busy || (widget.restrictedNam && !widget.btAudioAvailable)
               ? null
@@ -2267,8 +2318,8 @@ class _PedalPageState extends State<PedalPage> {
         ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Bluetooth名の変更'),
-          subtitle: const Text('半角英数字・記号で1〜20文字。変更は再接続後に本体側で確認してください。'),
+          title: Text(tr("Bluetooth名の変更")),
+          subtitle: Text(tr("半角英数字・記号で1〜20文字。変更は再接続後に本体側で確認してください。")),
           trailing: const Icon(Icons.chevron_right),
           onTap: _busy ? null : () => _guard(_btName),
         ),

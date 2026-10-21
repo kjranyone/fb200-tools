@@ -1,3 +1,5 @@
+import '../localization.dart';
+
 import 'package:flutter/material.dart';
 
 import '../nam_client.dart';
@@ -54,9 +56,10 @@ class _NamModelPickerState extends State<NamModelPicker> {
     final query = _query.trim().toLowerCase();
     final slots = all
         .where(
-          (s) => '${s.number.toString().padLeft(2, '0')} ${s.name ?? '空きスロット'}'
-              .toLowerCase()
-              .contains(query),
+          (s) =>
+              '${s.number.toString().padLeft(2, '0')} ${s.name ?? tr("空きスロット")}'
+                  .toLowerCase()
+                  .contains(query),
         )
         .toList();
     return LayoutBuilder(
@@ -71,7 +74,7 @@ class _NamModelPickerState extends State<NamModelPicker> {
                 children: [
                   Expanded(
                     child: Text(
-                      widget.transfer ? '転送先を選ぶ' : '本体のNAMモデル',
+                      widget.transfer ? tr("転送先を選ぶ") : tr("本体のNAMモデル"),
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -80,12 +83,12 @@ class _NamModelPickerState extends State<NamModelPicker> {
                   ),
                   if (compact && widget.canAdd)
                     IconButton(
-                      tooltip: 'モデルを追加・転送',
+                      tooltip: tr("モデルを追加・転送"),
                       onPressed: () => Navigator.pop(context, -1),
                       icon: const Icon(Icons.add),
                     ),
                   IconButton(
-                    tooltip: '閉じる',
+                    tooltip: tr("閉じる"),
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close),
                   ),
@@ -94,16 +97,16 @@ class _NamModelPickerState extends State<NamModelPicker> {
               TextField(
                 key: const ValueKey('nam-model-search'),
                 onChanged: (value) => setState(() => _query = value),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   prefixIcon: Icon(Icons.search),
-                  hintText: '名前・スロット番号で検索',
+                  hintText: tr("名前・スロット番号で検索"),
                   isDense: true,
                 ),
               ),
               const SizedBox(height: 10),
               Expanded(
                 child: slots.isEmpty
-                    ? const Center(child: Text('一致するモデルがありません'))
+                    ? Center(child: Text(tr("一致するモデルがありません")))
                     : ListView.separated(
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
@@ -137,20 +140,20 @@ class _NamModelPickerState extends State<NamModelPicker> {
                                 ),
                               ),
                               title: Text(
-                                slot.name ?? '空きスロット',
+                                slot.name ?? tr("空きスロット"),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               subtitle: Text(
                                 widget.transfer
                                     ? slot.name == null
-                                          ? '新しく保存'
-                                          : '上書き前に確認します'
+                                          ? tr("新しく保存")
+                                          : tr("上書き前に確認します")
                                     : loaded
-                                    ? '本体で選択中'
+                                    ? tr("本体で選択中")
                                     : slot.number == 0
-                                    ? 'NAMを通さない'
-                                    : 'タップしてロード・試聴',
+                                    ? tr("NAMを通さない")
+                                    : tr("タップしてロード・試聴"),
                               ),
                               trailing: loaded && !widget.transfer
                                   ? const Icon(
@@ -169,13 +172,13 @@ class _NamModelPickerState extends State<NamModelPicker> {
                 OutlinedButton.icon(
                   onPressed: () => Navigator.pop(context, -1),
                   icon: const Icon(Icons.add),
-                  label: const Text('モデルを追加・転送'),
+                  label: Text(tr("モデルを追加・転送")),
                 ),
               if (!compact)
                 Text(
                   widget.transfer
-                      ? '転送後にロードして試聴できます。'
-                      : '選択で試聴 · プリセットへの記録は「保存」',
+                      ? tr("転送後にロードして試聴できます。")
+                      : tr("選択で試聴 · プリセットへの記録は「保存」"),
                   style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xff9daaba),
