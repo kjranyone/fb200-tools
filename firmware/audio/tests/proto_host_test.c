@@ -38,6 +38,7 @@
 
 #define FLASH_SIZE 0x100000u
 static uint8_t flash[FLASH_SIZE];
+static bool preset_write_fail;
 
 /* ---- stubs for the UI's hardware dependencies ---- */
 static char disp[16];
@@ -144,7 +145,7 @@ void preset_read(unsigned index, preset_t *out)
 }
 int preset_write(unsigned index, const preset_t *p)
 {
-    if (index >= PRESET_COUNT) return -1;
+    if (preset_write_fail || index >= PRESET_COUNT) return -1;
     memcpy(flash + PRESET_FLASH + index * PRESET_STRIDE, p, sizeof *p);
     return 0;
 }
@@ -254,6 +255,8 @@ int main(void)
             hexdump("FLASH", flash + off, len);
         } else if (!strcmp(cmd, "index")) {
             printf("IDX %u\n", ui_preset_index());
+        } else if (!strcmp(cmd, "writefail")) {
+            preset_write_fail = atoi(a) != 0;
         } else if (!strcmp(cmd, "notify")) {
             proto_set_notify_mask((uint8_t)atoi(a));
         } else if (!strcmp(cmd, "select")) {

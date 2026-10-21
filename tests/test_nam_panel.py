@@ -77,6 +77,24 @@ def test_remote_model_pickup_crossing_and_bypass(panel):
     assert h.cmd("disp") == ["DISP n00"]
 
 
+def test_app_save_does_not_rearm_caught_nam_selector(panel):
+    h = panel
+    sparse(h)
+    h.cmd("knob 2 4095")
+    h.cmd("tick 250")
+    assert status(h) == (64, 1)
+    edit = h.edit()
+    revision = h.cmd("rev")
+    h.send(0x97, bytes([0]) + edit)
+    assert h.cmd("rev") == revision  # No recall/reload of the current model.
+    assert h.flash(PRESET_FLASH, 256) == edit
+    # Sample both LED phases: the caught AMP selector stays steadily lit.
+    for _ in range(2):
+        h.cmd("tick 250")
+        assert h.cmd("leds")[0][5 + 3] == "1"
+    assert status(h) == (64, 1)
+
+
 def test_preset_and_remote_edits_cancel_pending_selection(panel):
     h = panel
     sparse(h)

@@ -573,10 +573,19 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
         if (p[0] == 0xFF) { ui_edit_load(&np); break; }
         if (p[0] >= PRESET_COUNT) break;
         uint8_t ok = preset_write(p[0], &np) == 0;
-        ui_select(p[0]);
+        /* Saving the current edit is not a preset recall: reloading the
+         * identical record would rearm every physical knob's pickup (and
+         * restart its blinking LED). Keep the live controls in that case.
+         * An import/copy that changes the record still needs a normal load.
+         * A failed write must never discard the live edit. */
+        if (ok && (p[0] != ui_preset_index() ||
+                   memcmp(np.b, ui_edit_preset()->b, PRESET_SIZE) != 0))
+            ui_select(p[0]);
         send(src, 0x99, &ok, 1);
-        uint8_t i = p[0];
-        send(src, 0x98, &i, 1);
+        if (ok) {
+            uint8_t i = p[0];
+            send(src, 0x98, &i, 1);
+        }
         break;
     }
     case 0x98:                        /* select preset */

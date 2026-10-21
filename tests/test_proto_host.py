@@ -224,11 +224,57 @@ def test_read_and_write_preset(h):
     assert h.flash(PRESET_FLASH + 12 * 0x200, 256) == bytes(new)
 
 
+@pytest.mark.parametrize("nam_runtime", [False, True])
+def test_saving_current_edit_preserves_knob_pickup(nam_runtime):
+    h = Harness(build(nam_runtime=nam_runtime))
+    try:
+        h.cmd("knob 5 410")  # Pick up GAIN at the preset's 10%.
+        h.cmd("knob 5 2048")
+        before = h.edit()
+        h.cmd("tick 500")  # Blink-off phase: only caught knobs remain lit.
+        assert h.cmd("leds")[0][5 + 11] == "1"
+        assert h.cmd("leds")[0][5 + 0] == "0"  # BASS still awaits pickup.
+        out = h.send(0x97, bytes([0]) + before)
+        assert [(fn, p) for _, fn, p in out] == [(0x99, b"\x01"), (0x98, b"\x00")]
+        assert h.flash(PRESET_FLASH, 256) == before
+        h.cmd("tick 500")
+        assert h.cmd("leds")[0][5 + 11] == "1"
+        assert h.cmd("leds")[0][5 + 0] == "0"
+        h.cmd("knob 5 2457")  # Continue turning without picking up 50 again.
+        assert struct.unpack_from("<H", h.edit(), 0x30)[0] == 60
+        # A genuinely different record still reloads and rearms pickup.
+        changed = bytearray(before)
+        struct.pack_into("<H", changed, 0x30, 25)
+        h.send(0x97, bytes([0]) + changed)
+        h.cmd("tick 500")
+        assert h.cmd("leds")[0][5 + 11] == "0"
+        h.cmd("knob 5 2800")
+        assert struct.unpack_from("<H", h.edit(), 0x30)[0] == 25
+    finally:
+        h.close()
+
+
 def test_rename_preset(h):
     out = h.send(0x99, bytes([3]) + b"Renamed".ljust(20, b"\0"))
     assert [(t, fn) for t, fn, _ in out] == [("b", 0x97), ("b", 0xA1)]
     assert h.flash(PRESET_FLASH + 3 * 0x200, 20) == b"Renamed".ljust(20, b"\0")
     assert out[1][2][0] == 3 and out[1][2][1:8] == b"Renamed"
+
+
+def test_failed_save_keeps_live_edit_and_current_preset(h):
+    h.cmd("knob 5 410")
+    h.cmd("knob 5 2048")
+    before = h.edit()
+    flash = h.flash(PRESET_FLASH, 40 * 0x200)
+    h.cmd("writefail 1")
+    for destination in (0, 12):
+        assert [(fn, p) for _, fn, p in h.send(0x97, bytes([destination]) + before)] == [
+            (0x99, b"\x00")
+        ]
+        assert h.edit() == before and h.cmd("index") == ["IDX 0"]
+        assert h.flash(PRESET_FLASH, 40 * 0x200) == flash
+        h.cmd("tick 500")
+        assert h.cmd("leds")[0][5 + 11] == "1"
 
 
 def test_legacy_app_full_preset_preserves_nam_binding():
