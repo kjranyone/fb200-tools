@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'input_gain.dart';
 import 'value_knob.dart';
 
 class SettingsTab extends StatelessWidget {
@@ -36,9 +37,10 @@ class SettingsTab extends StatelessWidget {
                 tr("入力ゲイン"),
                 s[2],
                 0,
-                25,
+                InputGain.max,
                 (v) => onSetting(2, v),
                 enabled: !busy,
+                format: InputGain.format,
               ),
             ),
             Expanded(

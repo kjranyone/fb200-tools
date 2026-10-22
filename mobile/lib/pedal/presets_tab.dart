@@ -97,10 +97,6 @@ class PresetSidebar extends StatelessWidget {
   final bool busy;
   final void Function(int bank) onBank;
   final void Function(int index) onSelect;
-  final VoidCallback onManage;
-
-  /// Null without NAM model management.
-  final VoidCallback? onOpenModels;
   const PresetSidebar({
     super.key,
     required this.bank,
@@ -110,8 +106,6 @@ class PresetSidebar extends StatelessWidget {
     required this.busy,
     required this.onBank,
     required this.onSelect,
-    required this.onManage,
-    required this.onOpenModels,
   });
 
   @override
@@ -156,15 +150,7 @@ class PresetSidebar extends StatelessWidget {
             ),
           ),
         ),
-      const Divider(height: 32),
-      TextButton(onPressed: onManage, child: Text(tr("プリセットを管理"))),
-      if (onOpenModels != null)
-        OutlinedButton.icon(
-          onPressed: busy ? null : onOpenModels,
-          icon: const Icon(Icons.library_music_outlined, size: 18),
-          label: Text(tr("NAMライブラリ")),
-        ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 14),
       Text(
         '40 PRESETS  /  $version',
         style: const TextStyle(fontSize: 10, color: Color(0xff8390a1)),

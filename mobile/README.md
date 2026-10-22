@@ -52,7 +52,9 @@ See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX
   `nam-manager` restores cab/MOD/reverb after the NAM stage (capability bit 7)
   with 44.1 kHz IRs resampled to 48 kHz, and mixes Bluetooth audio in
   (capability bit 8).
-- Drum machine and tuner controls, with live pedal pitch on `nam-manager`.
+- Drum machine and tuner controls, with live pedal pitch on `nam-manager`:
+  note name and a ±50 cent needle (±3 cents counts as in tune) above the
+  numeric reading.
   Availability is gated by firmware capabilities. Full stock/NAM effect parity
   is still outstanding; see [ANDROID_PARITY.md](../docs/ANDROID_PARITY.md).
 - **Studio editor (0.10.0+14)**: dark graphite surfaces, effect-specific colours,
@@ -61,7 +63,14 @@ See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX
   direct numeric entry, edited-state indication and explicit preset save share
   one screen. The model library opens directly from the NAM block and borrows
   the BLE connection; returning refreshes the active model and slot names.
-- **NAM tone controls**: GAIN is pre-model drive (0.5..2x; 50 = unity),
+- **Level meters**: the wide-layout sidebar shows IN (guitar, before input
+  gain), NAM (the model's input) and OUT peak meters on one line, with a held
+  peak and a 2 s clip mark, polled every 200 ms (capability bit 10); the exact
+  dBFS is in each meter's tooltip. Without bit 10 the sidebar explains the
+  missing meters. The global input gain stays in Settings, shown in dB
+  (stock steps: -55..-5 dB in 5 dB steps, 0 dB, then +0.5 dB to +6 dB).
+- **NAM tone controls**: GAIN is pre-model drive (50 = unity; -18..+18 dB on
+  firmware with capability bit 11, 0.5..2x before),
   BASS/MID/TREBLE are ±12 dB shelves/peak after the model, MID FREQ sweeps
   200..2000 Hz, and VOLUME is post-model level (0..2x; **50 = unity**).
   Neutral preset words are 50/50/50/any/50/50. Firmware capability bit 9

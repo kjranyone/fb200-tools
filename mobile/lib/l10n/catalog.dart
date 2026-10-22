@@ -481,8 +481,6 @@ const translations = <String, List<String>>{
   "バンク": ["Bank", "预设组"],
   "バンクを読み込み中": ["Loading bank", "正在读取预设组"],
   "読み込み前": ["Not loaded", "未读取"],
-  "プリセットを管理": ["Manage presets", "管理预设"],
-  "NAMライブラリ": ["NAM library", "NAM 模型库"],
   "全プリセットをファイルへ保存": ["Export all presets to file", "将全部预设导出到文件"],
   "バックアップから復元": ["Restore from backup", "从备份恢复"],
   "編集内容を保存": ["Save edits", "保存编辑"],
@@ -974,4 +972,16 @@ const translations = <String, List<String>>{
     "Could not save to this device. Check available storage.",
     "保存到本设备失败。请检查可用存储空间。",
   ],
+  "ギター入力（入力ゲイン前）": ["Guitar input (before input gain)", "吉他输入（输入增益之前）"],
+  "NAMモデルへの入力（入力ゲイン・GAIN後）": [
+    "Into the NAM model (after input gain and GAIN)",
+    "进入 NAM 模型的信号（输入增益和 GAIN 之后）",
+  ],
+  "本体の出力": ["Pedal output", "设备输出"],
+  "クリップ": ["Clipping", "削波"],
+  "本体のファームウェアを更新すると、レベルメーターを表示できます。": [
+    "Update the pedal firmware to show level meters.",
+    "更新设备固件后即可显示电平表。",
+  ],
+  "音を検出していません": ["No note detected", "未检测到音符"],
 };

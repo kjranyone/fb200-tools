@@ -142,6 +142,12 @@ class NamClient {
   /// Gain/volume work on both; only bit 9 guarantees the three-band EQ.
   bool get canToneEq => (capabilityFlags & 512) != 0;
 
+  /// Op 10 returns input, NAM-input and output peaks.
+  bool get canMeter => (capabilityFlags & 1024) != 0;
+
+  /// NAM GAIN spans -18..+18 dB instead of 0.5..2x.
+  bool get wideNamGain => (capabilityFlags & 2048) != 0;
+
   /// Rename a stored slot. The firmware rule (like the upload header):
   /// 1..23 printable ASCII bytes at 0x21..0x7E, no spaces, NUL padded to 24.
   Future<void> rename(int slot, String name) async {

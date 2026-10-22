@@ -11,7 +11,16 @@ abstract final class NamTone {
     6: 'TREBLE',
     7: 'VOLUME',
   };
-  static String format(int field, int value) => switch (field) {
+
+  /// [wideGain]: firmware with capability bit 11 maps GAIN to -18..+18 dB
+  /// (0.36 dB per step); older firmware to 0.5..2x.
+  static String format(
+    int field,
+    int value, {
+    bool wideGain = false,
+  }) => switch (field) {
+    2 when wideGain =>
+      '${value >= 50 ? '+' : ''}${((value - 50) * .36).toStringAsFixed(1)} dB',
     2 => '${math.pow(2, (value - 50) * .02).toStringAsFixed(2)}×',
     3 || 4 || 6 =>
       '${value >= 50 ? '+' : ''}${((value - 50) * .24).toStringAsFixed(1)} dB',

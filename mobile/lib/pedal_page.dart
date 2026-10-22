@@ -20,6 +20,7 @@ import 'protocol.dart';
 import 'pedal/drums_tab.dart';
 import 'pedal/effect_dialogs.dart';
 import 'pedal/ir_tab.dart';
+import 'pedal/level_meter.dart';
 import 'pedal/looper_tab.dart';
 import 'pedal/nam_model_selector.dart';
 import 'pedal/pedal_nav_bar.dart';
@@ -78,7 +79,11 @@ class _PedalPageState extends State<PedalPage> {
   String _error = '', _status = '';
   DateTime? _lastTap;
   Future<void>? _poll;
-  String _pitch = '—';
+  TunerReading? _tuning;
+  final _meters = LevelMeters();
+
+  /// The sidebar, and with it the level meters, is on screen.
+  bool _wide = false;
   List<IrSlotInfo>? _irs;
   DeviceState? _namState;
   bool _libraryOpen = false;
@@ -132,6 +137,13 @@ class _PedalPageState extends State<PedalPage> {
           _tab == PedalTab.looper &&
           _looperAvailable) {
         _poll = _refreshLoop().whenComplete(() => _poll = null);
+      } else if (_ready &&
+          !_busy &&
+          !_libraryOpen &&
+          _poll == null &&
+          _wide &&
+          widget.namClient?.canMeter == true) {
+        _poll = _readLevels().whenComplete(() => _poll = null);
       }
     });
   }
@@ -335,41 +347,22 @@ class _PedalPageState extends State<PedalPage> {
 
   Future<void> _readPitch() async {
     try {
-      final p = await widget.transport.request(8, []);
-      if (p.length != 16 || !mounted) return;
-      final bytes = ByteData.sublistView(p);
-      final frequency = bytes.getFloat32(4, Endian.little);
-      final cents = bytes.getFloat32(8, Endian.little);
-      const notes = [
-        '—',
-        'A♯',
-        'B',
-        'C',
-        'C♯',
-        'D',
-        'D♯',
-        'E',
-        'F',
-        'F♯',
-        'G',
-        'G♯',
-        'A',
-      ];
-      if (p[0] == 0 ||
-          p[1] == 0 ||
-          p[2] < 1 ||
-          p[2] > 12 ||
-          !frequency.isFinite ||
-          !cents.isFinite) {
-        setState(() => _pitch = '—');
-      } else {
-        setState(
-          () => _pitch =
-              '${notes[p[2]]}  ${frequency.toStringAsFixed(1)} Hz  ${cents >= 0 ? '+' : ''}${cents.toStringAsFixed(1)} cent',
-        );
-      }
+      final reading = TunerReading.parse(await widget.transport.request(8, []));
+      final next = reading?.smoothed(_tuning);
+      if (mounted && next != _tuning) setState(() => _tuning = next);
     } on DeviceError catch (e) {
       if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  Future<void> _readLevels() async {
+    try {
+      final peaks = LevelMeters.parse(await widget.transport.request(10, []));
+      if (peaks != null && mounted && _meters.update(peaks, DateTime.now())) {
+        setState(() {});
+      }
+    } on DeviceError {
+      // A missed reading only holds the meters for one poll.
     }
   }
 
@@ -719,6 +712,7 @@ class _PedalPageState extends State<PedalPage> {
               LayoutBuilder(
                 builder: (context, box) {
                   final wide = box.maxWidth >= 1000;
+                  _wide = wide;
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -731,7 +725,7 @@ class _PedalPageState extends State<PedalPage> {
                               right: BorderSide(color: StudioTheme.line),
                             ),
                           ),
-                          child: SingleChildScrollView(child: _presetSidebar()),
+                          child: SingleChildScrollView(child: _sidebar()),
                         ),
                       Expanded(
                         child: Padding(
@@ -836,6 +830,28 @@ class _PedalPageState extends State<PedalPage> {
     onSave: () => _save(_pedal.selected, _pedal.edit!),
   );
 
+  Widget _sidebar() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (widget.namClient?.canMeter == true) ...[
+        LevelMeterPanel(
+          meters: _meters,
+          taps: widget.restrictedNam
+              ? LevelTap.values
+              : const [LevelTap.input, LevelTap.output],
+        ),
+        const Divider(height: 28),
+      ] else if (widget.restrictedNam) ...[
+        Text(
+          tr("本体のファームウェアを更新すると、レベルメーターを表示できます。"),
+          style: const TextStyle(fontSize: 11, color: Color(0xff9daaba)),
+        ),
+        const Divider(height: 28),
+      ],
+      _presetSidebar(),
+    ],
+  );
+
   Widget _presetSidebar() => PresetSidebar(
     bank: _bank,
     selected: _pedal.selected,
@@ -844,8 +860,6 @@ class _PedalPageState extends State<PedalPage> {
     busy: _busy,
     onBank: _loadBank,
     onSelect: _selectPreset,
-    onManage: () => setState(() => _tab = PedalTab.presets),
-    onOpenModels: widget.onOpenModels == null ? null : _openModels,
   );
 
   /// Management and tool pages may scroll. The performance editor uses a
@@ -891,7 +905,7 @@ class _PedalPageState extends State<PedalPage> {
         available: widget.toolsAvailable,
         busy: _busy,
         showsPitch: widget.restrictedNam,
-        pitch: _pitch,
+        reading: _tuning,
         onTuner: _tuner,
       ),
     ),
@@ -1308,7 +1322,12 @@ class _PedalPageState extends State<PedalPage> {
                               size: size,
                               accent: accent,
                               format: isNam
-                                  ? (v) => NamTone.format(i, v)
+                                  ? (v) => NamTone.format(
+                                      i,
+                                      v,
+                                      wideGain:
+                                          widget.namClient?.wideNamGain == true,
+                                    )
                                   : parameter?.format,
                               enabled:
                                   (isNam && _toneDraft != null

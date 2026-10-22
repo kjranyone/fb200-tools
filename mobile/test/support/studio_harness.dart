@@ -18,6 +18,16 @@ class StudioHarness {
   final names = <int, String>{1: 'Studio Clean', 2: 'Bass Crunch'};
   bool failSelection = false;
 
+  /// Op 10 peaks (input, NAM input, output); null answers unsupported.
+  List<double>? levels;
+  int levelReads = 0;
+
+  /// Op 8 snapshot; null answers unsupported.
+  List<int>? tuner;
+
+  /// The 13 global settings bytes, rewritten by 0xB0.
+  final settings = [0, 1, 13, 0, 0, 0, 0, 5, 0, 1, 1, 0, 100];
+
   StudioHarness() {
     for (var i = 0; i < 40; i++) {
       var p = PedalPreset(pedal.presets[i])
@@ -83,6 +93,15 @@ class StudioHarness {
             pedal.presets[pedal.selected] = Uint8List.fromList(edit);
           }
           pedal.link.reply(bytes);
+        } else if (op == 10 && levels != null) {
+          levelReads++;
+          final data = ByteData(12);
+          for (var i = 0; i < 3; i++) {
+            data.setFloat32(i * 4, levels![i], Endian.little);
+          }
+          pedal.link.reply(bytes, data: data.buffer.asUint8List());
+        } else if (op == 8 && tuner != null) {
+          pedal.link.reply(bytes, data: tuner!);
         } else {
           pedal.link.reply(bytes, status: 5);
         }
@@ -90,12 +109,14 @@ class StudioHarness {
       }
       if (f.command == 0x94) {
         reply(0xa1, [pedal.selected, ...edit]);
-        reply(0xb0, [pedal.selected, 1, 13, 0, 0, 0, 0, 5, 0, 1, 1, 0, 100]);
+        reply(0xb0, settings);
         reply(0xba, [0, 0, 3, 80, ...u16(110)]);
         reply(0xbb, [75, 0]);
         reply(0xc9, [0]);
       } else if (f.command == 0x98) {
         selectPreset(f.payload[0]);
+      } else if (f.command == 0xb0) {
+        settings.setAll(0, f.payload);
       } else if (f.command >= 0x80 && f.command <= 0x86) {
         final m = pedalModules.firstWhere((m) => m.command == f.command);
         edit.setRange(m.offset, m.offset + f.payload.length, f.payload);

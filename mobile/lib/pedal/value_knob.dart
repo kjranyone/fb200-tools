@@ -7,6 +7,7 @@ class ValueKnob extends StatelessWidget {
   final String label;
   final int value, min, max;
   final bool enabled;
+  final String Function(int)? format;
   final void Function(int) onChanged;
   const ValueKnob(
     this.label,
@@ -16,6 +17,7 @@ class ValueKnob extends StatelessWidget {
     this.onChanged, {
     super.key,
     required this.enabled,
+    this.format,
   });
 
   @override
@@ -25,6 +27,7 @@ class ValueKnob extends StatelessWidget {
     min: min,
     max: max,
     enabled: enabled,
+    format: format,
     onChanged: onChanged,
   );
 }
