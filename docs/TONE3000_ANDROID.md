@@ -50,13 +50,17 @@ external cabinet stage where appropriate.
 - `MainActivity.kt` and `ToneCallbackActivity.kt`: Android Custom Tabs and exact
   custom-scheme callback, including browser-back cancellation. Dart verifies
   state and single-use callback before exchanging an authorization code.
-- `main.dart`: imports into the existing slot workflow. Source attribution is
+- `mobile/lib/tone_library.dart`: secure session store, the device model
+  library and the paced bulk downloader.
+- `main.dart`: imports into the existing slot workflow, including batch transfer
+  into empty slots. Source attribution is
   held in the current app/device session; the pedal protocol stores a model name
   and weights, not TONE3000 metadata. Reconnecting/restarting does not reconstruct
   cloud provenance for existing slots.
 
-Only the public client ID is persisted in SharedPreferences. Tokens are scoped
-to the picker in memory and cleared on exit. API requests use HTTPS, downloads
+Only the public client ID is persisted in SharedPreferences. Since 0.11.0+22
+the refresh token is kept in Android Keystore-backed secure storage (see
+"Device library and stored session" below); access tokens stay in memory. API requests use HTTPS, downloads
 have an 8 MiB limit and timeouts, and cross-origin signed-download redirects do
 not receive Bearer credentials. Model files/weights are not bundled in the APK.
 The original official logo is retained with its source attribution.
@@ -133,3 +137,69 @@ APK build passed. The 0.10.1+15 APK was transferred to the tablet at
 PC and tablet SHA-256 matched:
 `bd79ce9602776a2d14aa98db2ed1c1e96aff3f9784067f35e046ebbae007593c`.
 Logs and the inspected login screenshot are in `out/tone3000-fix-20261021/`.
+
+## Device library and stored session (0.11.0+22, 2026-10-22)
+
+Finding models one Select round-trip at a time was slow, so the TONE3000 page
+became a library with two tabs.
+
+**TONE3000 tab.** The first sign-in still uses the official Select flow
+(emailed code). Its refresh token is then stored with `flutter_secure_storage`
+(Android Keystore), bound to the publishable key, and restored on the next
+visit. A rejected refresh (HTTP 400/401) or **ログアウト** deletes it; network
+failures keep it. Concurrent requests share one refresh so a rotated token is
+never replayed. While signed in, the app lists the free-tier endpoints
+`tones/favorited`, `tones/downloaded`, `tones/created` (server-side `query` and
+`gear`, 25 per page) and `tones/trending`, `tones/latest` (local filter). Only
+NAM tones with A2 variants are shown. **全カタログから選ぶ** keeps the official
+Select flow as the persistent path to the full catalog.
+
+`tones/search` is outside the non-commercial tier and heavily rate-limited, so it
+is compiled out unless `--dart-define=TONE3000_SEARCH=true` is given for a build
+covered by a TONE3000 agreement. The partner-only zip download is not used.
+
+**Bulk download.** A tone's download button, the sheet's selection, or the
+app-bar action for every tone shown queues per-model downloads (`model_url`,
+up to 300 variants listed per request). Two transfers run in parallel and every
+API request is paced 650 ms apart (≤ ~92/min, under the documented 100/min);
+a `Retry-After` of up to 30 s is honoured once. Each file is parsed with the
+same A2-Lite validator before anything is written; incompatible variants are
+counted, not stored. Already-saved models are skipped.
+
+**Device tab.** The original `.nam` files are stored gzip-compressed under the
+app's private `files/tone3000/` with an atomically replaced `index.json` holding
+the tone title, gear, creator and image for attribution. The tab searches
+locally and instantly by model, tone, gear or `@creator`, and allows multiple
+selection, deletion, and — when a NAM pedal is connected — returning the
+selection for transfer. Models can be saved before connecting from the launch
+screen (**モデルを探して保存**).
+
+**Transfer.** One returned model keeps the existing explicit slot choice. Several
+are previewed as `slot ← model` and, after confirmation, written in order only
+to empty slots; occupied slots are never overwritten and the remainder is
+reported. Cancelling stops after the current model. Nothing is selected or
+saved to a preset automatically.
+
+Auto Backup and device transfer exclude the `flutter_secure_storage`
+preferences (`FlutterSecureStorage.xml`, `FlutterSecureKeyStorage.xml` and its
+configuration file; the wrapped key cannot be restored on another device) and `files/tone3000/` (re-downloadable,
+and large libraries would exceed the 25 MB backup quota).
+
+Validation: `dart format` clean, `flutter analyze` clean, **229 Flutter tests
+passed** (session persistence/restore/rejection/sign-out, shared refresh,
+free-tier list filtering, search gating, pacing, Retry-After, bulk download with
+incompatible/duplicate/cancel cases, memory and file storage round-trips,
+library UI, device-tab search/selection, and demo batch transfer into the only
+empty slot). Debug APK 0.11.0+22 and the web demo built.
+
+Tablet check (Lenovo TB-J716F, Android 16, real account): the Select flow
+returned to a *new* `MainActivity` in a separate task, so the waiting page never
+received the tone. Chrome starts `ToneCallbackActivity` in its own task and both
+activities have an empty task affinity; the callback now adds
+`FLAG_ACTIVITY_NEW_TASK`, which reuses the task rooted at `MainActivity`, and
+`CLEAR_TOP` closes the Custom Tab. The callback activity is also excluded from
+recents. After the fix: sign-in and selection returned to the open page, the
+session survived a force-stop, Trending bulk download stored 30 compatible
+models in about 25 s with none rejected, and the download-history shelf and the
+device tab listed them. Physical batch transfer to a pedal has not been
+verified.

@@ -87,10 +87,13 @@ See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX
 - Bluetooth device-name change (`B3`): the name cannot be read back over the
   protocol, so the app sends it once and asks the user to verify after
   reconnecting.
-- Android: **TONE3000から探す** opens the official A2 catalog/sign-in flow,
-  downloads a chosen variant and validates A2-Lite before the existing slot upload.
-  Configure a public client ID once; no Secret Key is used. Setup and current
-  boundaries: [TONE3000_ANDROID.md](../docs/TONE3000_ANDROID.md).
+- Android: **TONE3000から探す** opens the TONE3000 library. Sign-in uses the
+  official Select flow once and is kept on the device; favorites, download
+  history, own tones, trending and latest are then listed in-app. Variants are
+  bulk-downloaded into a device library (A2-Lite validated before saving) and
+  transferred one at a time or as a batch into empty slots. Configure a public
+  client ID once; no Secret Key is used. Setup and current boundaries:
+  [TONE3000_ANDROID.md](../docs/TONE3000_ANDROID.md).
 - **QRコードから入力** reads a QR containing the raw Publishable Key with the
   Android camera. It validates before filling the field and does not start OAuth.
 - Import user-supplied `.nam`: standalone fixed A2-Lite or packed A2 with a unique

@@ -1,4 +1,5 @@
-/// Official Select OAuth flow and bounded A2 downloads. No pedal writes here.
+/// Official Select OAuth flow, free-tier tone lists and bounded A2 downloads.
+/// No pedal writes here.
 library;
 
 import 'localization.dart';
@@ -15,6 +16,13 @@ import 'nam_model.dart';
 
 const toneCallback = 'fb200nam://oauth/callback';
 const toneModelLimit = 8 * 1024 * 1024;
+
+/// `/tones/search` is outside the non-commercial API tier and heavily
+/// rate-limited. Builds made under a TONE3000 agreement can enable it.
+const toneSearchEnabled = bool.fromEnvironment('TONE3000_SEARCH');
+
+/// Stays below the documented default of 100 requests per minute.
+const toneRequestInterval = Duration(milliseconds: 650);
 typedef ToneBrowser = Future<Uri> Function(Uri authorizationUrl);
 
 class ToneError implements Exception {
@@ -25,6 +33,11 @@ class ToneError implements Exception {
 }
 
 class ToneCancelled implements Exception {}
+
+/// The file is valid NAM but not the fixed 48 kHz A2-Lite shape.
+class ToneIncompatible extends ToneError {
+  const ToneIncompatible(super.message);
+}
 
 String validatePublishableKey(String value) {
   final key = value.trim();
@@ -121,6 +134,9 @@ class TonePack {
   final String title, gear, description;
   final ToneCreator creator;
   final Uri? image;
+
+  /// A2 variant count when TONE3000 reports it; null when unknown.
+  final int? a2Count;
   TonePack({
     required this.id,
     required this.title,
@@ -128,6 +144,7 @@ class TonePack {
     required this.creator,
     required this.image,
     this.description = '',
+    this.a2Count,
   });
   factory TonePack.parse(Map<String, dynamic> json) {
     if (json['format'] != 'nam') throw ToneError(tr("NAM形式のトーンを選択してください。"));
@@ -135,13 +152,37 @@ class TonePack {
     return TonePack(
       id: json['id'] as int,
       title: json['title'] as String,
-      gear: json['gear'] as String,
+      gear: json['gear'] as String? ?? '',
       creator: ToneCreator.parse(_object(json['user'])),
       image: images is List && images.isNotEmpty ? _image(images.first) : null,
       description: json['description'] as String? ?? '',
+      a2Count: (json['a2_models_count'] as num?)?.toInt(),
     );
   }
-  String get gearLabel =>
+
+  /// Library records keep only display metadata, never account data.
+  factory TonePack.stored(Map<String, dynamic> json) => TonePack(
+    id: json['id'] as int,
+    title: json['title'] as String,
+    gear: json['gear'] as String,
+    creator: ToneCreator(
+      json['creator'] as String,
+      _image(json['creator_avatar']),
+    ),
+    image: _image(json['image']),
+    description: json['description'] as String? ?? '',
+  );
+  Map<String, Object?> toStored() => {
+    'id': id,
+    'title': title,
+    'gear': gear,
+    'creator': creator.username,
+    'creator_avatar': creator.avatar?.toString(),
+    'image': image?.toString(),
+    'description': description,
+  };
+  String get gearLabel => gearName(gear);
+  static String gearName(String gear) =>
       const {
         'amp': 'Amp',
         'amp-cab': 'Amp + Cab',
@@ -165,6 +206,25 @@ class ToneModel {
     json['name'] as String,
     Uri.parse(json['model_url'] as String),
   );
+}
+
+enum ToneShelf {
+  favorited('tones/favorited', true),
+  downloaded('tones/downloaded', true),
+  created('tones/created', true),
+  trending('tones/trending', false),
+  latest('tones/latest', false),
+  search('tones/search', true);
+
+  final String path;
+  final bool paginated;
+  const ToneShelf(this.path, this.paginated);
+}
+
+class ToneListPage {
+  final List<TonePack> tones;
+  final int page, totalPages;
+  ToneListPage(this.tones, this.page, this.totalPages);
 }
 
 class ToneModelPage {
@@ -197,9 +257,9 @@ Map<String, dynamic> _object(Object? json) {
 class _Session {
   final String access, refresh;
   final DateTime expires;
-  _Session(Map<String, dynamic> json)
+  _Session(Map<String, dynamic> json, {String? previousRefresh})
     : access = json['access_token'] as String,
-      refresh = json['refresh_token'] as String,
+      refresh = json['refresh_token'] as String? ?? previousRefresh ?? '',
       expires = DateTime.now().add(
         Duration(seconds: (json['expires_in'] as num).toInt()),
       ) {
@@ -207,16 +267,55 @@ class _Session {
       throw ToneError(tr("ログインの有効期限を確認できませんでした。"));
     }
   }
+
+  /// A restored session has no access token; the first request refreshes.
+  _Session.restored(this.refresh)
+    : access = '',
+      expires = DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+/// Persists only the refresh token, bound to the publishable key.
+abstract class ToneSessionStore {
+  Future<String?> read(String clientId);
+  Future<void> write(String clientId, String refreshToken);
+  Future<void> clear();
+}
+
+class MemoryToneSessionStore implements ToneSessionStore {
+  String? clientId, refreshToken;
+  @override
+  Future<String?> read(String clientId) async =>
+      clientId == this.clientId ? refreshToken : null;
+  @override
+  Future<void> write(String clientId, String refreshToken) async {
+    this.clientId = clientId;
+    this.refreshToken = refreshToken;
+  }
+
+  @override
+  Future<void> clear() async => clientId = refreshToken = null;
 }
 
 class Tone3000Api {
   final String clientId;
   final http.Client _client;
+  final ToneSessionStore sessions;
+  final Duration requestInterval;
   _Session? _session;
+  Future<void>? _refreshing;
+  DateTime _nextRequest = DateTime.fromMillisecondsSinceEpoch(0);
   bool _closed = false;
-  Tone3000Api(String clientId, {http.Client? client})
-    : clientId = validatePublishableKey(clientId),
-      _client = client ?? http.Client();
+  ToneCreator? account;
+  Tone3000Api(
+    String clientId, {
+    http.Client? client,
+    ToneSessionStore? sessions,
+    this.requestInterval = toneRequestInterval,
+  }) : clientId = validatePublishableKey(clientId),
+       _client = client ?? http.Client(),
+       sessions = sessions ?? MemoryToneSessionStore();
+
+  bool get signedIn => _session != null;
 
   static bool _apiOrigin(Uri uri) =>
       uri.scheme == 'https' &&
@@ -226,8 +325,8 @@ class Tone3000Api {
   Uri _endpoint(String path, [Map<String, String>? query]) =>
       Uri.https('www.tone3000.com', '/api/v1/$path', query);
 
+  /// The official Select flow is both sign-in and full-catalog browsing.
   Future<ToneSelection> select(ToneBrowser browser) async {
-    _session = null;
     final request = ToneAuthorization(clientId);
     final result = request.accept(await browser(request.url));
     _session = _Session(
@@ -238,12 +337,46 @@ class Tone3000Api {
         'redirect_uri': toneCallback,
       }),
     );
-    final tone = TonePack.parse(
-      await _json(_endpoint('tones/${result.toneId}')),
-    );
-    if (tone.id != result.toneId) throw ToneError(tr("トーンのIDが一致しません。"));
-    final account = ToneCreator.parse(await _json(_endpoint('user')));
-    return ToneSelection(tone, account, await listModels(tone.id));
+    await _persist();
+    final tone = await getTone(result.toneId);
+    final user = account = ToneCreator.parse(await _json(_endpoint('user')));
+    return ToneSelection(tone, user, await listModels(tone.id));
+  }
+
+  /// Resumes a stored session. Returns null when the user must sign in again;
+  /// network failures propagate and keep the stored token.
+  Future<ToneCreator?> restore() async {
+    final refresh = await sessions.read(clientId);
+    if (refresh == null || refresh.isEmpty) return null;
+    _session = _Session.restored(refresh);
+    try {
+      return account = ToneCreator.parse(await _json(_endpoint('user')));
+    } on ToneError {
+      if (_session != null) rethrow;
+      return null;
+    }
+  }
+
+  Future<void> signOut() async {
+    _session = null;
+    account = null;
+    await sessions.clear();
+  }
+
+  Future<TonePack> getTone(int id) async {
+    final tone = TonePack.parse(await _json(_endpoint('tones/$id')));
+    if (tone.id != id) throw ToneError(tr("トーンのIDが一致しません。"));
+    return tone;
+  }
+
+  Future<void> _persist() async {
+    final session = _session;
+    if (session == null) return;
+    try {
+      await sessions.write(clientId, session.refresh);
+    } catch (_) {
+      // Storage failure only costs a later sign-in.
+    }
   }
 
   Future<Map<String, dynamic>> _token(Map<String, String> fields) async {
@@ -252,14 +385,24 @@ class Tone3000Api {
       ..bodyFields = {...fields, 'client_id': clientId};
     final response = await _send(request);
     final bytes = await _read(response, 64 * 1024);
-    if (response.statusCode != 200) {
+    // Only a rejected grant ends the stored session; outages keep it.
+    if (response.statusCode == 400 || response.statusCode == 401) {
       _session = null;
+      account = null;
+      await sessions.clear();
       throw ToneError(tr("ログインの有効期限が切れました。TONE3000から選択し直してください。"));
     }
+    _checkStatus(response.statusCode);
     return _decode(bytes);
   }
 
-  Future<void> _refresh() async {
+  /// Concurrent downloads share one refresh so a rotated token is not reused.
+  /// `whenComplete` runs after the assignment even if the refresh fails
+  /// synchronously, so a failed refresh is never cached.
+  Future<void> _refresh() =>
+      _refreshing ??= _refreshOnce().whenComplete(() => _refreshing = null);
+
+  Future<void> _refreshOnce() async {
     final session = _session;
     if (session == null) throw ToneError(tr("TONE3000にログインしてください。"));
     _session = _Session(
@@ -267,10 +410,16 @@ class Tone3000Api {
         'grant_type': 'refresh_token',
         'refresh_token': session.refresh,
       }),
+      previousRefresh: session.refresh,
     );
+    await _persist();
   }
 
-  Future<http.StreamedResponse> _get(Uri uri, {bool retry = true}) async {
+  Future<http.StreamedResponse> _get(
+    Uri uri, {
+    bool retry = true,
+    bool wait = true,
+  }) async {
     if (_session == null) throw ToneError(tr("TONE3000にログインしてください。"));
     if (_session!.expires.isBefore(
       DateTime.now().add(const Duration(seconds: 30)),
@@ -278,20 +427,35 @@ class Tone3000Api {
       await _refresh();
     }
     final request = http.Request('GET', uri)..followRedirects = false;
+    final access = _session!.access;
     // Bearer credentials never follow a redirect onto a CDN or another origin.
-    if (_apiOrigin(uri)) {
-      request.headers['Authorization'] = 'Bearer ${_session!.access}';
-    }
+    if (_apiOrigin(uri)) request.headers['Authorization'] = 'Bearer $access';
     final response = await _send(request);
     if (response.statusCode == 401 && retry && _apiOrigin(uri)) {
       await response.stream.listen((_) {}).cancel();
-      await _refresh();
-      return _get(uri, retry: false);
+      // A parallel download may already have refreshed the token.
+      if (_session?.access == access) await _refresh();
+      return _get(uri, retry: false, wait: wait);
+    }
+    final after = int.tryParse(response.headers['retry-after'] ?? '');
+    if (response.statusCode == 429 && wait && after != null && after <= 30) {
+      await response.stream.listen((_) {}).cancel();
+      await Future<void>.delayed(Duration(seconds: after));
+      return _get(uri, retry: retry, wait: false);
     }
     return response;
   }
 
+  Future<void> _pace() async {
+    final now = DateTime.now();
+    final start = _nextRequest.isAfter(now) ? _nextRequest : now;
+    _nextRequest = start.add(requestInterval);
+    if (start.isAfter(now)) await Future<void>.delayed(start.difference(now));
+  }
+
   Future<http.StreamedResponse> _send(http.BaseRequest request) async {
+    if (_closed) throw ToneCancelled();
+    if (_apiOrigin(request.url)) await _pace();
     if (_closed) throw ToneCancelled();
     try {
       return await _client.send(request).timeout(const Duration(seconds: 25));
@@ -353,20 +517,94 @@ class Tone3000Api {
     });
   }
 
-  Future<Map<String, dynamic>> _json(Uri uri) async {
+  Future<Map<String, dynamic>> _json(Uri uri) async => _object(await _any(uri));
+
+  Future<Object?> _any(Uri uri) async {
     final response = await _get(uri);
     final bytes = await _read(response, 1024 * 1024);
     _checkStatus(response.statusCode);
-    return _decode(bytes);
+    try {
+      return jsonDecode(utf8.decode(bytes));
+    } on FormatException {
+      throw ToneError(tr("TONE3000の応答を読み取れませんでした。"));
+    }
   }
 
-  Future<ToneModelPage> listModels(int toneId, {int page = 1}) async {
+  /// Lists NAM tones that have A2 variants. Only search filters by format
+  /// server-side, so other formats are dropped here.
+  Future<ToneListPage> listTones(
+    ToneShelf shelf, {
+    String query = '',
+    String? gear,
+    int page = 1,
+  }) async {
+    if (shelf == ToneShelf.search && !toneSearchEnabled) {
+      throw ToneError(tr("この連携ではTONE3000の検索APIを利用できません。"));
+    }
+    final q = query.trim();
+    final json = await _any(
+      _endpoint(shelf.path, {
+        if (shelf.paginated) ...{'page': '$page', 'page_size': '25'},
+        if (q.isNotEmpty && shelf.paginated) 'query': q,
+        if (gear != null && shelf != ToneShelf.latest)
+          shelf == ToneShelf.search ? 'gears' : 'gear': gear,
+        if (shelf == ToneShelf.search) ...{
+          'format': 'nam',
+          'architecture': '2',
+        },
+      }),
+    );
+    final entries = json is List
+        ? json
+        : json is Map<String, dynamic>
+        ? json['data']
+        : null;
+    if (entries is! List) throw ToneError(tr("トーン一覧を読み取れませんでした。"));
+    final tones = <TonePack>[];
+    for (final entry in entries) {
+      if (entry is! Map<String, dynamic> || entry['format'] != 'nam') continue;
+      try {
+        final tone = TonePack.parse(entry);
+        if (tone.a2Count == 0 || (gear != null && tone.gear != gear)) continue;
+        // Unpaginated shelves have no server-side query; filter locally.
+        final text = '${tone.title} ${tone.creator.username}'.toLowerCase();
+        if (!shelf.paginated && !text.contains(q.toLowerCase())) continue;
+        tones.add(tone);
+      } catch (_) {
+        // One malformed entry must not hide the rest of the list.
+      }
+    }
+    return json is Map<String, dynamic> && shelf.paginated
+        ? ToneListPage(
+            tones,
+            (json['page'] as num?)?.toInt() ?? page,
+            (json['total_pages'] as num?)?.toInt() ?? page,
+          )
+        : ToneListPage(tones, 1, 1);
+  }
+
+  /// One request covers almost every tone (the API allows 300 per page).
+  Future<List<ToneModel>> listAllModels(int toneId) async {
+    final models = <ToneModel>[];
+    for (var page = 1, total = 1; page <= total && page <= 20; page++) {
+      final result = await listModels(toneId, page: page, pageSize: 300);
+      models.addAll(result.models);
+      total = result.totalPages;
+    }
+    return models;
+  }
+
+  Future<ToneModelPage> listModels(
+    int toneId, {
+    int page = 1,
+    int pageSize = 50,
+  }) async {
     final json = await _json(
       _endpoint('models', {
         'tone_id': '$toneId',
         'architecture': '2',
         'page': '$page',
-        'page_size': '50',
+        'page_size': '$pageSize',
       }),
     );
     final entries = json['data'];
@@ -384,7 +622,26 @@ class Tone3000Api {
     );
   }
 
-  Future<ImportedTone> download(TonePack tone, ToneModel model) async {
+  Future<ImportedTone> download(TonePack tone, ToneModel model) async =>
+      importBytes(tone, model, await downloadBytes(tone, model));
+
+  static ImportedTone importBytes(
+    TonePack tone,
+    ToneModel model,
+    Uint8List bytes,
+  ) {
+    try {
+      return ImportedTone(
+        tone,
+        model,
+        NamModel.parse(bytes, '${model.name}.nam'),
+      );
+    } on FormatException catch (e) {
+      throw ToneIncompatible(tr("このモデルはFB200で使用できません。{0}", [e.message]));
+    }
+  }
+
+  Future<Uint8List> downloadBytes(TonePack tone, ToneModel model) async {
     var uri = _endpoint('').resolveUri(model.url);
     if (model.toneId != tone.id ||
         !_apiOrigin(uri) ||
@@ -410,15 +667,7 @@ class Tone3000Api {
       }
       final bytes = await _read(response, toneModelLimit);
       _checkStatus(response.statusCode);
-      try {
-        return ImportedTone(
-          tone,
-          model,
-          NamModel.parse(bytes, '${model.name}.nam'),
-        );
-      } on FormatException catch (e) {
-        throw ToneError(tr("このモデルはFB200で使用できません。{0}", [e.message]));
-      }
+      return bytes;
     }
     throw ToneError(tr("ダウンロード先の転送が多すぎます。"));
   }

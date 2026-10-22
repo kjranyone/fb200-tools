@@ -12,6 +12,8 @@
     <application
         android:label="FB200 NAM"
         android:name="${applicationName}"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -38,6 +40,8 @@
         <activity
             android:name=".ToneCallbackActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
             android:taskAffinity="">
             <intent-filter android:label="TONE3000">
                 <action android:name="android.intent.action.VIEW" />

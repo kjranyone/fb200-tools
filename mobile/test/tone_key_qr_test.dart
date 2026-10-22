@@ -37,7 +37,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('QRコードから入力'));
+    await tester.scrollUntilVisible(
+      find.text('QRコードから入力'),
+      120,
+      scrollable: find
+          .ancestor(
+            of: find.text('Publishable Key（client_id）'),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.tap(find.text('QRコードから入力'));
     await tester.pumpAndSettle();
     expect(
@@ -68,7 +77,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('TONE3000連携設定'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('QRコードから入力'));
+      await tester.scrollUntilVisible(
+        find.text('QRコードから入力'),
+        120,
+        scrollable: find
+            .ancestor(
+              of: find.text('Publishable Key（client_id）'),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.tap(find.text('QRコードから入力'));
       await tester.pumpAndSettle();
       expect(

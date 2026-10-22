@@ -1,6 +1,7 @@
 import 'localization.dart';
 
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -102,7 +103,9 @@ class _MainAppState extends State<MainApp> {
 }
 
 class ModelPage extends StatefulWidget {
-  final Future<ImportedTone?> Function(BuildContext)? pickTone;
+  /// Opens the TONE3000 library; free slots are null without a NAM pedal.
+  final Future<List<ImportedTone>?> Function(BuildContext, int? freeSlots)?
+  pickTone;
   final AppLanguage? language;
   final bool savingLanguage;
   final Future<void> Function(AppLanguage)? onLanguageChanged;
@@ -317,20 +320,157 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
       });
     }
   });
-  Future<void> _importTone() => _run(tr("TONE3000からモデルを取り込み中"), () async {
+
+  /// The library page is modal, so it is not wrapped in [_run]; a returned
+  /// batch then runs its own transfer operation.
+  Future<void> _importTone() async {
+    if (_busy) return;
+    final state = _state;
+    final free = _client == null || state == null
+        ? null
+        : state.slots.where((s) => s.name == null).length;
     final imported =
-        await (widget.pickTone?.call(context) ??
-            Navigator.push<ImportedTone>(
+        await (widget.pickTone?.call(context, free) ??
+            Navigator.push<List<ImportedTone>>(
               context,
-              MaterialPageRoute(builder: (_) => const Tone3000Page()),
+              MaterialPageRoute(builder: (_) => Tone3000Page(freeSlots: free)),
             ));
-    if (imported == null || !mounted) return;
+    if (imported == null || imported.isEmpty || !mounted) return;
+    if (imported.length > 1) return _transferBatch(imported);
     setState(() {
-      _model = imported.model;
-      _toneSource = imported;
+      _model = imported.single.model;
+      _toneSource = imported.single;
+      _error = '';
       _message = tr("A2-Lite対応を確認しました。転送先を選んでください。");
     });
-  });
+  }
+
+  /// Fills empty slots in order. Occupied slots are never overwritten here.
+  Future<void> _transferBatch(List<ImportedTone> items) async {
+    final state = _state, client = _client;
+    if (state == null || client == null || _busy) return;
+    final free = state.slots.where((s) => s.name == null).toList()
+      ..sort((a, b) => a.number.compareTo(b.number));
+    if (free.isEmpty) {
+      setState(() {
+        _message = '';
+        _error = tr("空きスロットがありません。不要なモデルを削除するか、1件ずつ選んで上書き転送してください。");
+      });
+      return;
+    }
+    final plan = [
+      for (var i = 0; i < min(items.length, free.length); i++)
+        (free[i].number, items[i]),
+    ];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(tr("{0} 件をまとめて転送", [plan.length])),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr("空きスロットにだけ転送します。使用中のスロットは上書きしません。")),
+              const SizedBox(height: 12),
+              for (final (slot, item) in plan)
+                Text('${'$slot'.padLeft(2, '0')}  ←  ${item.model.name}'),
+              if (items.length > plan.length) ...[
+                const SizedBox(height: 12),
+                Text(
+                  tr("空きスロットが足りないため、残り {0} 件は転送しません。", [
+                    items.length - plan.length,
+                  ]),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(tr("キャンセル")),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(tr("転送")),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted || _client != client) return;
+    var done = 0;
+    await _run(tr("まとめて転送中"), () async {
+      try {
+        for (final (slot, item) in plan) {
+          await _send(
+            client,
+            slot,
+            item.model,
+            tr("スロット {0} へ転送中（{1}/{2}）", [slot, done + 1, plan.length]),
+          );
+          _slotSources[slot] = item;
+          done++;
+        }
+      } finally {
+        try {
+          await _refresh();
+        } catch (_) {
+          // The transfer error is the one worth showing.
+        }
+        if (mounted && done > 0) _lastUploaded = plan.first.$1;
+      }
+      if (mounted) {
+        setState(() => _message = tr("{0} 件を空きスロットへ転送しました。", [done]));
+      }
+    });
+    if (mounted && done > 0 && done < plan.length) {
+      setState(
+        () =>
+            _message = tr("{0}/{1} 件を転送しました。残りは転送していません。", [done, plan.length]),
+      );
+    }
+  }
+
+  Future<void> _send(
+    NamClient client,
+    int slot,
+    NamModel model,
+    String label,
+  ) async {
+    _cancel = false;
+    setState(() {
+      _operation = label;
+      _committing = false;
+      _progress = 0;
+    });
+    await client.upload(
+      slot,
+      model,
+      progress: (value) {
+        if (mounted) setState(() => _progress = value);
+      },
+      cancelled: () => _cancel,
+      committing: () {
+        if (mounted) {
+          setState(() {
+            _committing = true;
+            _operation = tr("本体への保存を確認中");
+          });
+        }
+      },
+    );
+  }
+
+  Future<void> _openLibrary() async {
+    if (_busy) return;
+    await (widget.pickTone?.call(context, null) ??
+        Navigator.push<List<ImportedTone>>(
+          context,
+          MaterialPageRoute(builder: (_) => const Tone3000Page()),
+        ));
+  }
+
   Future<bool> _confirm(String title, String text) async =>
       await showDialog<bool>(
         context: context,
@@ -365,24 +505,12 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
     }
     if (!mounted || _client != client) return;
     await _run(tr("スロット {0} へ転送中", [slot.number]), () async {
-      _cancel = false;
       _lastUploaded = null;
-      setState(() => _progress = 0);
-      await client.upload(
+      await _send(
+        client,
         slot.number,
         model,
-        progress: (value) {
-          if (mounted) setState(() => _progress = value);
-        },
-        cancelled: () => _cancel,
-        committing: () {
-          if (mounted) {
-            setState(() {
-              _committing = true;
-              _operation = tr("本体への保存を確認中");
-            });
-          }
-        },
+        tr("スロット {0} へ転送中", [slot.number]),
       );
       final source = _toneSource;
       if (source == null) {
@@ -708,6 +836,18 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
                   () => _attach(DemoTransport(), 'Demo FB200', true),
                 ),
           child: Text(tr("接続せず試す")),
+        ),
+      ]),
+      const SizedBox(height: 16),
+      _card([
+        const Tone3000Logo(),
+        const SizedBox(height: 12),
+        Text(tr("接続前にTONE3000でモデルを探し、端末に保存しておけます。")),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _openLibrary,
+          icon: const Icon(Icons.library_add_outlined),
+          label: Text(tr("モデルを探して保存")),
         ),
       ]),
     ] else ...[

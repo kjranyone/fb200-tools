@@ -33,8 +33,12 @@ class ToneCallbackActivity : Activity() {
             ToneAuthSession.cancel("INVALID_CALLBACK")
         }
         if (pending) {
+            // The browser starts this activity in a task of its own. NEW_TASK
+            // returns to the task that opened the Custom Tab and CLEAR_TOP closes
+            // the tab, so the waiting page receives the result.
             startActivity(Intent(this, MainActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
         finish()
     }
