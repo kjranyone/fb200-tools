@@ -2,6 +2,7 @@ import 'package:fb200_nam/effect_parameters.dart';
 import 'package:fb200_nam/l10n/catalog.dart';
 import 'package:fb200_nam/localization.dart';
 import 'package:fb200_nam/main.dart';
+import 'package:fb200_nam/model_page.dart';
 import 'package:fb200_nam/pedal_client.dart';
 import 'package:fb200_nam/widgets/chain_strip.dart';
 import 'package:flutter/material.dart';

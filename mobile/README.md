@@ -177,12 +177,15 @@ not physical power-cut tests.
 - `lib/ble_link.dart`: permissions, discovery, GATT.
 - `lib/ble_profile.dart`: measured FB200 UART selection; excludes module control.
 - `lib/pedal_client.dart`, `lib/pedal_page.dart`: legacy editor, tools, backup,
-  user-IR slots and Bluetooth naming.
+  user-IR slots and Bluetooth naming. `lib/pedal/` holds the controller's tab
+  views, NAM model selector and editor dialogs; device writes stay in the page.
 - `lib/ir_wav.dart`: WAV → user-IR conversion, a Dart port of `src/fb200/wav.py`
   (RIFF/PCM 8-24 bit/float32/extensible, Kaiser windowed-sinc resampler).
 - `lib/tone_key_scanner.dart`: camera QR input with lifecycle/permission handling.
 - `lib/nam_client.dart`: operations and explicit simulated transport.
-- `lib/main.dart`: Japanese UI, narrow-screen demo tested at 360 px.
+- `lib/main.dart`: app shell and language setting. `lib/model_page.dart`:
+  connection hub and NAM model management, narrow-screen demo tested at 360 px.
+- `lib/widgets/dialogs.dart`: shared confirm and text-entry dialogs.
 - `tool/make_ir_fixtures.py`: regenerates the shared WAV/float32 fixtures with
   the Python reference; `test/fixtures/ir*.f32` is compared byte-for-byte.
 - `test/fixtures`: synthetic weights only, not a musical capture. `.fbnm` is

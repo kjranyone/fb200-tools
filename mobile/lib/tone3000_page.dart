@@ -11,75 +11,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'tone3000.dart';
 import 'tone_key_scanner.dart';
 import 'tone_library.dart';
+import 'tone3000/library_view.dart';
+import 'tone3000/tone_sheet.dart';
+import 'tone3000/widgets.dart';
 
 typedef ToneApiFactory = Tone3000Api Function(String clientId);
 
 const _gears = ['amp', 'amp-cab', 'pedal', 'outboard', 'cab'];
-
-class Tone3000Logo extends StatelessWidget {
-  const Tone3000Logo({super.key});
-  @override
-  Widget build(BuildContext context) => Image.asset(
-    'assets/branding/tone3000.png',
-    height: 32,
-    alignment: Alignment.centerLeft,
-    semanticLabel: 'TONE3000',
-  );
-}
-
-class ToneImage extends StatelessWidget {
-  final Uri? image;
-  final double size;
-  const ToneImage(this.image, {super.key, this.size = 64});
-  @override
-  Widget build(BuildContext context) {
-    final fallback = SizedBox(
-      width: size,
-      height: size,
-      child: const Icon(Icons.graphic_eq),
-    );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: image == null
-          ? fallback
-          : Image.network(
-              image.toString(),
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => fallback,
-            ),
-    );
-  }
-}
-
-class ToneAttribution extends StatelessWidget {
-  final TonePack tone;
-  const ToneAttribution(this.tone, {super.key});
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      if (tone.image != null) ...[
-        ToneImage(tone.image),
-        const SizedBox(width: 12),
-      ],
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(tone.title, style: Theme.of(context).textTheme.titleMedium),
-            Text('${tone.gearLabel} · NAM A2'),
-            Text(
-              '@${tone.creator.username}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
-    ],
-  );
-}
 
 /// TONE3000 browsing, bulk download into the device library, and selection
 /// of stored models. Returns the models chosen for transfer; never writes to
@@ -329,14 +267,14 @@ class _Tone3000PageState extends State<Tone3000Page>
   });
 
   Future<void> _openTone(TonePack tone, List<ToneModel> models) async {
-    final choice = await showModalBottomSheet<_ToneChoice>(
+    final choice = await showModalBottomSheet<ToneChoice>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
       builder: (_) => FractionallySizedBox(
         heightFactor: .9,
-        child: _ToneSheet(
+        child: ToneSheet(
           tone: tone,
           models: models,
           library: _library,
@@ -607,20 +545,9 @@ class _Tone3000PageState extends State<Tone3000Page>
       ),
   ];
 
-  Widget _scroll(List<Widget> children) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 680),
-      child: ListView(
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.all(20),
-        children: children,
-      ),
-    ),
-  );
-
   // ---- TONE3000 tab: sign-in, free-tier lists, bulk download ----
 
-  Widget _remote() => _scroll([
+  Widget _remote() => ToneScroll([
     if (_account == null) ..._intro() else ..._browser(),
     if (_editing && !_loadingSettings) ..._setup(),
     if (!_canSignIn)
@@ -782,7 +709,14 @@ class _Tone3000PageState extends State<Tone3000Page>
       ],
     ),
     const SizedBox(height: 12),
-    for (final tone in _tones) _toneTile(tone),
+    for (final tone in _tones)
+      ToneTile(
+        tone: tone,
+        stored: _library.storedFor(tone.id),
+        enabled: !_working,
+        onOpen: () => _showTone(tone),
+        onDownload: () => _download([ToneDownloadJob(tone)]),
+      ),
     if (_listed && _tones.isEmpty)
       Padding(
         padding: const EdgeInsets.all(16),
@@ -803,244 +737,14 @@ class _Tone3000PageState extends State<Tone3000Page>
       ),
   ];
 
-  Widget _toneTile(TonePack tone) {
-    final stored = _library.storedFor(tone.id);
-    final complete = tone.a2Count != null && stored >= tone.a2Count!;
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: _working ? null : () => _showTone(tone),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              ToneImage(tone.image, size: 56),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      tone.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      tone.a2Count == null
-                          ? '${tone.gearLabel} · NAM A2'
-                          : tr("{0} · NAM A2 · {1} モデル", [
-                              tone.gearLabel,
-                              tone.a2Count,
-                            ]),
-                    ),
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 8,
-                          backgroundImage: tone.creator.avatar == null
-                              ? null
-                              : NetworkImage(tone.creator.avatar.toString()),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '@${tone.creator.username}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (stored > 0)
-                      Text(
-                        tr("端末に保存済み {0} 件", [stored]),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
-                ),
-              ),
-              complete
-                  ? Tooltip(
-                      message: tr("すべて端末に保存済み"),
-                      child: const Icon(Icons.download_done),
-                    )
-                  : IconButton(
-                      tooltip: tr("すべてダウンロード"),
-                      onPressed: _working
-                          ? null
-                          : () => _download([ToneDownloadJob(tone)]),
-                      icon: const Icon(Icons.download_outlined),
-                    ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---- device tab: instant local search, multi-select, transfer ----
-
-  Widget _local() {
-    final entries = _library.entries.where((e) => e.matches(_localQuery));
-    final groups = <int, List<LibraryEntry>>{};
-    for (final entry in entries) {
-      groups.putIfAbsent(entry.tone.id, () => []).add(entry);
-    }
-    return _scroll([
-      TextField(
-        key: const ValueKey('tone-local-query'),
-        onChanged: (value) => setState(() => _localQuery = value),
-        decoration: InputDecoration(
-          prefixIcon: const Icon(Icons.search),
-          hintText: tr("保存したモデルを検索（モデル・トーン・作者）"),
-          isDense: true,
-        ),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        widget.freeSlots == null
-            ? tr("端末に保存したモデルはオフラインで使えます。本体に接続してモデル管理から転送できます。")
-            : tr("転送するモデルを選んでください。空きスロットへ順番に転送します。"),
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      const SizedBox(height: 12),
-      if (_library.entries.isEmpty)
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(tr("まだモデルがありません。TONE3000タブからダウンロードしてください。")),
-        )
-      else if (groups.isEmpty)
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(tr("一致するモデルがありません")),
-        ),
-      for (final group in groups.values)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: ToneAttribution(group.first.tone),
-                ),
-                for (final entry in group)
-                  CheckboxListTile(
-                    dense: true,
-                    value: _selected.contains(entry.variant.id),
-                    onChanged: _working
-                        ? null
-                        : (value) => setState(
-                            () => value == true
-                                ? _selected.add(entry.variant.id)
-                                : _selected.remove(entry.variant.id),
-                          ),
-                    title: Text(entry.variant.name),
-                    subtitle: const Text('NAM A2 · A2-Lite'),
-                  ),
-              ],
-            ),
-          ),
-        ),
-    ]);
-  }
-}
-
-class _ToneChoice {
-  final List<ToneModel> models;
-  final bool transfer;
-  _ToneChoice(this.models, this.transfer);
-}
-
-class _ToneSheet extends StatefulWidget {
-  final TonePack tone;
-  final List<ToneModel> models;
-  final ToneLibrary library;
-  final bool canTransfer;
-  const _ToneSheet({
-    required this.tone,
-    required this.models,
-    required this.library,
-    required this.canTransfer,
-  });
-  @override
-  State<_ToneSheet> createState() => _ToneSheetState();
-}
-
-class _ToneSheetState extends State<_ToneSheet> {
-  /// New variants start selected; stored ones can be added for transfer.
-  late final Set<int> _chosen = {
-    for (final m in widget.models)
-      if (!widget.library.has(m.id)) m.id,
-  };
-
-  List<ToneModel> get _models =>
-      widget.models.where((m) => _chosen.contains(m.id)).toList();
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ToneAttribution(widget.tone),
-        if (widget.tone.description.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              widget.tone.description,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        const SizedBox(height: 12),
-        Text(
-          tr("モデルを選択"),
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        Text(tr("取得後に48 kHz・固定A2-Lite構成を確認します。取り込みだけでは本体へ送信されません。")),
-        Expanded(
-          child: widget.models.isEmpty
-              ? Center(child: Text(tr("A2モデルがありません。別のトーンを選択してください。")))
-              : ListView(
-                  children: [
-                    for (final model in widget.models)
-                      CheckboxListTile(
-                        value: _chosen.contains(model.id),
-                        onChanged: (value) => setState(
-                          () => value == true
-                              ? _chosen.add(model.id)
-                              : _chosen.remove(model.id),
-                        ),
-                        title: Text(model.name),
-                        subtitle: Text(
-                          widget.library.has(model.id)
-                              ? tr("端末に保存済み")
-                              : 'NAM A2',
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 8),
-        if (widget.canTransfer)
-          FilledButton.icon(
-            onPressed: _chosen.isEmpty
-                ? null
-                : () => Navigator.pop(context, _ToneChoice(_models, true)),
-            icon: const Icon(Icons.upload_outlined),
-            label: Text(tr("{0} 件を保存して転送へ", [_chosen.length])),
-          ),
-        OutlinedButton.icon(
-          onPressed: _chosen.isEmpty
-              ? null
-              : () => Navigator.pop(context, _ToneChoice(_models, false)),
-          icon: const Icon(Icons.download_outlined),
-          label: Text(tr("{0} 件を端末に保存", [_chosen.length])),
-        ),
-      ],
-    ),
+  Widget _local() => ToneLibraryView(
+    entries: _library.entries,
+    query: _localQuery,
+    selected: _selected,
+    enabled: !_working,
+    canTransfer: widget.freeSlots != null,
+    onQuery: (value) => setState(() => _localQuery = value),
+    onToggle: (id, value) =>
+        setState(() => value ? _selected.add(id) : _selected.remove(id)),
   );
 }

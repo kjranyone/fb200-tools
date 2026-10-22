@@ -99,7 +99,7 @@ operation are unverified. Launch icons remain Flutter template assets.
 | Stock dispatcher / BLE UART | `firmware/audio/src/proto/proto.{c,h}`, `proto_port.c`, `src/bt/bt.c` |
 | CDC binary ownership | `firmware/audio/src/debug/console.c` |
 | PC parser / uploader | `src/fb200/nam_model.py`, `nam.py`, `nam_console.py`, CLI in `cli.py` |
-| Flutter | `mobile/lib/nam_model.dart`, `protocol.dart`, `ble_link.dart`, `nam_client.dart`, `main.dart` |
+| Flutter | `mobile/lib/nam_model.dart`, `protocol.dart`, `ble_link.dart`, `nam_client.dart`, `model_page.dart` |
 | Native tests | `tests/test_nam_a2.py`, `test_nam_profile.py`, `test_nam_runtime.py`, `test_nam_rpc.py`, `test_proto_host.py` |
 | Mobile tests | `mobile/test/`, shared synthetic model/packet in `mobile/test/fixtures/` |
 | RAM/flash-busy checker | `firmware/tools/hot_path.py --nam-runtime` |

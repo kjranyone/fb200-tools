@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:fb200_nam/connection_recovery.dart';
 import 'package:fb200_nam/protocol.dart';
-import 'package:fb200_nam/main.dart';
+import 'package:fb200_nam/model_page.dart';
 import 'package:fb200_nam/nam_client.dart';
 import 'package:fb200_nam/widgets/knob.dart';
 import 'package:flutter/material.dart';

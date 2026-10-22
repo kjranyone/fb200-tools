@@ -17,7 +17,17 @@ import 'studio_theme.dart';
 
 import 'pedal_client.dart';
 import 'protocol.dart';
+import 'pedal/drums_tab.dart';
+import 'pedal/effect_dialogs.dart';
+import 'pedal/ir_tab.dart';
+import 'pedal/looper_tab.dart';
+import 'pedal/nam_model_selector.dart';
+import 'pedal/pedal_nav_bar.dart';
+import 'pedal/presets_tab.dart';
+import 'pedal/settings_tab.dart';
+import 'pedal/tuner_tab.dart';
 import 'widgets/chain_strip.dart';
+import 'widgets/dialogs.dart';
 import 'widgets/knob.dart';
 import 'widgets/nam_model_picker.dart';
 import 'widgets/parameter_deck.dart';
@@ -57,7 +67,8 @@ class PedalPage extends StatefulWidget {
 class _PedalPageState extends State<PedalPage> {
   late final PedalClient _pedal;
   Timer? _timer;
-  int _tab = 1, _bank = 0;
+  PedalTab _tab = PedalTab.effects;
+  int _bank = 0;
   bool _working = false, _ready = false;
   bool _blocking = false;
   bool get _busy =>
@@ -109,7 +120,7 @@ class _PedalPageState extends State<PedalPage> {
           !_busy &&
           !_libraryOpen &&
           _poll == null &&
-          _tab == 3 &&
+          _tab == PedalTab.tuner &&
           widget.toolsAvailable &&
           widget.restrictedNam &&
           _pedal.settings![8] != 0) {
@@ -118,7 +129,7 @@ class _PedalPageState extends State<PedalPage> {
           !_busy &&
           !_libraryOpen &&
           _poll == null &&
-          _tab == 4 &&
+          _tab == PedalTab.looper &&
           _looperAvailable) {
         _poll = _refreshLoop().whenComplete(() => _poll = null);
       }
@@ -362,25 +373,13 @@ class _PedalPageState extends State<PedalPage> {
     }
   }
 
-  Future<bool> _confirm(String text, {String? title, String? accept}) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title ?? tr("本体へ保存")),
-          content: Text(text),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(tr("キャンセル")),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(accept ?? tr("保存する")),
-            ),
-          ],
-        ),
-      ) ??
-      false;
+  Future<bool> _confirm(String text, {String? title, String? accept}) =>
+      confirmDialog(
+        context,
+        title: title ?? tr("本体へ保存"),
+        content: Text(text),
+        accept: accept ?? tr("保存する"),
+      );
 
   Future<void> _save(int destination, PedalPreset preset) async {
     if (!await _confirm(
@@ -401,30 +400,11 @@ class _PedalPageState extends State<PedalPage> {
   Future<void> _rename(int index) async {
     final preset = await _pedal.readPreset(index);
     if (!mounted) return;
-    final controller = TextEditingController(text: preset.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(tr("{0} の名前", [PedalClient.address(index)])),
-        content: TextField(
-          controller: controller,
-          maxLength: 20,
-          decoration: InputDecoration(helperText: tr("半角英数字・記号")),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(tr("キャンセル")),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text(tr("次へ")),
-          ),
-        ],
-      ),
+    final name = await _askName(
+      tr("{0} の名前", [PedalClient.address(index)]),
+      preset.name,
+      20,
     );
-    // The dialog route is still animating out when its Future completes.
-    Future<void>.delayed(const Duration(milliseconds: 500), controller.dispose);
     if (name != null && mounted) await _save(index, preset.renamed(name));
   }
 
@@ -493,33 +473,15 @@ class _PedalPageState extends State<PedalPage> {
     if (mounted) setState(() => _irs = slots);
   }
 
-  Future<String?> _askName(String title, String initial, int maxLength) async {
-    final controller = TextEditingController(text: initial);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          maxLength: maxLength,
-          decoration: InputDecoration(helperText: tr("半角英数字・記号")),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(tr("キャンセル")),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text(tr("次へ")),
-          ),
-        ],
-      ),
-    );
-    // The dialog route is still animating out when its Future completes.
-    Future<void>.delayed(const Duration(milliseconds: 500), controller.dispose);
-    return name;
-  }
+  Future<String?> _askName(String title, String initial, int maxLength) =>
+      askText(
+        context,
+        title: title,
+        initial: initial,
+        maxLength: maxLength,
+        helper: tr("半角英数字・記号"),
+        accept: tr("次へ"),
+      );
 
   Future<void> _irImport(IrSlotInfo slot) async {
     final file = await FilePicker.pickFile(
@@ -640,105 +602,15 @@ class _PedalPageState extends State<PedalPage> {
   LooperStatus? _loop;
 
   Future<void> _editModuleOrder() async {
-    // Real presets can carry a stale/unknown sequence; repair it into a full
-    // permutation (keep the valid prefix, append missing modules in default
-    // order) instead of refusing to edit.
-    final bytes = _pedal.edit!.bytes.sublist(0xbc, 0xc3);
-    final order = <int>[];
-    final used = <int>{};
-    for (final v in bytes) {
-      if (v < 0 || v > 6 || used.contains(v)) break;
-      order.add(v);
-      used.add(v);
-    }
-    for (var m = 0; m <= 6; m++) {
-      if (!used.contains(m)) order.add(m);
-    }
-    var matches = order.length == bytes.length;
-    for (var i = 0; matches && i < order.length; i++) {
-      matches = order[i] == bytes[i];
-    }
-    final repaired = !matches;
-    final changed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialog) => AlertDialog(
-          title: Text(tr("モジュールの接続順")),
-          content: SizedBox(
-            width: 320,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (repaired)
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        tr("プリセットの順序データが壊れていたため、標準順で補いました。"),
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  for (var i = 0; i < order.length; i++)
-                    Row(
-                      children: [
-                        Expanded(child: Text(moduleName(order[i]))),
-                        IconButton(
-                          icon: const Icon(Icons.arrow_upward),
-                          onPressed: i == 0
-                              ? null
-                              : () => setDialog(() {
-                                  final t = order[i - 1];
-                                  order[i - 1] = order[i];
-                                  order[i] = t;
-                                }),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.arrow_downward),
-                          onPressed: i == order.length - 1
-                              ? null
-                              : () => setDialog(() {
-                                  final t = order[i + 1];
-                                  order[i + 1] = order[i];
-                                  order[i] = t;
-                                }),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(tr("キャンセル")),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(tr("変更")),
-            ),
-          ],
-        ),
-      ),
+    final order = await editModuleOrder(
+      context,
+      _pedal.edit!.bytes.sublist(0xbc, 0xc3),
     );
-    if (changed != true || !mounted) return;
+    if (order == null || !mounted) return;
     await _run(tr("モジュール順序を変更中"), () async {
       await _pedal.setModuleOrder(order);
       await _pedal.refresh();
     });
-  }
-
-  static String moduleName(int index) {
-    final names = [
-      tr("コンプレッサー"),
-      tr("ノイズゲート"),
-      tr("アンプ"),
-      tr("キャビネット / IR"),
-      tr("モジュレーション"),
-      tr("ディレイ"),
-      tr("リバーブ"),
-    ];
-    return names[index.clamp(0, 6)];
   }
 
   Future<void> _probeLooper() async {
@@ -833,82 +705,9 @@ class _PedalPageState extends State<PedalPage> {
         ),
       ],
     ),
-    bottomNavigationBar: SafeArea(
-      top: false,
-      child: Material(
-        color: StudioTheme.background,
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height < 480 ? 50 : 68,
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final labels = [
-                tr("プリセット"),
-                tr("エフェクト"),
-                tr("ドラム"),
-                tr("チューナー"),
-                tr("ルーパー"),
-                'IR',
-                tr("設定"),
-              ];
-              const icons = [
-                Icons.grid_view_outlined,
-                Icons.route_outlined,
-                Icons.music_note_outlined,
-                Icons.straighten,
-                Icons.loop,
-                Icons.speaker_outlined,
-                Icons.settings_outlined,
-              ];
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < labels.length; i++)
-                      Semantics(
-                        selected: _tab == i,
-                        child: SizedBox(
-                          width: (box.maxWidth / 7).clamp(48.0, 180.0),
-                          child: InkWell(
-                            onTap: _toneDraft != null
-                                ? null
-                                : () {
-                                    setState(() => _tab = i);
-                                    if (i == 5 && _irs == null && !_busy) {
-                                      _run(tr("IR一覧を読み込み中"), _irReload);
-                                    }
-                                  },
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  icons[i],
-                                  size: 21,
-                                  color: _tab == i
-                                      ? StudioTheme.blue
-                                      : const Color(0xff8390a1),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  labels[i],
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: _tab == i
-                                        ? StudioTheme.blue
-                                        : const Color(0xff9daaba),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ),
+    bottomNavigationBar: PedalNavBar(
+      tab: _tab,
+      onSelect: _toneDraft != null ? null : _selectTab,
     ),
     body: RecoveryLayer(
       recovery: widget.recovery,
@@ -963,18 +762,7 @@ class _PedalPageState extends State<PedalPage> {
                                 ),
                               if (MediaQuery.sizeOf(context).height >= 480)
                                 const SizedBox(height: 12),
-                              Expanded(
-                                child: _tab == 1
-                                    ? _effects()
-                                    : _fillOrScroll(switch (_tab) {
-                                        0 => _banks(),
-                                        2 => _drums(),
-                                        3 => _tunerTab(),
-                                        4 => _looper(),
-                                        5 => _ir(),
-                                        _ => _settings(),
-                                      }),
-                              ),
+                              Expanded(child: _tabBody()),
                             ],
                           ),
                         ),
@@ -1040,125 +828,24 @@ class _PedalPageState extends State<PedalPage> {
         : null,
   );
 
-  Widget _presetHeader() => Row(
-    children: [
-      Text(
-        PedalClient.address(_pedal.selected),
-        style: const TextStyle(
-          fontSize: 36,
-          fontWeight: FontWeight.w800,
-          color: StudioTheme.blue,
-          height: 1.1,
-        ),
-      ),
-      const SizedBox(width: 14),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _pedal.edit!.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              _dirty ? tr("●  EDITED · 未保存") : tr("PRESET · 本体と同期済み"),
-              style: TextStyle(
-                fontSize: 10,
-                letterSpacing: .8,
-                color: _dirty ? StudioTheme.nam : const Color(0xff8390a1),
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(width: 6),
-      FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: StudioTheme.nam,
-          foregroundColor: StudioTheme.background,
-        ),
-        onPressed: _busy ? null : () => _save(_pedal.selected, _pedal.edit!),
-        icon: const Icon(Icons.save_outlined, size: 17),
-        label: Text(tr("保存")),
-      ),
-    ],
+  Widget _presetHeader() => PresetHeader(
+    selected: _pedal.selected,
+    name: _pedal.edit!.name,
+    dirty: _dirty,
+    busy: _busy,
+    onSave: () => _save(_pedal.selected, _pedal.edit!),
   );
 
-  Widget _presetSidebar() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const Text(
-        'PRESETS',
-        style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.8),
-      ),
-      const SizedBox(height: 16),
-      DropdownButtonFormField<int>(
-        key: ValueKey(_bank),
-        initialValue: _bank,
-        decoration: InputDecoration(labelText: tr("バンク")),
-        items: [
-          for (var i = 0; i < 10; i++)
-            DropdownMenuItem(value: i, child: Text('BANK $i')),
-        ],
-        onChanged: _busy
-            ? null
-            : (v) => _run(tr("バンクを読み込み中"), () async {
-                _bank = v!;
-                await _pedal.loadBank(_bank);
-              }),
-      ),
-      const SizedBox(height: 14),
-      for (var i = _bank * 4; i < _bank * 4 + 4; i++)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Material(
-            color: i == _pedal.selected
-                ? StudioTheme.blue.withValues(alpha: .12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              leading: Text(
-                PedalClient.address(i),
-                style: TextStyle(
-                  color: i == _pedal.selected
-                      ? StudioTheme.blue
-                      : const Color(0xff8390a1),
-                ),
-              ),
-              title: Text(
-                _pedal.presets[i]?.name ?? tr("読み込み前"),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
-              ),
-              onTap: _busy ? null : () => _selectPreset(i),
-            ),
-          ),
-        ),
-      const Divider(height: 32),
-      TextButton(
-        onPressed: () => setState(() => _tab = 0),
-        child: Text(tr("プリセットを管理")),
-      ),
-      if (widget.onOpenModels != null)
-        OutlinedButton.icon(
-          onPressed: _busy ? null : _openModels,
-          icon: const Icon(Icons.library_music_outlined, size: 18),
-          label: Text(tr("NAMライブラリ")),
-        ),
-      const SizedBox(height: 20),
-      Text(
-        '40 PRESETS  /  ${_pedal.version}',
-        style: const TextStyle(fontSize: 10, color: Color(0xff8390a1)),
-      ),
-    ],
+  Widget _presetSidebar() => PresetSidebar(
+    bank: _bank,
+    selected: _pedal.selected,
+    presets: _pedal.presets,
+    version: _pedal.version,
+    busy: _busy,
+    onBank: _loadBank,
+    onSelect: _selectPreset,
+    onManage: () => setState(() => _tab = PedalTab.presets),
+    onOpenModels: widget.onOpenModels == null ? null : _openModels,
   );
 
   /// Management and tool pages may scroll. The performance editor uses a
@@ -1172,126 +859,104 @@ class _PedalPageState extends State<PedalPage> {
     ),
   );
 
-  Widget _banks() {
-    final selected = _pedal.selected;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<int>(
-                key: ValueKey(_bank),
-                initialValue: _bank,
-                decoration: InputDecoration(labelText: tr("バンク")),
-                isExpanded: true,
-                items: [
-                  for (var i = 0; i < 10; i++)
-                    DropdownMenuItem(value: i, child: Text('BANK $i')),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (v) => _run(tr("バンクを読み込み中"), () async {
-                        _bank = v!;
-                        await _pedal.loadBank(_bank);
-                      }),
-              ),
-            ),
-            const SizedBox(width: 8),
-            PopupMenuButton<String>(
-              enabled: !_busy,
-              onSelected: (v) => v == 'backup'
-                  ? _run(tr("バックアップ中"), _backup)
-                  : _guard(_restore),
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'backup',
-                  child: Text(tr("全プリセットをファイルへ保存")),
-                ),
-                PopupMenuItem(value: 'restore', child: Text(tr("バックアップから復元"))),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        GridView.count(
-          crossAxisCount: 2,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 2.6,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            for (var i = _bank * 4; i < _bank * 4 + 4; i++)
-              Card(
-                margin: EdgeInsets.zero,
-                color: i == selected
-                    ? Theme.of(context).colorScheme.primaryContainer
-                    : null,
-                child: InkWell(
-                  onTap: _busy ? null : () => _selectPreset(i),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              PedalClient.address(i),
-                              style: Theme.of(context).textTheme.labelMedium,
-                            ),
-                            const Spacer(),
-                            if (i == selected)
-                              Icon(
-                                Icons.check_circle,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                          ],
-                        ),
-                        Text(
-                          _pedal.presets[i]?.name ?? tr("読み込み前"),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        Wrap(
-          alignment: WrapAlignment.spaceEvenly,
-          children: [
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => _save(_pedal.selected, _pedal.edit!),
-              child: Text(tr("編集内容を保存")),
-            ),
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => _guard(() => _rename(_presetMenuTarget())),
-              child: Text(tr("名前の変更")),
-            ),
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => _guard(() => _copy(_presetMenuTarget())),
-              child: Text(tr("コピー")),
-            ),
-          ],
-        ),
-      ],
-    );
+  Widget _tabBody() => switch (_tab) {
+    PedalTab.effects => _effects(),
+    PedalTab.presets => _fillOrScroll(
+      PresetsTab(
+        bank: _bank,
+        selected: _pedal.selected,
+        presets: _pedal.presets,
+        busy: _busy,
+        onBank: _loadBank,
+        onSelect: _selectPreset,
+        onBackup: () => _run(tr("バックアップ中"), _backup),
+        onRestore: () => _guard(_restore),
+        onSave: () => _save(_pedal.selected, _pedal.edit!),
+        onRename: () => _guard(() => _rename(_presetMenuTarget())),
+        onCopy: () => _guard(() => _copy(_presetMenuTarget())),
+      ),
+    ),
+    PedalTab.drums => _fillOrScroll(
+      DrumsTab(
+        rhythm: _pedal.rhythm!,
+        available: widget.toolsAvailable,
+        busy: _busy,
+        onRhythm: _rhythm,
+        onTapTempo: _tapTempo,
+      ),
+    ),
+    PedalTab.tuner => _fillOrScroll(
+      TunerTab(
+        settings: _pedal.settings!,
+        available: widget.toolsAvailable,
+        busy: _busy,
+        showsPitch: widget.restrictedNam,
+        pitch: _pitch,
+        onTuner: _tuner,
+      ),
+    ),
+    PedalTab.looper => _fillOrScroll(
+      LooperTab(
+        available: _looperAvailable,
+        busy: _busy,
+        status: _loop,
+        onAction: (op) => _looperAct(op, tr("ルーパーを操作中")),
+        onClear: _looperClear,
+        onLevel: (v) => _run(tr("ループ音量を変更中"), () async {
+          await _pedal.looperLevel(v);
+          await _refreshLoop();
+        }),
+        onSave: (slot) =>
+            _run(tr("ループ{0}を保存中", [slot]), () => _pedal.looperSave(slot)),
+        onLoad: (slot) => _run(tr("ループ{0}を読込中", [slot]), () async {
+          await _pedal.looperLoad(slot);
+          await _refreshLoop();
+        }),
+      ),
+    ),
+    PedalTab.ir => _fillOrScroll(
+      IrTab(
+        slots: _irs,
+        edit: _pedal.edit!,
+        busy: _busy,
+        cabinetProcessed: !(widget.restrictedNam && !widget.effectsAvailable),
+        onLoad: () => _run(tr("IR一覧を読み込み中"), _irReload),
+        onSlot: (s) => _guard(() => _irSlotMenu(s)),
+      ),
+    ),
+    PedalTab.settings => _fillOrScroll(
+      SettingsTab(
+        settings: _pedal.settings!,
+        busy: _busy,
+        cabinetAvailable: !(widget.restrictedNam && !widget.effectsAvailable),
+        btAudioAvailable: !(widget.restrictedNam && !widget.btAudioAvailable),
+        onSetting: _setting,
+        onBtName: () => _guard(_btName),
+      ),
+    ),
+  };
+
+  void _selectTab(PedalTab tab) {
+    setState(() => _tab = tab);
+    if (tab == PedalTab.ir && _irs == null && !_busy) {
+      _run(tr("IR一覧を読み込み中"), _irReload);
+    }
+  }
+
+  Future<void> _loadBank(int bank) => _run(tr("バンクを読み込み中"), () async {
+    _bank = bank;
+    await _pedal.loadBank(_bank);
+  });
+
+  void _tapTempo() {
+    final now = DateTime.now(), previous = _lastTap;
+    _lastTap = now;
+    if (previous != null) {
+      final dt = now.difference(previous).inMilliseconds;
+      if (dt > 0 && dt <= 3000) {
+        _rhythm(bpm: (60000 / dt).round().clamp(40, 260));
+      }
+    }
   }
 
   int _presetMenuTarget() => _pedal.selected;
@@ -1432,24 +1097,7 @@ class _PedalPageState extends State<PedalPage> {
     } else if (action == -1) {
       _guard(_editModuleOrder);
     } else {
-      showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          scrollable: true,
-          title: Text(tr("音作りの操作")),
-          content: Text(
-            tr(
-              "上下ドラッグで値を調整します。NAMノブはドラッグ中も音に反映し、指を離すと本体の値を確認します。他のエフェクトは指を離すと反映します。横に指を離すと微調整できます。数値タップで直接入力・標準値への復帰ができます。\n\nNAMのGAINはモデル前の入力ドライブ、BASS・MID・TREBLEはモデル後のEQ、MID FREQはMIDの中心周波数、VOLUMEはモデル後の出力レベルです。NAMがOFFまたはBYPASSの間は効きません。Bluetoothの再生音と通常のUSB再生音はNAMを通りません。\n\nモデル選択は試聴です。「保存」でモデルとパラメーターをプリセットに記録します。音声の接続順は固定です。",
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(tr("閉じる")),
-            ),
-          ],
-        ),
-      );
+      showEditorHelp(context);
     }
   }
 
@@ -1742,87 +1390,18 @@ class _PedalPageState extends State<PedalPage> {
     _pendingEdit = null;
   }
 
-  Widget _namModelSelector() {
-    final state = _namState;
-    final selected = state?.selected ?? 0;
-    final name = _activeModel;
-    final empty = state != null && !state.slots.any((s) => s.name != null);
-    final status = state == null
-        ? tr("モデルの状態を取得できません")
-        : empty
-        ? tr("保存済みモデルなし · 追加・転送へ")
-        : selected == 0
-        ? tr("NAMをバイパス中")
-        : name == null
-        ? tr("選択したスロットは空です。モデルを選び直してください")
-        : _pedal.edit!.word(0x2c) == 0
-        ? tr("ロード済み · NAMはOFF")
-        : tr("NAM有効 · ドラッグ中も音に反映");
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: StudioTheme.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: StudioTheme.nam.withValues(alpha: .45)),
-      ),
-      child: LayoutBuilder(
-        builder: (context, box) => Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    state == null
-                        ? widget.namModel ?? 'NAM MODEL'
-                        : selected == 0
-                        ? '00  BYPASS'
-                        : '${selected.toString().padLeft(2, '0')}  ${name ?? tr("モデルなし")}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    status,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: StudioTheme.ready,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              key: const ValueKey('choose-nam-model'),
-              style: FilledButton.styleFrom(
-                backgroundColor: StudioTheme.nam,
-                foregroundColor: StudioTheme.background,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-              ),
-              onPressed: _busy || state == null || widget.namClient == null
-                  ? null
-                  : _chooseNamModel,
-              icon: const Icon(Icons.swap_horiz, size: 18),
-              label: Text(box.maxWidth >= 560 ? tr("モデルを選ぶ") : tr("選ぶ")),
-            ),
-            if (widget.onOpenModels != null)
-              IconButton(
-                key: const ValueKey('open-nam-library'),
-                tooltip: tr("追加・転送"),
-                onPressed: _busy ? null : () => _guard(_openModels),
-                icon: const Icon(Icons.add),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _namModelSelector() => NamModelSelector(
+    state: _namState,
+    activeModel: _activeModel,
+    fallbackModel: widget.namModel,
+    namOn: _pedal.edit!.word(0x2c) != 0,
+    busy: _busy,
+    canChoose: widget.namClient != null,
+    onChoose: _chooseNamModel,
+    onOpenLibrary: widget.onOpenModels == null
+        ? null
+        : () => _guard(_openModels),
+  );
 
   Future<void> _pickEffectParameter(
     PedalModule module,
@@ -1832,57 +1411,12 @@ class _PedalPageState extends State<PedalPage> {
     final preset = _pedal.selected;
     final generation = widget.transport.connectionGeneration;
     final value = _pedal.edit!.word(module.offset + parameter.field * 2);
-    final choice = await showModalBottomSheet<int>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * .7,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  parameter.label,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  children: [
-                    for (final option in parameter.choices!.entries)
-                      ListTile(
-                        selected: option.key == value,
-                        enabled:
-                            !(module.command == 0x83 &&
-                                option.key >= 11 &&
-                                _irs
-                                        ?.where(
-                                          (s) =>
-                                              s.slot == option.key - 10 &&
-                                              s.used,
-                                        )
-                                        .isEmpty !=
-                                    false),
-                        leading: Icon(
-                          option.key == value
-                              ? Icons.check_circle
-                              : Icons.circle_outlined,
-                        ),
-                        title: Text(option.value),
-                        subtitle: module.command == 0x83 && option.key >= 11
-                            ? Text(tr("ユーザーIR {0}", [option.key - 10]))
-                            : null,
-                        onTap: () => Navigator.pop(context, option.key),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final choice = await pickEffectChoice(
+      context,
+      module: module,
+      parameter: parameter,
+      value: value,
+      irSlots: _irs,
     );
     if (!mounted || choice == null || _busy) return;
     if (generation != widget.transport.connectionGeneration ||
@@ -1914,416 +1448,17 @@ class _PedalPageState extends State<PedalPage> {
             (field >= 3 && field <= 6 && widget.namClient?.canToneEq != true));
   }
 
-  Widget _value(
-    String label,
-    int value,
-    int min,
-    int max,
-    void Function(int) change, {
-    bool disabled = false,
-  }) {
-    return Knob(
-      label: label,
-      value: value.clamp(min, max),
-      min: min,
-      max: max,
-      enabled: !_busy && !disabled,
-      onChanged: change,
-    );
-  }
-
-  Widget _drums() {
-    final r = _pedal.rhythm!;
-    if (!widget.toolsAvailable) {
-      return Center(child: Text(tr("ドラムは本体の更新後に利用できます。")));
-    }
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _value(tr("パターン"), r[2] + 1, 1, 40, (v) => _rhythm(pattern: v - 1)),
-            _value(tr("テンポ"), read16(r, 4), 40, 260, (v) => _rhythm(bpm: v)),
-            _value(tr("音量"), r[3], 0, 100, (v) => _rhythm(level: v)),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _rhythm(on: r[0] == 0),
-              child: Text(r[0] != 0 ? tr("停止") : tr("再生")),
-            ),
-            OutlinedButton(
-              onPressed: _busy
-                  ? null
-                  : () {
-                      final now = DateTime.now(), previous = _lastTap;
-                      _lastTap = now;
-                      if (previous != null) {
-                        final dt = now.difference(previous).inMilliseconds;
-                        if (dt > 0 && dt <= 3000) {
-                          _rhythm(bpm: (60000 / dt).round().clamp(40, 260));
-                        }
-                      }
-                    },
-              child: Text(tr("タップテンポ")),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _tunerTab() {
-    final s = _pedal.settings!;
-    if (!widget.toolsAvailable) {
-      return Center(child: Text(tr("チューナーは本体の更新後に利用できます。")));
-    }
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.restrictedNam)
-          Text(
-            _pitch,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.displayMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          )
-        else
-          Text(
-            tr("音程は本体のディスプレイで確認できます。"),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Switch(
-                  value: s[8] != 0,
-                  onChanged: _busy ? null : (v) => _tuner(on: v),
-                ),
-                Text(tr("チューナー")),
-              ],
-            ),
-            _value(tr("基準 A4"), 435 + s[7], 435, 450, (v) => _tuner(a4: v)),
-          ],
-        ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 48),
-          title: Text(tr("チューニング中はミュート")),
-          value: s[9] != 0,
-          onChanged: _busy ? null : (v) => _tuner(mute: v),
-        ),
-      ],
-    );
-  }
-
-  Widget _looper() {
-    if (!_looperAvailable) {
-      return Center(child: Text(tr("ルーパーはこのファームウェアでは利用できません。")));
-    }
-    final s = _loop;
-    final status = () {
-      if (s == null) return tr("状態を確認中…");
-      final undo = s.undo == 0
-          ? ''
-          : s.undo == 1
-          ? tr("・元に戻す可")
-          : tr("・やり直し可");
-      return tr("{0}  長さ {1}秒 / 最大 {2}秒{3}{4}{5}", [
-        PedalClient.looperStates[s.state.clamp(0, 5)],
-        s.lenS,
-        s.maxS,
-        undo,
-        s.storeBusy ? tr("・保存中") : '',
-        s.writing ? tr("・書込中") : '',
-      ]);
-    }();
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          status,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(1, tr("ルーパーを操作中")),
-              child: Text(tr("タップ")),
-            ),
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(2, tr("ルーパーを操作中")),
-              child: Text(tr("録音")),
-            ),
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(3, tr("ルーパーを操作中")),
-              child: Text(tr("再生")),
-            ),
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _looperAct(4, tr("ルーパーを操作中")),
-              child: Text(tr("ダビング")),
-            ),
-            TextButton(
-              onPressed: _busy ? null : () => _looperAct(5, tr("ルーパーを操作中")),
-              child: Text(tr("停止")),
-            ),
-            TextButton(
-              onPressed: _busy ? null : () => _looperAct(6, tr("ルーパーを操作中")),
-              child: Text(tr("元に戻す")),
-            ),
-            TextButton(
-              onPressed: _busy ? null : _looperClear,
-              child: Text(tr("消去")),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: _value(
-            tr("ループの音量"),
-            s?.level ?? 100,
-            0,
-            100,
-            (v) => _run(tr("ループ音量を変更中"), () async {
-              await _pedal.looperLevel(v);
-              await _refreshLoop();
-            }),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          children: [
-            for (var slot = 1; slot <= 2; slot++) ...[
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                        tr("ループ{0}を保存中", [slot]),
-                        () => _pedal.looperSave(slot),
-                      ),
-                child: Text(tr("{0}へ保存", [slot])),
-              ),
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _run(tr("ループ{0}を読込中", [slot]), () async {
-                        await _pedal.looperLoad(slot);
-                        await _refreshLoop();
-                      }),
-                child: Text(tr("{0}から読込", [slot])),
-              ),
-            ],
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _ir() {
-    final slots = _irs;
-    if (slots == null) {
-      return Center(
-        child: OutlinedButton.icon(
-          onPressed: _busy ? null : () => _run(tr("IR一覧を読み込み中"), _irReload),
-          icon: const Icon(Icons.refresh),
-          label: Text(tr("IR一覧を読み込む")),
-        ),
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.restrictedNam && !widget.effectsAvailable)
-          Padding(
-            padding: EdgeInsets.only(bottom: 6),
-            child: Text(
-              tr(
-                "現在のNAMファームウェアではキャビネットIRは音声処理に使われません。保存したIRはストックファームウェアで利用できます。",
-              ),
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12),
-            ),
-          ),
-        GridView(
-          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 360,
-            mainAxisExtent:
-                104 + (MediaQuery.textScalerOf(context).scale(14) - 14) * 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-          ),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            for (final s in slots)
-              Card(
-                margin: EdgeInsets.zero,
-                shape: _pedal.edit!.word(0x46) == s.slot + 10
-                    ? RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: StudioTheme.nam),
-                      )
-                    : null,
-                child: InkWell(
-                  onTap: _busy ? null : () => _guard(() => _irSlotMenu(s)),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'IR${s.slot}${_pedal.edit!.word(0x46) == s.slot + 10 ? tr(" · CABに割当（{0}）", [_pedal.edit!.word(0x44) == 0 ? 'OFF' : 'ON']) : ''}',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                        Text(
-                          s.used ? s.name : tr("空き"),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: s.used
-                                    ? null
-                                    : Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        Text(
-          tr(
-            "スロットをタップしてWAV取り込み・名前変更・削除。変換は公式エディタと同じ44.1 kHz・チャンネル0・1024サンプルです。",
-          ),
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12),
-        ),
-      ],
-    );
-  }
-
   Future<void> _irSlotMenu(IrSlotInfo s) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                'IR${s.slot}  ${s.used ? s.name : tr("空き")}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.upload_file),
-              title: Text(tr("WAVから取り込み")),
-              onTap: () => Navigator.pop(context, 'import'),
-            ),
-            if (s.used) ...[
-              ListTile(
-                leading: const Icon(Icons.text_fields),
-                title: Text(tr("名前の変更")),
-                onTap: () => Navigator.pop(context, 'rename'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: Text(tr("削除")),
-                onTap: () => Navigator.pop(context, 'delete'),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+    final action = await pickIrSlotAction(context, s);
     switch (action) {
-      case 'import':
+      case IrSlotAction.import:
         await _irImport(s);
-      case 'rename':
+      case IrSlotAction.rename:
         await _irRename(s);
-      case 'delete':
+      case IrSlotAction.delete:
         await _irDelete(s);
+      case null:
+        break;
     }
-  }
-
-  Widget _settings() {
-    final s = _pedal.settings!;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Expanded(
-              child: _value(tr("入力ゲイン"), s[2], 0, 25, (v) => _setting(2, v)),
-            ),
-            Expanded(
-              child: _value(tr("LED色"), s[11], 0, 9, (v) => _setting(11, v)),
-            ),
-            Expanded(
-              child: _value(
-                tr("LED明るさ"),
-                s[12],
-                0,
-                100,
-                (v) => _setting(12, v),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          dense: true,
-          title: Text(tr("グローバル・キャビネット")),
-          value: s[1] != 0,
-          onChanged: _busy || (widget.restrictedNam && !widget.effectsAvailable)
-              ? null
-              : (v) => _setting(1, v ? 1 : 0),
-        ),
-        SwitchListTile(
-          dense: true,
-          title: Text(tr("Bluetoothオーディオ")),
-          value: s[10] != 0,
-          onChanged: _busy || (widget.restrictedNam && !widget.btAudioAvailable)
-              ? null
-              : (v) => _setting(10, v ? 1 : 0),
-        ),
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text(tr("Bluetooth名の変更")),
-          subtitle: Text(tr("半角英数字・記号で1〜20文字。変更は再接続後に本体側で確認してください。")),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: _busy ? null : () => _guard(_btName),
-        ),
-      ],
-    );
   }
 }

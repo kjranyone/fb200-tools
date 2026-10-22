@@ -46,13 +46,14 @@ external cabinet stage where appropriate.
 - `mobile/lib/tone3000.dart`: PKCE/state, metadata, A2-only pagination, in-memory
   tokens and refresh, authenticated model download and existing NAM parser.
 - `mobile/lib/tone3000_page.dart`: initial configuration, official catalog entry,
-  signed-in identity, tone/creator attribution, variant picker and error states.
+  signed-in identity, lists, downloads and error states. `mobile/lib/tone3000/`
+  holds the attribution widgets, variant picker sheet and device-library tab.
 - `MainActivity.kt` and `ToneCallbackActivity.kt`: Android Custom Tabs and exact
   custom-scheme callback, including browser-back cancellation. Dart verifies
   state and single-use callback before exchanging an authorization code.
 - `mobile/lib/tone_library.dart`: secure session store, the device model
   library and the paced bulk downloader.
-- `main.dart`: imports into the existing slot workflow, including batch transfer
+- `model_page.dart`: imports into the existing slot workflow, including batch transfer
   into empty slots. Source attribution is
   held in the current app/device session; the pedal protocol stores a model name
   and weights, not TONE3000 metadata. Reconnecting/restarting does not reconstruct

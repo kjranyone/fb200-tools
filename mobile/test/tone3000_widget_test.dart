@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:fb200_nam/main.dart';
+import 'package:fb200_nam/model_page.dart';
 import 'package:fb200_nam/nam_model.dart';
 import 'package:fb200_nam/tone3000.dart';
 import 'package:fb200_nam/tone3000_page.dart';
