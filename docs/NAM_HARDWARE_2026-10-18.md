@@ -362,3 +362,29 @@ PC/Android SHA256 both
 `99ec1ecbe3b25b1bd9dd887afc50b3fc6faf578df54b8e4dbb8a1d7b90f0b554`.
 Transfer only; the app was not installed. Evidence (ignored local artifacts):
 `out/studio-deploy-20261020/{deployment.json,before.json,install-app.log,after.json,verification.txt}`.
+
+## Level meters and wide NAM GAIN (2026-10-22, user authorized)
+
+The user asked for the flash. Built from the working tree on
+`feat/nam-a2-lite-studio`, `nam-manager` profile, with op 10 level peaks
+(capability bit 10) and NAM GAIN -18..+18 dB (bit 11); `nam_a2_init` moved to
+flash to fit the meter code in ITCM (848 bytes left). Hot-path check passed.
+Only the application slot was written over USB CDC (COM7).
+
+App slot: 217092 bytes, CRC32 `ab9fa1af`, SHA256
+`9773181c3e9c69999bf6cee798c3388cc36aa429dea022997a30b68330186117`.
+`fw done crc=ab9fa1af ok`; read-back CRC at `0x60020000` matched.
+
+Recovery `cd92299e`, stock `24e05ce5` and NAM models `4d19e34e` were
+unchanged, as were all forty preset records and the 13-byte settings block.
+User data changed `768cedd7` -> `f3dd8acf`: after the reboot the firmware read
+the physical MASTER knob as 33 (32 before) and saved it to the global settings
+(`ui.c`, S+0x18). Recomputing the region CRC with only that byte set back to
+32 gives `768cedd7` exactly (`out/meters-20261022/master_check.py`). The live
+edit lost its unsaved audition (NAM slot 2 on preset 0D) to the stored binding
+(slot 3); it was not restored. `no crash dump`, `dma_errs=0`, `resets=0`;
+`skips` stayed constant over 20 s with a model running (`cpu` max 77% of the
+block budget). The Android app connected over BLE, showed live IN/NAM/OUT
+meters (IN -inf with no instrument playing, OUT -52 dBFS) and the preset's
+GAIN word 0 as -18.0 dB. No guitar listening test yet. Evidence (ignored
+local artifacts): `out/meters-20261022/`.

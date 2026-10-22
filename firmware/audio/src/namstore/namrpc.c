@@ -15,6 +15,7 @@ static uint32_t cached_n, cached_hash;
 static uint16_t cached_id;
 static uint8_t cached_source;
 __attribute__((weak)) uint32_t namrpc_tuner(uint8_t *out) { (void)out; return 0; }
+__attribute__((weak)) uint32_t namrpc_levels(uint8_t *out) { (void)out; return 0; }
 
 void namrpc_task(void)
 {
@@ -47,11 +48,12 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
          * 4 rename (op 9), 5 paged list (op 1 takes a start index),
          * 6 looper (0xD7 control), 7 stock cab/MOD/reverb in the chain,
          * 8 Bluetooth audio mixed in (`nam-manager`),
-         * 9 NAM amp-word tone EQ is connected to the audio path */
+         * 9 NAM amp-word tone EQ is connected to the audio path,
+         * 10 level peaks (op 10), 11 NAM GAIN spans -18..+18 dB */
 #ifdef NAM_UTILITIES
-        wr(out+15,15|16|32|64|128|256|512,2);
+        wr(out+15,15|16|32|64|128|256|512|1024|2048,2);
 #else
-        wr(out+15,7|16|32|512,2);
+        wr(out+15,7|16|32|512|1024|2048,2);
 #endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
     case 1: /* list page [start:u8, 0-based]: [selected][start][count] then
@@ -114,6 +116,11 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
     case 8:
         if(len) { out[4]=1; break; }
         { uint32_t count=namrpc_tuner(out+5);
+          if(count) size+=count; else out[4]=5; }
+        break;
+    case 10: /* level peaks since the last read: input, NAM input, output (f32) */
+        if(len) { out[4]=1; break; }
+        { uint32_t count=namrpc_levels(out+5);
           if(count) size+=count; else out[4]=5; }
         break;
     default: out[4]=5; break;

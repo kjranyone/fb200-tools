@@ -51,9 +51,17 @@ static void test_nam_tone(void)
     assert(memcmp(x, neutral, sizeof x) == 0); /* flat path is bit-exact */
     nam_tone_set(&t, 48000, 100, 50, 50, 50, 50, 25);
     nam_tone_pre(&t, x, 4);
-    assert(fabsf(x[0] - 0.2f) < 0.001f); /* drive BEFORE the nonlinear model */
+    assert(fabsf(x[0] - 0.7943f) < 0.001f); /* drive BEFORE the model: +18 dB */
     nam_tone_post(&t, x, 4);
-    assert(fabsf(x[0] - neutral[0]) < 0.001f); /* level AFTER the model */
+    assert(fabsf(x[0] - 0.3972f) < 0.001f); /* level AFTER the model: x 0.5 */
+    nam_tone_set(&t, 48000, 0, 50, 50, 50, 50, 50);
+    memcpy(x, neutral, sizeof x);
+    nam_tone_pre(&t, x, 4);
+    assert(fabsf(x[0] - 0.01259f) < 0.0001f); /* -18 dB */
+    nam_tone_set(&t, 48000, 25, 50, 50, 50, 50, 50);
+    memcpy(x, neutral, sizeof x);
+    nam_tone_pre(&t, x, 4);
+    assert(fabsf(x[0] - 0.03548f) < 0.0001f); /* -9 dB */
     nam_tone_set(&t, 48000, 50, 50, 50, 50, 50, 0);
     nam_tone_post(&t, x, 4);
     for (unsigned i = 0; i < 4; i++) assert(x[i] == 0.0f);

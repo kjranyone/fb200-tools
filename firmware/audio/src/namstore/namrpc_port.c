@@ -15,6 +15,13 @@ uint32_t namrpc_tuner(uint8_t *out)
     return 16;
 }
 #endif
+uint32_t namrpc_levels(uint8_t *out)
+{
+    float v[3];
+    engine_levels(v);
+    memcpy(out,v,sizeof v);
+    return sizeof v;
+}
 uint32_t proto_hook_nam(uint8_t src,const uint8_t *p,uint32_t n,uint8_t *out,uint32_t cap)
 { return namrpc_request(src,p,n,out,cap); }
 unsigned namrpc_selected(void) { return engine_nam_selected(); }

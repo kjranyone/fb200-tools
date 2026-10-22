@@ -94,7 +94,7 @@ def test_mobile_fixture_matches_python_packet_and_frame():
 
 def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c = client
-    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512, 0)
+    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512 | 1024 | 2048, 0)
     selected, slots = c.list_all()
     assert selected == 0 and not any(used for used, _, _ in slots.values())
     packet = nam.pack(model(), "phone")
@@ -268,6 +268,16 @@ def test_rename_blocked_during_transfer(client):
     token = c.begin(nam.pack(model(), "other"), 2)
     c.call(9, b"\x01" + b"zzz".ljust(24, b"\0"), status=2)
     c.call(5, token)
+
+
+def test_level_peaks_are_read_once(client):
+    client.lib.fake_levels.argtypes = [ct.c_float] * 3
+    client.lib.fake_levels(0.5, 0.25, 0.95)
+    assert struct.unpack("<3f", client.call(10)) == pytest.approx((0.5, 0.25, 0.95))
+    # Peaks restart from silence after each read, like a meter's hold window.
+    assert struct.unpack("<3f", client.call(10)) == (0.0, 0.0, 0.0)
+    client.call(10, b"\x00", status=1)
+    assert client.lib.fake_writes() == 0
 
 
 def test_unsupported_and_capacity(client):

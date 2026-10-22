@@ -158,6 +158,7 @@ _Static_assert(sizeof(nam_a2_t) <= 84u * 1024u, "NAM working set exceeds budget"
 static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
 static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
 static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
+static float s_level[3];      /* engine_levels(): input, NAM input, output */
 #ifdef NAM_RUNTIME
 #include "dsp/nam_a2.h"
 #include "dsp/nam_tone.h"
@@ -486,6 +487,14 @@ COLD void engine_loop_stats(engine_loop_stats_t *out)
     out->cut = s_loop.cut;
 }
 
+void engine_levels(float out[3])
+{
+    for (unsigned i = 0; i < 3; i++) {
+        out[i] = s_level[i];
+        s_level[i] = 0.0f;
+    }
+}
+
 float engine_input_peak(void)
 {
     float p = s_in_peak;
@@ -674,13 +683,14 @@ void engine_task(void)
         testgen_process(&s_testgen, &s_block, n);
         for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
-    float pk = s_in_peak;
+    float pk = 0.0f;
     for (size_t i = 0; i < n; i++) {
         x[i] = s_block.data[0][i] + s_block.data[1][i];
         float a = x[i] < 0.0f ? -x[i] : x[i];
         if (a > pk) pk = a;
     }
-    s_in_peak = pk;
+    if (pk > s_in_peak) s_in_peak = pk;
+    if (pk > s_level[0]) s_level[0] = pk;
     PROF(P_IN);
 #if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     tuner_feed(&s_tuner, x, n);
@@ -698,6 +708,12 @@ void engine_task(void)
     if (s_nam_loading) memset(x, 0, sizeof x);
     else if (s_nam_slot && s_amp_en) {
         nam_tone_pre(&s_nam_tone, x, (unsigned)n);
+        float npk = s_level[1];
+        for (size_t i = 0; i < n; i++) {
+            float a = x[i] < 0.0f ? -x[i] : x[i];
+            if (a > npk) npk = a;
+        }
+        s_level[1] = npk;
         if (nam_a2_process(&s_nam, x, (unsigned)n)) {
             s_nam_slot = 0;
             memset(x, 0, sizeof x);
@@ -795,15 +811,20 @@ void engine_task(void)
     }
     PROF(P_USB_IN);
 
+    float opk = s_level[2];
     for (size_t i = 0; i < n; i++) {
         float l = s_block.data[0][i] + (float)play[i * 2 + 0] * (1.0f / 32768.0f);
         float r = s_block.data[1][i] + (float)play[i * 2 + 1] * (1.0f / 32768.0f);
+        float al = l < 0.0f ? -l : l, ar = r < 0.0f ? -r : r;
+        if (al > opk) opk = al;
+        if (ar > opk) opk = ar;
         /* stock output clip */
         if (l > 0.95f) l = 0.95f; else if (l < -0.95f) l = -0.95f;
         if (r > 0.95f) r = 0.95f; else if (r < -0.95f) r = -0.95f;
         out[i * 2 + 0] = outq_sample(&s_outq, l);   /* rounded (v0.9.1: truncated) */
         out[i * 2 + 1] = outq_sample(&s_outq, r);
     }
+    s_level[2] = opk;
     PROF(P_OUT);
     s_prof_n++;
     uint32_t dt = DWT->CYCCNT - t0;

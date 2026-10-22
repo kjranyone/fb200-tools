@@ -74,7 +74,16 @@ sound. Current firmware connects the preset's amp words to NAM-stage drive,
 three-band tone and level, advertised by capability bit 9. GAIN 50 and VOLUME
 50 are unity; bass/mid/treble 50 are flat. Older firmware without bit 9 applied
 only GAIN/VOLUME. Tone EQ is independent of the five-band EQ after the cab.
-Input/output calibration and listening tests remain necessary.
+
+There is no per-capture input calibration: the model sees the instrument ADC
+(full scale 1.0) times the global input gain and GAIN. Captures are recorded
+at different interface levels, and with a guitar the old GAIN floor of 0.5x
+still overdrove some models. Capability bit 11 widens GAIN to -18..+18 dB
+(0.36 dB per step, 50 unchanged); op 10 level peaks (bit 10) show the
+instrument and model-input levels to set it by. Presets with GAIN other than
+50 sound different on this firmware. To make room for the meter code in ITCM,
+`nam_a2_init` (model selection only) now runs from flash. Measured
+input/output calibration and listening tests remain necessary.
 
 The old 512-tap cab allocation and some unused module state remain in the image;
 they can be removed later. Removing reverb's ITCM state and inactive processing

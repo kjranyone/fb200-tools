@@ -39,11 +39,13 @@ static COLD float mid_hz(unsigned v)
     return 200.0f * dsp_exp2f((float)v * 0.033212f);  /* log2(10)/100 */
 }
 
-/* 0..100 knob -> 0.5..2.0x drive, 50 = 1.0x (exponential around unity) */
+/* 0..100 knob -> -18..+18 dB drive, 50 = 0 dB (0.36 dB per step). The
+ * instrument input is not calibrated to each capture's recording level, so
+ * the model input needs room well below unity (the old +-6 dB was not). */
 static COLD float drive_gain(unsigned v)
 {
     if (v > 100) v = 100;
-    return dsp_exp2f(((int)v - 50) * 0.02f);   /* +-1 octave over 0..100 */
+    return dsp_exp2f(((int)v - 50) * 0.0597947f);   /* 0.36 dB = 0.0597947 octave */
 }
 
 /* 0..100 knob -> 0..2.0x level, 50 = 1.0x */

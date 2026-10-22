@@ -6,6 +6,7 @@
  * baseline measured 719k cycles/block; see docs/NAM_HARDWARE_2026-10-18.md).
  * The repack keeps every accumulator's addend sequence identical to the
  * stream-order reference: bit-identical output (tests/nam_a2_golden.f32). */
+#include "cold.h"
 #include "nam_a2.h"
 #include <string.h>
 
@@ -32,7 +33,7 @@ void nam_a2_reset(nam_a2_t *s)
 /* Repack the validated stream weights in place, history as scratch (76 kB
  * >= 7.5 kB). Per layer: conv [out][in][tap] -> [tap][out*3+in]; head
  * [channel][tap] -> [tap][channel]. bias/mix/linear keep their positions. */
-static void repack(nam_a2_t *s)
+static COLD void repack(nam_a2_t *s)
 {
     float *scratch = s->history;
     memcpy(scratch, s->weights, sizeof s->weights);
@@ -50,8 +51,10 @@ static void repack(nam_a2_t *s)
             s->weights[dst + tap * 3 + c] = scratch[src + c * 16 + tap];
 }
 
-int nam_a2_init(nam_a2_t *s, const float *weights, size_t count,
-                unsigned model_rate, unsigned engine_rate)
+/* Runs from flash: only model selection (engine_nam_select, itself cold)
+ * calls it, and ITCM has no room to spare. */
+COLD int nam_a2_init(nam_a2_t *s, const float *weights, size_t count,
+                     unsigned model_rate, unsigned engine_rate)
 {
     if (!s) return -1;
     s->ready = 0;
