@@ -869,7 +869,7 @@ class _PedalPageState extends State<PedalPage> {
         busy: _busy,
         onBank: _loadBank,
         onSelect: _selectPreset,
-        onBackup: () => _run(tr("バックアップ中"), _backup),
+        onBackup: _backup,
         onRestore: () => _guard(_restore),
         onSave: () => _save(_pedal.selected, _pedal.edit!),
         onRename: () => _guard(() => _rename(_presetMenuTarget())),

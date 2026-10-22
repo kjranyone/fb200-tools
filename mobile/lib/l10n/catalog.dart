@@ -483,7 +483,6 @@ const translations = <String, List<String>>{
   "読み込み前": ["Not loaded", "未读取"],
   "プリセットを管理": ["Manage presets", "管理预设"],
   "NAMライブラリ": ["NAM library", "NAM 模型库"],
-  "バックアップ中": ["Backing up", "正在备份"],
   "全プリセットをファイルへ保存": ["Export all presets to file", "将全部预设导出到文件"],
   "バックアップから復元": ["Restore from backup", "从备份恢复"],
   "編集内容を保存": ["Save edits", "保存编辑"],

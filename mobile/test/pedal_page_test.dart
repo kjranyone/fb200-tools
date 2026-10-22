@@ -1,10 +1,33 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:fb200_nam/pedal_page.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'pedal_client_test.dart' show PedalHarness;
+
+class _SavingPicker extends FilePickerPlatform {
+  String? fileName;
+  Uint8List? bytes;
+  @override
+  Future<Uri?> saveFile({
+    required String fileName,
+    required Uint8List bytes,
+    required String mimeType,
+    String? dialogTitle,
+    String? initialDirectory,
+    Function(FilePickerStatus)? onFileSaving,
+    WindowsOptions windowsOptions = const WindowsOptions(),
+    LinuxOptions linuxOptions = const LinuxOptions(),
+    WebOptions webOptions = const WebOptions(),
+  }) async {
+    this.fileName = fileName;
+    this.bytes = bytes;
+    return Uri.file(fileName);
+  }
+}
 
 void main() {
   testWidgets('narrow editor reads bank and gates unsupported NAM tools', (
@@ -203,6 +226,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('タップ'), findsOneWidget);
     expect(find.text('録音'), findsOneWidget);
+    expect(h.writes, 0);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(h.close);
+  });
+
+  testWidgets('preset backup exports all 40 presets to a file', (tester) async {
+    final picker = _SavingPicker();
+    final previous = FilePickerPlatform.instance;
+    FilePickerPlatform.instance = picker;
+    addTearDown(() => FilePickerPlatform.instance = previous);
+    final h = PedalHarness();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PedalPage(
+          transport: h.wire,
+          restrictedNam: false,
+          toolsAvailable: true,
+          effectsAvailable: true,
+          btAudioAvailable: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('プリセット'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全プリセットをファイルへ保存'));
+    await tester.pumpAndSettle();
+    expect(picker.fileName, 'fb200-presets.json');
+    final json = jsonDecode(utf8.decode(picker.bytes!)) as Map<String, dynamic>;
+    expect(json['presets'], hasLength(40));
     expect(h.writes, 0);
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(h.close);
