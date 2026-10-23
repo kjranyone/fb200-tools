@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import 'ir_wav.dart' show WavError, wavToIr;
+import 'model_kind.dart';
 import 'nam_client.dart' show DeviceState, NamClient;
 import 'nam_tone.dart';
 import 'effect_parameters.dart';
@@ -1409,17 +1410,37 @@ class _PedalPageState extends State<PedalPage> {
     _pendingEdit = null;
   }
 
+  Future<void> _editNamKind() async {
+    final state = _namState, client = widget.namClient;
+    if (_busy || state == null || client == null) return;
+    final slot = state.slots
+        .where((s) => s.number == state.selected && s.name != null)
+        .firstOrNull;
+    if (slot == null) return;
+    final kind = await pickModelKind(context, slot.kind, modelName: slot.name);
+    if (!mounted || kind == null || kind == slot.kind) return;
+    await _run(tr("モデルの種類を保存中"), () async {
+      await client.setKind(slot.number, kind);
+      await _refreshNam(reloadSlots: true);
+    });
+  }
+
   Widget _namModelSelector() => NamModelSelector(
     state: _namState,
     activeModel: _activeModel,
     fallbackModel: widget.namModel,
     namOn: _pedal.edit!.word(0x2c) != 0,
+    // The global cabinet switch off forces the cab off (firmware proto.c).
+    cabOn: widget.restrictedNam && !widget.effectsAvailable
+        ? null
+        : _pedal.settings![1] != 0 && _pedal.edit!.word(0x44) != 0,
     busy: _busy,
     canChoose: widget.namClient != null,
     onChoose: _chooseNamModel,
     onOpenLibrary: widget.onOpenModels == null
         ? null
         : () => _guard(_openModels),
+    onEditKind: widget.namClient?.canStoreKind == true ? _editNamKind : null,
   );
 
   Future<void> _pickEffectParameter(

@@ -3,6 +3,7 @@ import 'localization.dart';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'model_kind.dart';
 import 'nam_model.dart';
 import 'protocol.dart';
 
@@ -10,7 +11,16 @@ class ModelSlot {
   final int number;
   final String? name;
   final int crc;
-  const ModelSlot(this.number, this.name, [this.crc = 0]);
+
+  /// From header byte 52; [ModelKind.unknown] on older firmware.
+  final ModelKind kind;
+  const ModelSlot(
+    this.number,
+    this.name, [
+    this.crc = 0,
+    this.kind = ModelKind.unknown,
+  ]);
+  ModelSlot withKind(ModelKind kind) => ModelSlot(number, name, crc, kind);
 }
 
 class DeviceState {
@@ -79,7 +89,20 @@ class NamClient {
         _cachedGeneration == generation) {
       return _cachedState!;
     }
-    DeviceState remember(DeviceState state) {
+    Future<DeviceState> remember(DeviceState state) async {
+      if (canStoreKind) {
+        // One byte per slot of the firmware's store, empty slots 0.
+        final kinds = await transport.request(11, []);
+        if (kinds.length < slotCount) {
+          throw DeviceError(tr("本体の一覧を読み取れませんでした。"));
+        }
+        state = DeviceState(state.selected, [
+          for (final slot in state.slots)
+            slot.name == null
+                ? slot
+                : slot.withKind(ModelKind.fromCode(kinds[slot.number - 1])),
+        ]);
+      }
       _cachedState = state;
       _cachedGeneration = generation;
       return state;
@@ -148,6 +171,19 @@ class NamClient {
   /// NAM GAIN spans -18..+18 dB instead of 0.5..2x.
   bool get wideNamGain => (capabilityFlags & 2048) != 0;
 
+  /// Header byte 52 holds the model kind (ops 11/12). Older firmware
+  /// rejects a packet with it set.
+  bool get canStoreKind => (capabilityFlags & 4096) != 0;
+
+  /// Rewrites a stored slot's kind byte; the weights stay.
+  Future<void> setKind(int slot, ModelKind kind) async {
+    if (!canStoreKind) {
+      throw DeviceError(tr("このファームウェアはモデルの種類の保存に対応していません。"));
+    }
+    if (slot < 1 || slot > slotCount) throw DeviceError(tr("不正なスロットです。"));
+    await transport.request(12, [slot, kind.code]);
+  }
+
   /// Rename a stored slot. The firmware rule (like the upload header):
   /// 1..23 printable ASCII bytes at 0x21..0x7E, no spaces, NUL padded to 24.
   Future<void> rename(int slot, String name) async {
@@ -185,13 +221,15 @@ class NamClient {
       }
     }
 
+    final packet =
+        (canStoreKind ? model : model.withKind(ModelKind.unknown)).packet;
     var token = 0;
     try {
       checkConnection();
       final begin = await transport.request(2, [
         slot,
-        ...u16(model.packet.length),
-        ...u32(crc32(model.packet)),
+        ...u16(packet.length),
+        ...u32(crc32(packet)),
       ]);
       if (begin.length != 6 || read16(begin, 4) != 0) {
         throw DeviceError(tr("転送を開始できませんでした。"));
@@ -199,14 +237,14 @@ class NamClient {
       token = read32(begin, 0);
       if (token == 0) throw DeviceError(tr("転送番号を確認できませんでした。"));
       var offset = 0;
-      while (offset < model.packet.length) {
+      while (offset < packet.length) {
         checkConnection();
         if (cancelled()) throw TransferCancelled();
-        final end = min(offset + _chunkSize, model.packet.length);
+        final end = min(offset + _chunkSize, packet.length);
         final ack = await transport.request(3, [
           ...u32(token),
           ...u16(offset),
-          ...model.packet.sublist(offset, end),
+          ...packet.sublist(offset, end),
         ]);
         if (ack.length != 6 ||
             read32(ack, 0) != token ||
@@ -214,7 +252,7 @@ class NamClient {
           throw DeviceError(tr("転送位置が一致しません。再転送してください。"));
         }
         offset = end;
-        progress(offset / model.packet.length);
+        progress(offset / packet.length);
       }
       if (cancelled()) throw TransferCancelled();
       committing?.call();
@@ -242,6 +280,7 @@ class NamClient {
 class DemoTransport implements RpcTransport {
   final _models = <int, NamModel>{};
   final _names = <int, String>{1: 'Demo Clean', 2: 'Demo Crunch'};
+  final _kinds = <int, int>{1: ModelKind.fullRig.code, 2: ModelKind.amp.code};
   int _selected = 1, _slot = 0, _crc = 0, _token = 0;
   List<int> _pending = [];
   bool closed = false;
@@ -257,7 +296,7 @@ class DemoTransport implements RpcTransport {
           3,
           64,
           ...u16(packetBytes),
-          ...u16(7 | 16 | 32 | 512),
+          ...u16(7 | 16 | 32 | 512 | 4096),
           _selected,
         ]);
       case 1:
@@ -299,6 +338,7 @@ class DemoTransport implements RpcTransport {
         );
         _models[_slot] = NamModel(name, Uint8List.fromList(_pending));
         _names[_slot] = name;
+        _kinds[_slot] = _pending[52];
         _pending = [];
         return Uint8List(0);
       case 5:
@@ -313,6 +353,7 @@ class DemoTransport implements RpcTransport {
       case 7:
         _models.remove(a[0]);
         _names.remove(a[0]);
+        _kinds.remove(a[0]);
         if (_selected == a[0]) _selected = 0;
         return Uint8List(0);
       case 9:
@@ -322,6 +363,16 @@ class DemoTransport implements RpcTransport {
         _names[a[0]] = String.fromCharCodes(
           a.sublist(1, 25).takeWhile((v) => v != 0),
         );
+        return Uint8List(0);
+      case 11:
+        return Uint8List.fromList([
+          for (var slot = 1; slot <= 64; slot++) _kinds[slot] ?? 0,
+        ]);
+      case 12:
+        if (!_names.containsKey(a[0])) {
+          throw DeviceError(tr("空のスロットです。"));
+        }
+        _kinds[a[0]] = a[1];
         return Uint8List(0);
       default:
         throw DeviceError(tr("未対応の操作です。"));

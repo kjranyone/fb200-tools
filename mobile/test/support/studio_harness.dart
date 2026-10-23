@@ -10,8 +10,11 @@ import '../pedal_client_test.dart' show PedalHarness;
 /// In particular audition must not write flash or lose other preset words.
 class StudioHarness {
   final pedal = PedalHarness();
-  late final client = NamClient(pedal.wire)
-    ..capabilityFlags = 7 | 8 | 16 | 128 | 256 | 512;
+
+  /// Op 0 flags. A recovery test's second harness only lends its link, so
+  /// replies must not touch [client] (it would attach another wire).
+  int flags = 7 | 8 | 16 | 128 | 256 | 512;
+  late final client = NamClient(pedal.wire)..capabilityFlags = flags;
   late Uint8List edit;
   int selected = 1;
   final selections = <List<int>>[];
@@ -24,6 +27,10 @@ class StudioHarness {
 
   /// Op 8 snapshot; null answers unsupported.
   List<int>? tuner;
+
+  /// Header byte 52 per slot (ops 11/12, answered with flags bit 12).
+  final kinds = <int, int>{};
+  final kindWrites = <List<int>>[];
 
   /// The 13 global settings bytes, rewritten by 0xB0.
   final settings = [0, 1, 13, 0, 0, 0, 0, 5, 0, 1, 1, 0, 100];
@@ -60,7 +67,7 @@ class StudioHarness {
               3,
               64,
               ...u16(7548),
-              ...u16(7 | 8 | 16 | 128 | 256 | 512),
+              ...u16(flags),
               selected,
             ],
           );
@@ -92,6 +99,15 @@ class StudioHarness {
           if (args[1] != 0) {
             pedal.presets[pedal.selected] = Uint8List.fromList(edit);
           }
+          pedal.link.reply(bytes);
+        } else if (op == 11 && flags & 4096 != 0) {
+          pedal.link.reply(
+            bytes,
+            data: [for (var i = 1; i <= 64; i++) kinds[i] ?? 0],
+          );
+        } else if (op == 12 && flags & 4096 != 0) {
+          kindWrites.add(List.of(args));
+          kinds[args[0]] = args[1];
           pedal.link.reply(bytes);
         } else if (op == 10 && levels != null) {
           levelReads++;
@@ -127,6 +143,12 @@ class StudioHarness {
         await legacy(bytes);
       }
     };
+  }
+
+  /// Firmware that advertises more, as already seen by [client].
+  void addFlags(int bits) {
+    flags |= bits;
+    client.capabilityFlags |= bits;
   }
 
   void selectPreset(int index) {

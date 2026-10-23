@@ -2,6 +2,7 @@ import '../localization.dart';
 
 import 'package:flutter/material.dart';
 
+import '../model_kind.dart';
 import '../nam_client.dart' show DeviceState;
 import '../studio_theme.dart';
 
@@ -16,6 +17,12 @@ class NamModelSelector extends StatelessWidget {
   final bool namOn, busy, canChoose;
   final VoidCallback onChoose;
 
+  /// Whether the cabinet / IR stage runs after NAM; null without one.
+  final bool? cabOn;
+
+  /// Null when the firmware cannot store a kind.
+  final VoidCallback? onEditKind;
+
   /// Null without NAM model management.
   final VoidCallback? onOpenLibrary;
   const NamModelSelector({
@@ -28,6 +35,8 @@ class NamModelSelector extends StatelessWidget {
     required this.canChoose,
     required this.onChoose,
     required this.onOpenLibrary,
+    this.cabOn,
+    this.onEditKind,
   });
 
   @override
@@ -36,6 +45,16 @@ class NamModelSelector extends StatelessWidget {
     final selected = state?.selected ?? 0;
     final name = activeModel;
     final empty = state != null && !state.slots.any((s) => s.name != null);
+    final slot = state?.slots.where((s) => s.number == selected).firstOrNull;
+    final kind = name == null ? null : slot?.kind;
+    final wantsCab = kind?.wantsCab;
+    final warning = !namOn || cabOn == null || wantsCab == null
+        ? null
+        : wantsCab && !cabOn!
+        ? tr("アンプのみのモデルです。キャビネット/IRをオンにしてください")
+        : !wantsCab && cabOn!
+        ? tr("キャビ込みのモデルに、キャビネット/IRが重なっています")
+        : null;
     final status = state == null
         ? tr("モデルの状態を取得できません")
         : empty
@@ -61,26 +80,46 @@ class NamModelSelector extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    state == null
-                        ? fallbackModel ?? 'NAM MODEL'
-                        : selected == 0
-                        ? '00  BYPASS'
-                        : '${selected.toString().padLeft(2, '0')}  ${name ?? tr("モデルなし")}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          state == null
+                              ? fallbackModel ?? 'NAM MODEL'
+                              : selected == 0
+                              ? '00  BYPASS'
+                              : '${selected.toString().padLeft(2, '0')}  ${name ?? tr("モデルなし")}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (kind != null &&
+                          (kind != ModelKind.unknown ||
+                              onEditKind != null)) ...[
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: ModelKindBadge(
+                            kind,
+                            key: const ValueKey('nam-model-kind'),
+                            onTap: busy ? null : onEditKind,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   Text(
-                    status,
+                    warning ?? status,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: StudioTheme.ready,
+                      color: warning == null
+                          ? StudioTheme.ready
+                          : const Color(0xffe4bd69),
                     ),
                   ),
                 ],

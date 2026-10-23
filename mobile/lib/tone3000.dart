@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
+import 'model_kind.dart';
 import 'nam_model.dart';
 
 const toneCallback = 'fb200nam://oauth/callback';
@@ -631,10 +632,13 @@ class Tone3000Api {
     Uint8List bytes,
   ) {
     try {
+      final parsed = NamModel.parse(bytes, '${model.name}.nam');
+      // The tone's gear wins over the file's own metadata.
+      final kind = ModelKind.fromGear(tone.gear);
       return ImportedTone(
         tone,
         model,
-        NamModel.parse(bytes, '${model.name}.nam'),
+        kind == ModelKind.unknown ? parsed : parsed.withKind(kind),
       );
     } on FormatException catch (e) {
       throw ToneIncompatible(tr("このモデルはFB200で使用できません。{0}", [e.message]));

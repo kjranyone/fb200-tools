@@ -984,4 +984,53 @@ const translations = <String, List<String>>{
     "更新设备固件后即可显示电平表。",
   ],
   "音を検出していません": ["No note detected", "未检测到音符"],
+  "種類未設定": ["Kind not set", "未设置类型"],
+  "種類を設定すると、キャビネットの要否を表示します": [
+    "Set the kind to see whether it needs the cabinet",
+    "设置类型后会提示是否需要箱体",
+  ],
+  "キャビ込みの音 · キャビネット/IRはオフ": [
+    "Includes the cab · cabinet/IR off",
+    "已含箱体 · 关闭箱体/IR",
+  ],
+  "アンプのみ · キャビネット/IRと組み合わせ": [
+    "Amp only · pair with the cabinet/IR",
+    "仅放大器 · 需搭配箱体/IR",
+  ],
+  "キャビのみ · 前段のアンプがないため単体では不完全": [
+    "Cab only · incomplete without an amp before it",
+    "仅箱体 · 前面没有放大器，单独使用不完整",
+  ],
+  "ペダルのみ · 後段のアンプがないため単体では不完全": [
+    "Pedal only · incomplete without an amp after it",
+    "仅效果器 · 后面没有放大器，单独使用不完整",
+  ],
+  "スタジオ機材 · キャビネットの要否は機材次第": [
+    "Studio gear · whether it needs a cabinet depends on the unit",
+    "录音棚设备 · 是否需要箱体取决于设备",
+  ],
+  "空間系のキャプチャ": ["Ambience capture", "空间效果捕获"],
+  "実験的なキャプチャ": ["Experimental capture", "实验性捕获"],
+  "モデルの種類": ["Model kind", "模型类型"],
+  "「{0}」の種類": ["Kind of “{0}”", "“{0}”的类型"],
+  "モデルの種類を保存中": ["Saving the model kind", "正在保存模型类型"],
+  "スロット {0} の種類を「{1}」にしました。": [
+    "Slot {0} is now marked as {1}.",
+    "已将槽位 {0} 的类型设为“{1}”。",
+  ],
+  "種類の変更": ["Change kind", "更改类型"],
+  "このファームウェアはモデルの種類の保存に対応していません。": [
+    "This firmware cannot store model kinds.",
+    "此固件不支持保存模型类型。",
+  ],
+  "不正なスロットです。": ["Invalid slot.", "槽位无效。"],
+  "アンプのみのモデルです。キャビネット/IRをオンにしてください": [
+    "Amp-only model: turn the cabinet/IR on",
+    "仅放大器模型：请打开箱体/IR",
+  ],
+  "キャビ込みのモデルに、キャビネット/IRが重なっています": [
+    "This model includes a cab; the cabinet/IR doubles it",
+    "该模型已含箱体，箱体/IR 重复叠加",
+  ],
+  "すべて": ["All", "全部"],
 };

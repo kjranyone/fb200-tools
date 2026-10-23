@@ -13,6 +13,7 @@ import 'connection_recovery.dart';
 import 'widgets/device_picker.dart';
 import 'widgets/dialogs.dart';
 import 'widgets/recovery_layer.dart';
+import 'model_kind.dart';
 import 'nam_client.dart';
 import 'nam_model.dart';
 import 'pedal_client.dart';
@@ -295,7 +296,20 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
             Text(tr("空きスロットにだけ転送します。使用中のスロットは上書きしません。")),
             const SizedBox(height: 12),
             for (final (slot, item) in plan)
-              Text('${'$slot'.padLeft(2, '0')}  ←  ${item.model.name}'),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      '${'$slot'.padLeft(2, '0')}  ←  ${item.model.name}',
+                    ),
+                  ),
+                  if (item.model.kind != ModelKind.unknown &&
+                      client.canStoreKind) ...[
+                    const SizedBox(width: 8),
+                    Flexible(child: ModelKindBadge(item.model.kind)),
+                  ],
+                ],
+              ),
             if (items.length > plan.length) ...[
               const SizedBox(height: 12),
               Text(
@@ -486,6 +500,40 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
         setState(() => _message = tr("スロット {0} の名前を変更しました。", [slot.number]));
       }
     });
+  }
+
+  Future<void> _changeSlotKind(ModelSlot slot) async {
+    final client = _client;
+    if (client == null || !mounted) return;
+    final kind = await pickModelKind(context, slot.kind, modelName: slot.name);
+    if (kind == null || kind == slot.kind || !mounted || _client != client) {
+      return;
+    }
+    await _run(tr("モデルの種類を保存中"), () async {
+      await client.setKind(slot.number, kind);
+      await _refresh();
+      if (mounted) {
+        setState(
+          () => _message = tr("スロット {0} の種類を「{1}」にしました。", [
+            slot.number,
+            kind.label,
+          ]),
+        );
+      }
+    });
+  }
+
+  /// The kind travels with the transfer; the firmware stores it.
+  Future<void> _changePendingKind() async {
+    final model = _model;
+    if (model == null) return;
+    final kind = await pickModelKind(
+      context,
+      model.kind,
+      modelName: model.name,
+    );
+    if (kind == null || !mounted || _model != model) return;
+    setState(() => _model = model.withKind(kind));
   }
 
   void _listenRecovery() {
@@ -941,12 +989,23 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
       const SizedBox(height: 12),
       ToneAttribution(_toneSource!.tone),
     ],
-    if (_model != null)
+    if (_model != null) ...[
       Padding(
         padding: const EdgeInsets.only(top: 12),
         child: Text(tr("{0}\nA2-Lite · 48 kHz · 本体への転送待ち", [_model!.name])),
       ),
-    if (_model != null) ...[
+      // Old firmware cannot store a kind; the transfer clears it there.
+      if (_client?.canStoreKind ?? true) ...[
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ModelKindBadge(
+            _model!.kind,
+            key: const ValueKey('pending-model-kind'),
+            onTap: _busy ? null : _changePendingKind,
+          ),
+        ),
+      ],
       const SizedBox(height: 12),
       FilledButton.icon(
         onPressed: _busy || _state == null ? null : _chooseTransferSlot,
@@ -974,9 +1033,20 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: Text(
-            slot.name ?? tr("空きスロット"),
-            style: const TextStyle(fontSize: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                slot.name ?? tr("空きスロット"),
+                style: const TextStyle(fontSize: 18),
+              ),
+              if (slot.name != null &&
+                  (slot.kind != ModelKind.unknown ||
+                      _client!.canStoreKind)) ...[
+                const SizedBox(height: 4),
+                ModelKindBadge(slot.kind),
+              ],
+            ],
           ),
         ),
         if (_state!.selected == slot.number) Chip(label: Text(tr("選択中"))),
@@ -988,6 +1058,8 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
               switch (v) {
                 case 'rename':
                   _renameSlot(slot);
+                case 'kind':
+                  _changeSlotKind(slot);
                 case 'delete':
                   _delete(slot);
               }
@@ -995,6 +1067,8 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
             itemBuilder: (_) => [
               if (_client!.canRename)
                 PopupMenuItem(value: 'rename', child: Text(tr("名前の変更"))),
+              if (_client!.canStoreKind)
+                PopupMenuItem(value: 'kind', child: Text(tr("種類の変更"))),
               PopupMenuItem(value: 'delete', child: Text(tr("削除"))),
             ],
           ),

@@ -3,6 +3,7 @@ import 'localization.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'model_kind.dart';
 import 'protocol.dart';
 
 const kernels = [
@@ -76,6 +77,22 @@ class NamModel {
   final String name;
   final Uint8List packet;
   NamModel(this.name, this.packet);
+
+  /// Header byte 52 (firmware capability bit 12); older firmware needs 0.
+  ModelKind get kind => ModelKind.fromCode(packet[52]);
+
+  /// The same capture with another kind byte; weights and their CRC stay.
+  NamModel withKind(ModelKind kind) {
+    if (packet[52] == kind.code) return this;
+    final copy = Uint8List.fromList(packet);
+    copy[52] = kind.code;
+    _seal(copy);
+    return NamModel(name, copy);
+  }
+
+  static void _seal(Uint8List packet) => ByteData.sublistView(
+    packet,
+  ).setUint32(60, crc32(Uint8List.sublistView(packet, 0, 60)), Endian.little);
 
   factory NamModel.parse(Uint8List bytes, String filename) {
     require(bytes.length <= 8 * 1024 * 1024, tr("ファイルが大きすぎます（上限8 MB）。"));
@@ -259,11 +276,10 @@ class NamModel {
     view.setUint32(12, weightCount, Endian.little);
     view.setUint32(16, crc32(Uint8List.sublistView(packet, 64)), Endian.little);
     packet.setRange(24, 24 + name.length, name.codeUnits);
-    view.setUint32(
-      60,
-      crc32(Uint8List.sublistView(packet, 0, 60)),
-      Endian.little,
-    );
+    final metadata = document['metadata'];
+    final gear = metadata is Map ? metadata['gear_type'] : null;
+    packet[52] = ModelKind.fromGear(gear is String ? gear : null).code;
+    _seal(packet);
     return NamModel(name, packet);
   }
 }

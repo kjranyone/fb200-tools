@@ -2,6 +2,7 @@ import '../localization.dart';
 
 import 'package:flutter/material.dart';
 
+import '../model_kind.dart';
 import '../nam_client.dart';
 import '../studio_theme.dart';
 
@@ -46,6 +47,9 @@ class NamModelPicker extends StatefulWidget {
 class _NamModelPickerState extends State<NamModelPicker> {
   String _query = '';
 
+  /// Null shows every kind.
+  ModelKind? _kind;
+
   @override
   Widget build(BuildContext context) {
     final all = [
@@ -54,10 +58,15 @@ class _NamModelPickerState extends State<NamModelPicker> {
         if (widget.transfer || slot.name != null) slot,
     ];
     final query = _query.trim().toLowerCase();
+    final kinds = {
+      for (final s in widget.state.slots)
+        if (s.name != null) s.kind,
+    };
     final slots = all
         .where(
           (s) =>
-              '${s.number.toString().padLeft(2, '0')} ${s.name ?? tr("空きスロット")}'
+              (_kind == null || s.number == 0 || s.kind == _kind) &&
+              '${s.number.toString().padLeft(2, '0')} ${s.name ?? tr("空きスロット")} ${s.name == null || s.number == 0 ? '' : s.kind.label}'
                   .toLowerCase()
                   .contains(query),
         )
@@ -103,6 +112,29 @@ class _NamModelPickerState extends State<NamModelPicker> {
                   isDense: true,
                 ),
               ),
+              if (!compact && kinds.length > 1 && !widget.transfer) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final kind in [null, ...ModelKind.values])
+                        if (kind == null || kinds.contains(kind))
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              key: ValueKey(
+                                'nam-kind-filter-${kind?.name ?? 'all'}',
+                              ),
+                              label: Text(kind?.label ?? tr("すべて")),
+                              selected: _kind == kind,
+                              onSelected: (_) => setState(() => _kind = kind),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               Expanded(
                 child: slots.isEmpty
@@ -139,10 +171,21 @@ class _NamModelPickerState extends State<NamModelPicker> {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              title: Text(
-                                slot.name ?? tr("空きスロット"),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              title: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      slot.name ?? tr("空きスロット"),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (slot.name != null &&
+                                      slot.kind != ModelKind.unknown) ...[
+                                    const SizedBox(width: 8),
+                                    Flexible(child: ModelKindBadge(slot.kind)),
+                                  ],
+                                ],
                               ),
                               subtitle: Text(
                                 widget.transfer

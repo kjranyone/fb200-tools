@@ -69,6 +69,13 @@ See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX
   dBFS is in each meter's tooltip. Without bit 10 the sidebar explains the
   missing meters. The global input gain stays in Settings, shown in dB
   (stock steps: -55..-5 dB in 5 dB steps, 0 dB, then +0.5 dB to +6 dB).
+- **Model kinds**: each stored model carries what it captures (Amp + Cab,
+  Amp, Cab, Pedal, Outboard, Space, Experimental) in its header on firmware
+  with capability bit 12. TONE3000 transfers take the tone's gear, `.nam`
+  files their `gear_type` metadata, and the kind can be changed before or
+  after a transfer. The NAM block shows the kind and warns when the cabinet /
+  IR stage doubles a full rig's cab or an amp-only model plays without one;
+  the model picker filters by kind.
 - **NAM tone controls**: GAIN is pre-model drive (50 = unity; -18..+18 dB on
   firmware with capability bit 11, 0.5..2x before),
   BASS/MID/TREBLE are ±12 dB shelves/peak after the model, MID FREQ sweeps
