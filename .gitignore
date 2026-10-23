@@ -15,3 +15,9 @@ build/
 **/.deps
 .claude/
 out/
+
+# local agent tooling
+.agents/
+.grok/
+.zcode/
+skills-lock.json
