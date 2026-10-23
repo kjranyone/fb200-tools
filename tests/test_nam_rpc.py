@@ -94,7 +94,7 @@ def test_mobile_fixture_matches_python_packet_and_frame():
 
 def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c = client
-    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512 | 1024 | 2048, 0)
+    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512 | 1024 | 2048 | 4096, 0)
     selected, slots = c.list_all()
     assert selected == 0 and not any(used for used, _, _ in slots.values())
     packet = nam.pack(model(), "phone")
@@ -267,6 +267,34 @@ def test_rename_blocked_during_transfer(client):
     c.upload(packet, 1)
     token = c.begin(nam.pack(model(), "other"), 2)
     c.call(9, b"\x01" + b"zzz".ljust(24, b"\0"), status=2)
+    c.call(5, token)
+
+
+def test_kind_byte_is_stored_listed_set_and_kept_by_rename(client):
+    c = client
+    assert c.call(11) == bytes(64)
+    c.upload(nam.pack(model(), "fullrig", kind=1), 1)
+    assert c.lib.namstore_write(2, staging(nam.pack(model(), "unknown"))) == 0
+    assert c.lib.namstore_write(64, staging(nam.pack(model(), "future", kind=200))) == 0
+    kinds = c.call(11)
+    assert len(kinds) == 64 and kinds[:3] == bytes([1, 0, 0]) and kinds[63] == 200
+    c.call(12, bytes([2, 2]))
+    stored = latest(c.lib, 2)
+    assert stored[52] == 2 and stored[64:] == nam.pack(model())[64:]
+    c.call(9, bytes([2]) + b"renamed".ljust(24, bytes(1)))
+    assert c.call(11)[1] == 2 and slot_name(c, 2) == "renamed"
+    # Empty and out-of-range slots and malformed requests write nothing.
+    writes = c.lib.fake_writes()
+    c.call(12, bytes([3, 1]), status=1)
+    c.call(12, bytes([0, 1]), status=1)
+    c.call(12, bytes([65, 1]), status=1)
+    c.call(12, bytes([1]), status=1)
+    c.call(11, bytes([0]), status=1)
+    c.call(7, bytes([1]))
+    assert c.call(11)[0] == 0
+    assert c.lib.fake_writes() == writes + 3   # only the delete commit
+    token = c.begin(nam.pack(model(), "other"), 3)
+    c.call(12, bytes([2, 4]), status=2)
     c.call(5, token)
 
 

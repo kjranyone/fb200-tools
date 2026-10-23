@@ -49,11 +49,12 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
          * 6 looper (0xD7 control), 7 stock cab/MOD/reverb in the chain,
          * 8 Bluetooth audio mixed in (`nam-manager`),
          * 9 NAM amp-word tone EQ is connected to the audio path,
-         * 10 level peaks (op 10), 11 NAM GAIN spans -18..+18 dB */
+         * 10 level peaks (op 10), 11 NAM GAIN spans -18..+18 dB,
+         * 12 model kind byte (ops 11/12, header byte 52) */
 #ifdef NAM_UTILITIES
-        wr(out+15,15|16|32|64|128|256|512|1024|2048,2);
+        wr(out+15,15|16|32|64|128|256|512|1024|2048|4096,2);
 #else
-        wr(out+15,7|16|32|512|1024|2048,2);
+        wr(out+15,7|16|32|512|1024|2048|4096,2);
 #endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
     case 1: /* list page [start:u8, 0-based]: [selected][start][count] then
@@ -122,6 +123,19 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         if(len) { out[4]=1; break; }
         { uint32_t count=namrpc_levels(out+5);
           if(count) size+=count; else out[4]=5; }
+        break;
+    case 11: /* kinds: one byte per slot 1..64, 0 for an empty slot */
+        if(len) { out[4]=1; break; }
+        for(unsigned slot=1;slot<=NAMSTORE_SLOTS;slot++) {
+            int kind=namstore_kind(slot);
+            out[size++]=(uint8_t)(kind<0?0:kind);
+        }
+        break;
+    case 12: /* set kind: [slot][kind] */
+        if(len!=2 || a[0]<1 || a[0]>NAMSTORE_SLOTS) { out[4]=1; break; }
+        if(namstore_active()) { out[4]=2; break; }
+        { int r=namstore_set_kind(a[0],a[1]);
+          out[4]=r==0?0:(r==-2||r==-3)?4:1; }
         break;
     default: out[4]=5; break;
     }

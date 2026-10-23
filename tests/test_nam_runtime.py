@@ -119,7 +119,7 @@ def test_bad_packets_and_boundaries(store):
     store.fake_capacity(END-1)
     assert store.namstore_write(1, staging(packet)) < 0
     store.fake_capacity(0x800000)
-    for offset, value in ((4, 2), (6, 8), (8, 0), (12, 0), (47, 65), (52, 1)):
+    for offset, value in ((4, 2), (6, 8), (8, 0), (12, 0), (47, 65), (53, 1), (59, 1)):
         bad = bytearray(packet)
         bad[offset] = value
         reseal(bad)

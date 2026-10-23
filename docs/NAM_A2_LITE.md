@@ -136,7 +136,7 @@ RAM untouched. Transfer inactivity aborts after 3 seconds without committing.
 | 8 / 12 | rate 48000 / weight count 1871, u32 each |
 | 16 / 20 | payload CRC32 / sequence, u32 each |
 | 24 | printable non-space name, NUL-padded 24 bytes |
-| 48 / 52 | flags (0=model, 1=stored deletion) / reserved zeros |
+| 48 / 52 / 53 | flags (0=model, 1=stored deletion) / model kind (capability bit 12, [NAM_BLE_PROTOCOL.md](NAM_BLE_PROTOCOL.md); zero before) / reserved zeros |
 | 60 | CRC32 of header bytes 0..59 |
 | 64 | 1871 float32 weights, original validated `.nam` stream order |
 

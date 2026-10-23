@@ -14,6 +14,10 @@
 #define NAMSTORE_HEADER 64u
 #define NAMSTORE_BYTES (NAMSTORE_HEADER + NAM_A2_WEIGHTS * 4u)
 #define NAMSTORE_MAGIC 0x4d4e4246u /* FBNM */
+/* Header byte 52: what the capture is (0 unknown, 1 amp + cab, 2 amp, 3 cab,
+ * 4 pedal, 5 outboard, 6 space, 7 experimental; docs/NAM_BLE_PROTOCOL.md).
+ * Any value is stored; 53..59 stay reserved zero. */
+#define NAMSTORE_KIND 52u
 /* Validates header, architecture/rate, finite weights and both CRCs.
  * 1 model, 2 tombstone, 0 invalid. Packet length is always NAMSTORE_BYTES. */
 int namstore_valid(const uint8_t *record);
@@ -34,6 +38,10 @@ int namstore_write(unsigned slot, uint8_t *staging);
  * packet to the alternate bank (old bank stays valid until the header
  * commit). Name: 1..23 printable bytes at 33..126, NUL padded to 24. */
 int namstore_rename(unsigned slot, const uint8_t *name);
+/* Rewrites the stored slot with a new kind byte, like rename. */
+int namstore_set_kind(unsigned slot, uint8_t kind);
+/* Kind byte of a stored model, -1 for an empty/tombstoned/invalid slot. */
+int namstore_kind(unsigned slot);
 int namstore_delete(unsigned slot);
 int namstore_begin(unsigned slot, uint32_t bytes, uint32_t crc);
 int namstore_active(void);

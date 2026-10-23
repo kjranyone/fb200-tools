@@ -20,7 +20,7 @@ def slot_number(value):
     return value
 
 
-def pack(document, name="NAM"):
+def pack(document, name="NAM", kind=0):
     try:
         weights = validate(document)
     except (ValueError, KeyError, TypeError, IndexError, AttributeError, OverflowError) as exc:
@@ -30,6 +30,7 @@ def pack(document, name="NAM"):
     header = bytearray(HEADER)
     struct.pack_into("<IHHIIII24s", header, 0, MAGIC, 1, 2, 48000, WEIGHTS,
                      zlib.crc32(payload), 0, name.encode("ascii"))
+    header[52] = kind   # model kind (firmware namstore.h); old firmware needs 0
     struct.pack_into("<I", header, 60, zlib.crc32(header[:60]))
     return bytes(header) + payload
 

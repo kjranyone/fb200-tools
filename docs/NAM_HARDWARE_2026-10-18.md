@@ -388,3 +388,35 @@ block budget). The Android app connected over BLE, showed live IN/NAM/OUT
 meters (IN -inf with no instrument playing, OUT -52 dBFS) and the preset's
 GAIN word 0 as -18.0 dB. No guitar listening test yet. Evidence (ignored
 local artifacts): `out/meters-20261022/`.
+
+## Model kind byte and first classification (2026-10-23, user authorized)
+
+The user asked for the flash and then for the stored models to be classified.
+Built from the working tree on `feat/nam-a2-lite-studio`, `nam-manager`
+profile, adding the model kind in header byte 52 with ops 11/12 (capability
+bit 12; flags now 8191). Hot-path check passed; ITCM headroom unchanged (848
+bytes). Only the application slot was written over USB CDC (COM7).
+
+App slot: 217380 bytes, CRC32 `4236b9e4`, SHA256
+`eaf3718412dd9984b02c2b08929914da68a9c394e5904f5bd81ea45684743d8a`.
+`fw done crc=4236b9e4 ok`; read-back CRC matched. Recovery `cd92299e`, stock
+`24e05ce5`, user data `1ce5c2b1` and NAM models `1b6ff0d5` were unchanged by the
+flash, as were all forty presets and the settings block. The reboot dropped
+the unsaved audition in the live edit (NAM slot 5 on preset 0A); it was
+restored to RAM without a preset save. `no crash dump`, `dma_errs=0`,
+`resets=0`.
+
+Classification: each slot's payload CRC (read from its header with
+`dumpmem`) was matched against the tablet's TONE3000 library (`run-as` copy
+of the app's `index.json` and models, packed with `fb200.nam.pack`). All seven
+stored models match a library entry whose tone is TONE3000 gear `amp-cab`
+(slots 6 and 7 duplicate slots 2 and 1). Slot 3 (ENGL Powerball II / Fatbox /
+Celestion Raven) has file metadata `amp`, but the tone gear and title include
+the cab, so it was classified with the tone. Op 12 over HID set kind 1 on
+slots 1..7; each slot moved to its other bank (sequence + 1) with name and
+payload CRC unchanged, op 11 returned `[1]*7` and zeros after. Only the NAM
+model region changed (`1b6ff0d5` -> `f44841b0`); recovery, stock, user data,
+presets, settings and the live edit were unchanged. The Android app connected
+over BLE and showed `05 Jcm800  Amp + Cab` with the doubled-cab warning for
+preset 0A (its CAB block is on); the preset was not changed. Evidence (ignored
+local artifacts): `out/kind-20261023/`.

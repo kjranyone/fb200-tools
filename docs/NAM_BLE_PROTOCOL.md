@@ -49,6 +49,8 @@ Multi-byte fields below are little endian. Maximum request payload is 80 bytes.
 | 8 tuner snapshot (`nam-manager`) | empty | enabled:u8, valid:u8, note:u8 (1..12 A#..A), octave:i8, frequency:f32, cents:f32, confidence:f32 |
 | 9 rename (`flags` bit 4) | slot:u8 (1..64), name:24 bytes NUL-padded, 1..23 printable (33..126) | empty |
 | 10 level peaks (`flags` bit 10) | empty | input:f32, namInput:f32, output:f32 |
+| 11 model kinds (`flags` bit 12) | empty | 64 bytes: header byte 52 of slots 1..64, 0 for an empty slot |
+| 12 set kind (`flags` bit 12) | slot:u8 (1..64), kind:u8 | empty |
 
 The store holds 64 slots in F:0x400000..0x4FFFFF (the former long IR store
 area; the long IR store is not compiled into NAM profiles). The unpaged op-1
@@ -65,6 +67,14 @@ empty/tombstoned slot or an invalid name, 2 while a transfer holds staging,
 4 on flash failure. A cached failure replays for the same request id; issue a
 new id (and refresh) to retry.
 
+Header byte 52 says what the capture is: 0 unknown, 1 amp + cab (full rig),
+2 amp, 3 cab, 4 pedal, 5 outboard, 6 space, 7 experimental. The firmware stores
+any value; clients show other codes as unknown. An upload carries it in the
+packet header; op 12 re-commits the stored packet with a new kind exactly like
+op 9 (same statuses, the name and weights stay), and op 9 keeps the kind.
+Firmware without bit 12 rejects a packet whose byte 52 is not 0, so clients
+send 0 there.
+
 Flags: bit 0 framed upload, bit 1 select/preset save, bit 2 delete,
 bit 3 drum machine + live tuner (`PROFILE=nam-manager`), bit 4 rename (op 9,
 both profiles), bit 5 paged list (op 1 takes a start byte; 64 slots), bit 6
@@ -74,7 +84,8 @@ the chain after the NAM stage (`nam-manager`; 44.1 kHz IRs resampled to
 runs in every profile — the module slaves to our I2S clock, so 48 kHz needs
 no resampling), bit 9 NAM tone EQ connected to the audio path (both NAM
 profiles), bit 10 level peaks (op 10, both NAM profiles), bit 11 NAM GAIN
-spans -18..+18 dB at 0.36 dB per step (both NAM profiles; before, 0.5..2x).
+spans -18..+18 dB at 0.36 dB per step (both NAM profiles; before, 0.5..2x),
+bit 12 model kind byte (ops 11/12, both NAM profiles).
 Without bit 9, only the amp words GAIN/VOLUME affect NAM audio;
 clients must not offer the other four tone controls as active. Op 8 is read-only;
 the existing B8/BA commands still control tuner/rhythm. Its floats are little
@@ -84,8 +95,8 @@ Op 10 is read-only too. Each little-endian float is that tap's largest |sample|
 instrument input L + R before the input gain, the NAM model's input after
 input gain, gate, compressor and GAIN (0 while no model runs), and the output
 before the ±0.95 clip. It does not touch the idle timer's input peak.
-The base restricted `nam-runtime` reports flags 7|16|32|512|1024|2048 = 3639
-(plus bits 3, 6, 7 and 8 for `nam-manager`: 4095) and 64 slots; the earlier three-slot
+The base restricted `nam-runtime` reports flags 7|16|32|512|1024|2048|4096 = 7735
+(plus bits 3, 6, 7 and 8 for `nam-manager`: 8191) and 64 slots; the earlier three-slot
 firmware reported 7 (15 with utilities) without bits 4/5.
 Status:
 0 success, 1 invalid args/incomplete packet, 2 staging busy, 3 CRC/model validation

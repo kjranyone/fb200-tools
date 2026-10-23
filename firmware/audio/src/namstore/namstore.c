@@ -25,7 +25,8 @@ int namstore_valid(const uint8_t *p)
     if (get32(p+48) == 1 && get32(p+12) == 0 && get32(p+16) == 0) return 2;
     if (get32(p+48) || get32(p+12) != NAM_A2_WEIGHTS || !p[24] || p[47]) return 0;
     for (unsigned i=24; i<47 && p[i]; i++) if (p[i] < 33 || p[i] > 126) return 0;
-    for (unsigned i=52; i<60; i++) if (p[i]) return 0;
+    /* 52 is the model kind (any value; the app names them), 53..59 reserved */
+    for (unsigned i=NAMSTORE_KIND+1u; i<60; i++) if (p[i]) return 0;
     if (crc32_ieee(p+NAMSTORE_HEADER, NAM_A2_WEIGHTS*4) != get32(p+16)) return 0;
     for (unsigned i=0; i<NAM_A2_WEIGHTS; i++) {
         /* Reject IEEE754 exponent 255: no floating-point interpretation of
@@ -84,9 +85,23 @@ int namstore_delete(unsigned slot)
     return namstore_write(slot, p);
 }
 
-int namstore_rename(unsigned slot, const uint8_t *name)
+/* Commits the current model again with header bytes [at, at+n) replaced,
+ * to the alternate bank (old bank stays valid until the header commit). */
+static int rewrite(unsigned slot, unsigned at, const uint8_t *data, unsigned n)
 {
     if (session.active || slot < 1 || slot > NAMSTORE_SLOTS || !namstore_ready()) return -1;
+    int bank = namstore_current(slot);
+    const uint8_t *cur = bank < 0 ? 0 : namstore_record(slot, (unsigned)bank);
+    if (!cur || namstore_valid(cur) != 1) return -1;   /* empty or tombstoned */
+    uint8_t *p = namstore_buffer();
+    memcpy(p, cur, NAMSTORE_BYTES);
+    memcpy(p + at, data, n);
+    seal(p);   /* the header CRC covers it; weights and their CRC stay */
+    return namstore_write(slot, p);   /* alternate bank, sequence + 1 */
+}
+
+int namstore_rename(unsigned slot, const uint8_t *name)
+{
     /* Same name rule as namstore_valid(): 1..23 printable bytes (33..126),
      * NUL-terminated inside the 24-byte field, nothing after the NUL. */
     unsigned n = 0;
@@ -96,15 +111,19 @@ int namstore_rename(unsigned slot, const uint8_t *name)
     }
     if (n == 24 || n == 0) return -1;
     for (unsigned i = n; i < 24; i++) if (name[i]) return -1;
+    return rewrite(slot, 24, name, 24);
+}
+
+int namstore_set_kind(unsigned slot, uint8_t kind)
+{
+    return rewrite(slot, NAMSTORE_KIND, &kind, 1);
+}
+
+int namstore_kind(unsigned slot)
+{
     int bank = namstore_current(slot);
-    const uint8_t *cur = bank < 0 ? 0 : namstore_record(slot, (unsigned)bank);
-    if (!cur || namstore_valid(cur) != 1) return -1;   /* empty or tombstoned */
-    uint8_t *p = namstore_buffer();
-    memcpy(p, cur, NAMSTORE_BYTES);
-    memset(p + 24, 0, 24);
-    memcpy(p + 24, name, n);
-    seal(p);   /* the header CRC covers the name; weights and their CRC stay */
-    return namstore_write(slot, p);   /* alternate bank, sequence + 1 */
+    const uint8_t *r = bank < 0 ? 0 : namstore_record(slot, (unsigned)bank);
+    return r && get32(r+48) == 0 ? r[NAMSTORE_KIND] : -1;
 }
 
 int namstore_begin(unsigned slot, uint32_t bytes, uint32_t crc)
