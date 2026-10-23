@@ -50,11 +50,12 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
          * 8 Bluetooth audio mixed in (`nam-manager`),
          * 9 NAM amp-word tone EQ is connected to the audio path,
          * 10 level peaks (op 10), 11 NAM GAIN spans -18..+18 dB,
-         * 12 model kind byte (ops 11/12, header byte 52) */
+         * 12 model kind byte (ops 11/12, header byte 52),
+         * 13 second NAM before the first (preset words 0xE2..0xE9) */
 #ifdef NAM_UTILITIES
-        wr(out+15,15|16|32|64|128|256|512|1024|2048|4096,2);
+        wr(out+15,15|16|32|64|128|256|512|1024|2048|4096|8192,2);
 #else
-        wr(out+15,7|16|32|512|1024|2048|4096,2);
+        wr(out+15,7|16|32|512|1024|2048|4096|8192,2);
 #endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
     case 1: /* list page [start:u8, 0-based]: [selected][start][count] then

@@ -10,14 +10,14 @@
 #include "arm_const_structs.h"
 #include "stock_data.h"
 
-void cab_init_long(cab_t *c, conv2_tail_t *tail)
+COLD void cab_init_long(cab_t *c, conv2_tail_t *tail)
 {
     memset(c, 0, sizeof *c);
     (void)conv2_init(&c->conv, tail);        /* unit impulse */
     c->scale = 1.0f;
 }
 
-void cab_init(cab_t *c)
+COLD void cab_init(cab_t *c)
 {
     memset(c, 0, sizeof *c);
     (void)conv2_init_head(&c->conv);         /* unit impulse; no 512-point FFT linked */

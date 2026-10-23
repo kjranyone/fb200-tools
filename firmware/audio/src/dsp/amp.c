@@ -8,7 +8,7 @@
 #include "cold.h"
 #include "amp.h"
 
-void amp_init(amp_t *a, float fs)
+COLD void amp_init(amp_t *a, float fs)
 {
     memset(a, 0, sizeof *a);
     a->fs = fs;

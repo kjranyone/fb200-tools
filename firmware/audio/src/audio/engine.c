@@ -199,6 +199,58 @@ COLD int engine_nam_select(unsigned slot)
     return 0;
 }
 
+/* The FX arena (DTCM above the delay line, freed for it): the second NAM's
+ * state or, later, a heavy FX mode's buffers. One owner at a time, so the
+ * two can never run together - the exclusivity is the memory itself. */
+enum { ARENA_FREE, ARENA_NAM2, ARENA_FX };
+static union { nam_a2_t nam; } s_arena __attribute__((section(".dtcm_hi")));
+static uint8_t s_arena_owner;
+static unsigned s_nam2_slot;
+static float s_nam2_fade, s_nam2_gain = 1.0f, s_nam2_level = 1.0f;
+static float s_nam2_gain_to = 1.0f, s_nam2_level_to = 1.0f;
+
+COLD unsigned engine_nam2_selected(void) { return s_nam2_slot; }
+
+/* The second NAM, before the first (a pedal into the amp). -2: a heavy FX
+ * mode holds the arena; -1: busy or not a model. */
+COLD int engine_nam2_select(unsigned slot)
+{
+    if (slot == 0) {
+        s_nam2_slot = 0;
+        if (s_arena_owner == ARENA_NAM2) s_arena_owner = ARENA_FREE;
+        return 0;
+    }
+    if (s_arena_owner == ARENA_FX) return -2;
+    if (s_nam_loading || namstore_active()) return -1;
+    int bank = namstore_current(slot);
+    const uint8_t *p = bank < 0 ? NULL : namstore_record(slot, (unsigned)bank);
+    if (namstore_valid(p) != 1) return -1;
+    s_nam_loading = true;          /* mutes the output while the model settles */
+    s_nam2_slot = 0;
+    s_arena_owner = ARENA_NAM2;
+    int r = nam_a2_init(&s_arena.nam, (const float *)(p+NAMSTORE_HEADER), NAM_A2_WEIGHTS,
+                        NAM_A2_RATE, AUDIO_FS);
+    for (unsigned n = 0; r == 0 && n < NAM_A2_RECEPTIVE_FIELD; n += DSP_BLOCK) {
+        float zero[DSP_BLOCK] = {0};
+        r = nam_a2_process(&s_arena.nam, zero, DSP_BLOCK);
+        flash_pump();
+    }
+    if (r != 0) {
+        s_arena_owner = ARENA_FREE;
+        s_nam_loading = false;
+        return -1;
+    }
+    s_nam2_slot = slot;
+    s_nam2_fade = 0;
+    s_nam_loading = false;
+    return 0;
+}
+
+static COLD float nam2_db18(unsigned v)
+{
+    return dsp_exp2f(((float)(v > 100u ? 100u : v) - 50.0f) * 0.0597947f);   /* +-18 dB */
+}
+
 /* `nambench` (audio/nam_bench.c, flash): borrow the NAM state. The audio
  * path bypasses NAM until engine_nam_select() reloads the model. */
 COLD nam_a2_t *engine_nam_borrow(unsigned *slot)
@@ -285,10 +337,15 @@ void engine_set_tuner(bool on) {
 }
 
 static volatile bool s_reapply;
+/* A non-finite chain output asks for a DSP reset. The audio path only sets
+ * this and stays silent; the main loop runs the reset (engine_needs_reapply),
+ * never while the flash is busy, so the module inits can run from flash and
+ * leave ITCM to the audio code. */
+static volatile bool s_reset_pending;
 
 /* Re-initialise every DSP module; the preset is re-applied from the main
  * loop (engine_needs_reapply). */
-void engine_dsp_reset(void)
+COLD void engine_dsp_reset(void)
 {
     amp_init(&s_amp, (float)AUDIO_FS);
     CAB_INIT(&s_cab);
@@ -310,6 +367,10 @@ void engine_dsp_reset(void)
 
 bool engine_needs_reapply(void)
 {
+    if (s_reset_pending) {
+        engine_dsp_reset();          /* sets s_reapply */
+        s_reset_pending = false;
+    }
     bool r = s_reapply;
     s_reapply = false;
     return r;
@@ -397,6 +458,12 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
 #ifdef NAM_RUNTIME
     unsigned desired = preset_nam_slot(p);
     if (desired != s_nam_slot && engine_nam_select(desired) != 0) s_nam_slot = 0;
+    unsigned desired2 = preset_nam2_slot(p);
+    if (desired2 != s_nam2_slot && engine_nam2_select(desired2) != 0) s_nam2_slot = 0;
+    if (desired2) {
+        s_nam2_gain_to = nam2_db18(pget(p, P_NAM2_GAIN));
+        s_nam2_level_to = nam2_db18(pget(p, P_NAM2_LEVEL));
+    }
 #endif
     s_amp_en = pget(p, P_AMP_EN) != 0;
     s_cab_en = pget(p, P_CAB_EN) != 0;
@@ -715,6 +782,23 @@ void engine_task(void)
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
     PROF(P_COMP);
 #ifdef NAM_RUNTIME
+    if (s_nam2_slot && !s_nam_loading) {
+        /* the second NAM (pre): gain and level glide over the block */
+        float g = s_nam2_gain, l = s_nam2_level;
+        float dg = (s_nam2_gain_to - g) / (float)n, dl = (s_nam2_level_to - l) / (float)n;
+        for (size_t i = 0; i < n; i++) x[i] *= (g += dg);
+        if (nam_a2_process(&s_arena.nam, x, (unsigned)n)) {
+            s_nam2_slot = 0;
+            memset(x, 0, sizeof x);
+            s_stats.dsp_resets++;
+        }
+        for (size_t i = 0; i < n; i++) {
+            if (s_nam2_fade < 1.0f) s_nam2_fade += 1.0f/256.0f;
+            x[i] *= (l += dl) * s_nam2_fade;
+        }
+        s_nam2_gain = g;
+        s_nam2_level = l;
+    }
     if (s_nam_loading) memset(x, 0, sizeof x);
     else if (s_nam_slot && s_amp_en) {
         nam_tone_pre(&s_nam_tone, x, (unsigned)n);
@@ -762,11 +846,12 @@ void engine_task(void)
 #endif
     PROF(P_REVERB);
     /* Never get stuck silent: one NaN/inf in a filter state keeps a chain
-     * outputting NaN (which reaches the DAC as 0). Reset the DSP state and
-     * re-apply the preset on the next main-loop pass. */
+     * outputting NaN (which reaches the DAC as 0). The main loop resets the
+     * DSP state and re-applies the preset; silence until then. */
+    if (s_reset_pending) { memset(xl, 0, sizeof xl); memset(xr, 0, sizeof xr); }
     for (size_t i = 0; i < n; i++) {
         if (!(xl[i] > -1e6f && xl[i] < 1e6f) || !(xr[i] > -1e6f && xr[i] < 1e6f)) {
-            engine_dsp_reset();
+            s_reset_pending = true;
             memset(xl, 0, sizeof xl);
             memset(xr, 0, sizeof xr);
             s_stats.dsp_resets++;

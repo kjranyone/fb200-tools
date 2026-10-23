@@ -158,7 +158,7 @@ static void configure(reverb_t *r)
     r->rate = c->rate / r->scale;
 }
 
-void reverb_init(reverb_t *r, float fs)
+COLD void reverb_init(reverb_t *r, float fs)
 {
     memset(r, 0, sizeof *r);
     r->fs = fs;

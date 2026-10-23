@@ -9,7 +9,7 @@
 #include "comp.h"
 #include "math.h"
 
-void comp_init(comp_t *c, float fs)
+COLD void comp_init(comp_t *c, float fs)
 {
     *c = (comp_t){0};
     float k = 44100.0f / fs;

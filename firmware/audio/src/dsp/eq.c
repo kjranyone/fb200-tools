@@ -147,7 +147,7 @@ static void update(eq_t *e)
     }
 }
 
-void eq_reset(eq_t *e)
+COLD void eq_reset(eq_t *e)
 {
     memset(e->st, 0, sizeof e->st);
 }

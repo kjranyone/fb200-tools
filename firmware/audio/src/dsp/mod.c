@@ -167,7 +167,7 @@ static float depth_ramp(float d, float p4)
 
 static int scale(const mod_t *m, int n) { return (int)((float)n * m->r + 0.5f); }
 
-void mod_init(mod_t *m, float fs)
+COLD void mod_init(mod_t *m, float fs)
 {
     memset(m, 0, sizeof *m);
     if (fs > MOD_FS_MAX) fs = MOD_FS_MAX;

@@ -77,6 +77,8 @@ void engine_dsp_reset(void);
  * slot 0 = dry bypass. Selection never erases flash. */
 int engine_nam_select(unsigned slot);
 unsigned engine_nam_selected(void);
+int engine_nam2_select(unsigned slot);   /* second NAM (pre); -2: arena held by FX */
+unsigned engine_nam2_selected(void);
 void engine_nam_bench(void);   /* `nambench`: kernel cycle measurements */
 #endif
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */

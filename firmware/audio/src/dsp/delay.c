@@ -5,6 +5,7 @@
  */
 
 /* Bass delay: see delay.h. */
+#include "cold.h"
 #include <string.h>
 #include "delay.h"
 #include "math.h"
@@ -84,7 +85,7 @@ void delay_clear(delay_t *dl)
     dl->fresh = 1;
 }
 
-void delay_init(delay_t *dl, float fs, int16_t *line)
+COLD void delay_init(delay_t *dl, float fs, int16_t *line)
 {
     memset(dl, 0, sizeof *dl);
     dl->line = line;

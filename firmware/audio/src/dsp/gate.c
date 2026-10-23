@@ -4,9 +4,10 @@
  * See the LICENSE file in the project root for full license information.
  */
 
+#include "cold.h"
 #include "gate.h"
 
-void gate_init(gate_t *g, float fs)
+COLD void gate_init(gate_t *g, float fs)
 {
     *g = (gate_t){0};
     detector_init(&g->det, fs);

@@ -47,6 +47,11 @@ enum {
     P_EQ_MARK = 0xc4, P_EQ_DATA = 0xc6,
     /* Runtime NAM: unused tail after the EQ record, marker + slot 0..3. */
     P_NAM_MARK = 0xde, P_NAM_SLOT = 0xe0,
+    /* The rest of the tail (docs/NAM_FX_BLOCK.md): a second NAM before the
+     * first (marker, slot, input gain and output level 0..100, 50 = 0 dB,
+     * +-18 dB), then the FX block (marker, mode, flags, eight parameters). */
+    P_NAM2_MARK = 0xe2, P_NAM2_SLOT = 0xe4, P_NAM2_GAIN = 0xe6, P_NAM2_LEVEL = 0xe8,
+    P_FX_MARK = 0xea, P_FX_MODE = 0xec, P_FX_FLAGS = 0xee, P_FX_PARAM = 0xf0,
 };
 
 /* The stock format has a delay block (fn 0x85: en, type, mix, feedback,
@@ -68,6 +73,8 @@ enum {
  * = EQ off with the default settings. docs/PARITY.md M4. */
 #define EQ_MARK 0x5145u
 #define NAM_MARK 0x414eu /* "NA"; absent marker = NAM bypass */
+#define NAM2_MARK 0x324eu /* "N2"; absent marker = no second NAM */
+#define FX_MARK 0x5846u /* "FX"; absent marker = FX block off */
 
 /* Global settings offsets. */
 enum { S_PRESET = 0x16, S_BT = 0x17, S_MASTER = 0x18, S_IN_GAIN = 0x1a, S_STOMP = 0x1f,
@@ -107,6 +114,12 @@ static inline unsigned preset_nam_slot(const preset_t *p)
 {
     unsigned slot = pget(p, P_NAM_SLOT);
     return pget(p, P_NAM_MARK) == NAM_MARK && slot <= NAMSTORE_SLOTS ? slot : 0u;
+}
+
+static inline unsigned preset_nam2_slot(const preset_t *p)
+{
+    unsigned slot = pget(p, P_NAM2_SLOT);
+    return pget(p, P_NAM2_MARK) == NAM2_MARK && slot <= NAMSTORE_SLOTS ? slot : 0u;
 }
 
 /* Checks of untrusted records (preset_check.c): an erased preset becomes
