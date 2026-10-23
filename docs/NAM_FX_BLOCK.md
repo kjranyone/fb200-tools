@@ -2,7 +2,8 @@
 
 Status: the second NAM and the FX block's first mode, a time-domain pitch
 shifter, are implemented and measured on the pedal
-([hardware log](NAM_HARDWARE_2026-10-18.md)). The app's FX controls are next.
+([hardware log](NAM_HARDWARE_2026-10-18.md)); the app builds the FX controls
+from the descriptors (`mobile/lib/pedal/fx_panel.dart`).
 
 ## Resources
 

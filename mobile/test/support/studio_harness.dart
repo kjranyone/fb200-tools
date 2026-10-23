@@ -32,6 +32,9 @@ class StudioHarness {
   final kinds = <int, int>{};
   final kindWrites = <List<int>>[];
 
+  /// Op 15 writes [offset, value] (answered with flags bit 14).
+  final tailWrites = <List<int>>[];
+
   /// The 13 global settings bytes, rewritten by 0xB0.
   final settings = [0, 1, 13, 0, 0, 0, 0, 5, 0, 1, 1, 0, 100];
 
@@ -109,6 +112,16 @@ class StudioHarness {
           kindWrites.add(List.of(args));
           kinds[args[0]] = args[1];
           pedal.link.reply(bytes);
+        } else if (op == 14 && flags & 16384 != 0) {
+          if (args.length == 1 && args[0] == 1) {
+            pedal.link.reply(bytes, data: pitchDescriptor);
+          } else {
+            pedal.link.reply(bytes, status: 1);
+          }
+        } else if (op == 15 && flags & 16384 != 0) {
+          tailWrites.add([args[0], read16(args, 1)]);
+          edit = PedalPreset(edit).setWord(args[0], read16(args, 1)).bytes;
+          pedal.link.reply(bytes);
         } else if (op == 10 && levels != null) {
           levelReads++;
           final data = ByteData(12);
@@ -144,6 +157,40 @@ class StudioHarness {
       }
     };
   }
+
+  /// The firmware's op 14 reply for mode 1 (src/dsp/fx.c).
+  static final pitchDescriptor = [
+    1,
+    0,
+    ..._text('PITCH', 16),
+    5,
+    ..._param('SHIFT', 0, 4800, 3600, 4),
+    ..._param('MIX', 0, 100, 50, 1),
+    ..._param('LEVEL', 0, 100, 50, 2),
+    ..._param('GLIDE', 0, 1000, 0, 3),
+    ..._param('RANGE', 0, 1, 1, 5, 'Guitar|Bass'),
+  ];
+
+  static List<int> _text(String s, int n) => [
+    ...s.codeUnits,
+    ...List.filled(n - s.length, 0),
+  ];
+
+  static List<int> _param(
+    String name,
+    int min,
+    int max,
+    int def,
+    int unit, [
+    String labels = '',
+  ]) => [
+    ..._text(name, 12),
+    ...u16(min),
+    ...u16(max),
+    ...u16(def),
+    unit,
+    ..._text(labels, 24),
+  ];
 
   /// Firmware that advertises more, as already seen by [client].
   void addFlags(int bits) {

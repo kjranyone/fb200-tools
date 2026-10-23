@@ -3,6 +3,7 @@ import 'localization.dart';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'fx_block.dart';
 import 'model_kind.dart';
 import 'nam_model.dart';
 import 'protocol.dart';
@@ -174,6 +175,36 @@ class NamClient {
   /// A second NAM runs before the first, set by preset words 0xE2..0xE9;
   /// the same firmware caps the delay at 300 ms.
   bool get canNam2 => (capabilityFlags & 8192) != 0;
+
+  /// The FX block: preset words 0xEA..0xFF, modes described by op 14 and
+  /// tail words set live by op 15.
+  bool get canFx => (capabilityFlags & 16384) != 0;
+
+  /// The FX block's modes, 1 up to the first the pedal does not know.
+  Future<List<FxMode>> fxModes() async {
+    final modes = <FxMode>[];
+    for (var mode = 1; mode < 256; mode++) {
+      try {
+        final p = await transport.request(14, [mode]);
+        final parsed = FxMode.parse(p);
+        if (parsed.number != mode) throw DeviceError(tr("不正なエフェクト情報です。"));
+        modes.add(parsed);
+      } on DeviceError catch (e) {
+        if (e.status == 1) break;
+        rethrow;
+      }
+    }
+    return modes;
+  }
+
+  /// Writes one preset-tail word of the edit buffer (0xE2..0xFE, even) and
+  /// applies it at once; nothing is saved.
+  Future<void> setTailWord(int offset, int value) async {
+    if (offset < 0xe2 || offset > 0xfe || offset.isOdd) {
+      throw RangeError.value(offset, 'offset');
+    }
+    await transport.request(15, [offset, ...u16(value & 0xffff)]);
+  }
 
   /// Header byte 52 holds the model kind (ops 11/12). Older firmware
   /// rejects a packet with it set.

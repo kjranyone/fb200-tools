@@ -25,7 +25,17 @@ class ChainStrip extends StatelessWidget {
     this.compact = false,
   });
 
-  static const names = ['COMP', 'GATE', 'AMP', 'CAB', 'MOD', 'DLY', 'REV'];
+  /// 7: the FX block of NAM firmware (capability bit 14), not a stock module.
+  static const names = [
+    'COMP',
+    'GATE',
+    'AMP',
+    'CAB',
+    'MOD',
+    'DLY',
+    'REV',
+    'FX',
+  ];
   static const icons = [
     Icons.compress,
     Icons.graphic_eq,
@@ -34,6 +44,7 @@ class ChainStrip extends StatelessWidget {
     Icons.waves,
     Icons.timer_outlined,
     Icons.blur_on,
+    Icons.auto_fix_high,
   ];
 
   @override

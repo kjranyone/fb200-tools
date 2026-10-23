@@ -16,6 +16,7 @@ abstract final class StudioTheme {
     Color(0xff70d4ca), // modulation
     Color(0xff71aaff), // delay
     Color(0xffb99aee), // reverb
+    Color(0xffef8f6b), // FX block (NAM firmware)
   ];
 
   static ThemeData get theme => ThemeData(

@@ -78,6 +78,13 @@ See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX
   the edit buffer, like the delay. The same firmware plays delays up to
   300 ms, and the delay knob stops there. See
   [second NAM and FX block](../docs/NAM_FX_BLOCK.md).
+- **FX block**: on firmware with capability bit 14 the chain shows an FX
+  block, before the NAMs or after the cabinet (its position switch). Its
+  modes and controls come from the pedal (NAM RPC op 14), so a new mode
+  needs no app update; the first is a pitch shifter (SHIFT in semitones,
+  ±2 octaves, MIX, LEVEL, GLIDE, RANGE). Switching it on writes the whole
+  block with the edit buffer; each later change goes out live as one
+  preset word (op 15). Nothing is saved until Save.
 - **Model kinds**: each stored model carries what it captures (Amp + Cab,
   Amp, Cab, Pedal, Outboard, Space, Experimental) in its header on firmware
   with capability bit 12. TONE3000 transfers take the tone's gear, `.nam`

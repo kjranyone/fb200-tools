@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import 'ir_wav.dart' show WavError, wavToIr;
+import 'fx_block.dart';
 import 'model_kind.dart';
 import 'nam_client.dart' show DeviceState, NamClient;
 import 'nam_tone.dart';
@@ -24,6 +25,7 @@ import 'pedal/ir_tab.dart';
 import 'pedal/level_meter.dart';
 import 'pedal/looper_tab.dart';
 import 'pedal/nam_model_selector.dart';
+import 'pedal/fx_panel.dart';
 import 'pedal/nam_pre_selector.dart';
 import 'pedal/pedal_nav_bar.dart';
 import 'pedal/presets_tab.dart';
@@ -255,6 +257,14 @@ class _PedalPageState extends State<PedalPage> {
         ? await client.readState(reuse: reuseSlots)
         : DeviceState(await client.readSelection(), _namState!.slots);
     if (mounted) setState(() => _namState = fresh);
+    if (client.canFx && _fxModes == null) {
+      try {
+        final modes = await client.fxModes();
+        if (mounted) setState(() => _fxModes = modes);
+      } on DeviceError {
+        // asked again with the next refresh
+      }
+    }
   }
 
   String? get _activeModel => _namState?.slots
@@ -1133,6 +1143,8 @@ class _PedalPageState extends State<PedalPage> {
                 child: Text(
                   widget.restrictedNam && m == 2
                       ? 'NAM A2 LITE'
+                      : m == _fx
+                      ? 'FX'
                       : pedalModules[m].name,
                 ),
               ),
@@ -1144,14 +1156,23 @@ class _PedalPageState extends State<PedalPage> {
       );
 
   Widget _effects() {
+    final fx = _canFx ? FxBlock.of(_pedal.edit!) : null;
+    final fxMode = fx == null ? null : FxPanel.current(_fxModes, fx);
+    // The FX block runs before the NAMs or after the cabinet and EQ.
     final visible = [
       for (final m in _chainOrder)
-        if (pedalModules[m].command != 0x85 || widget.restrictedNam) m,
+        if (pedalModules[m].command != 0x85 || widget.restrictedNam) ...[
+          if (m == 2 && fx != null && !fx.post) _fx,
+          m,
+          if (m == 3 && fx != null && fx.post) _fx,
+        ],
     ];
     final selected = visible.contains(_selectedModule)
         ? _selectedModule
         : visible.first;
-    final module = pedalModules[selected];
+    final isFx = selected == _fx;
+    // the FX block is no stock module: its fields stay unused
+    final module = pedalModules[isFx ? 2 : selected];
     final isNam = widget.restrictedNam && selected == 2;
     final unsupported =
         widget.restrictedNam &&
@@ -1166,17 +1187,22 @@ class _PedalPageState extends State<PedalPage> {
                 [3, 4, 6].contains(m)) ||
             (widget.restrictedNam && m == 2 && _namState?.selected == 0),
       );
-    final parameters = EffectParameters.forModule(
-      module,
-      _pedal.edit!,
-      irSlots: _irs,
-      delayMax: !widget.restrictedNam
-          ? null
-          : _canNam2
-          ? 300
-          : 500,
-    );
-    final fields = isNam
+    if (fx != null && fx.configured && fx.on) enabled.add(_fx);
+    final parameters = isFx
+        ? const <EffectParameter>[]
+        : EffectParameters.forModule(
+            module,
+            _pedal.edit!,
+            irSlots: _irs,
+            delayMax: !widget.restrictedNam
+                ? null
+                : _canNam2
+                ? 300
+                : 500,
+          );
+    final fields = isFx
+        ? const <int>[]
+        : isNam
         ? [
             2,
             3,
@@ -1190,8 +1216,14 @@ class _PedalPageState extends State<PedalPage> {
     final toggle = Switch(
       value: enabled.contains(selected),
       activeTrackColor: accent,
-      onChanged: _busy || unsupported || (isNam && _namState?.selected == 0)
+      onChanged:
+          _busy ||
+              unsupported ||
+              (isNam && _namState?.selected == 0) ||
+              (isFx && fxMode == null)
           ? null
+          : isFx
+          ? (v) => _fxWords(fx!.change(fxMode!, on: v))
           : (v) => _changeModule(module, [
               for (var k = 0; k < module.fields.length; k++)
                 k == 0 ? (v ? 1 : 0) : _pedal.edit!.word(module.offset + k * 2),
@@ -1265,7 +1297,11 @@ class _PedalPageState extends State<PedalPage> {
                               ),
                             Expanded(
                               child: Text(
-                                isNam ? 'NAM A2 LITE' : module.name,
+                                isNam
+                                    ? 'NAM A2 LITE'
+                                    : isFx
+                                    ? 'FX'
+                                    : module.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -1306,85 +1342,101 @@ class _PedalPageState extends State<PedalPage> {
                           style: TextStyle(fontSize: 11),
                         ),
                       const SizedBox(height: 6),
-                      Expanded(
-                        child: ParameterDeck(
-                          key: ValueKey('parameters-$selected'),
-                          count: fields.length,
-                          itemBuilder: (index, size) {
-                            final i = fields[index];
-                            if (i == _preGain || i == _preLevel) {
-                              return _namPreKnob(i, size, accent);
-                            }
-                            final parameter = isNam ? null : parameters[index];
-                            final choices = parameter?.choices;
-                            if (choices != null) {
-                              final value = _pedal.edit!.word(
-                                module.offset + i * 2,
-                              );
-                              return EffectChoice(
-                                label: parameter!.label,
-                                value:
-                                    choices[value] ?? tr("未選択 ({0})", [value]),
-                                enabled: !_busy && !unsupported,
-                                onPressed: () =>
-                                    _pickEffectParameter(module, parameter),
-                              );
-                            }
-                            return Knob(
-                              key: ValueKey(
-                                'preset-${_pedal.editIndex}-nam-${_namState?.selected}-module-$selected-field-$i',
-                              ),
-                              defaultValue: isNam ? 50 : null,
-                              label: isNam
-                                  ? NamTone.labels[i]!
-                                  : parameter!.label,
-                              value: _pedal.edit!
-                                  .word(module.offset + i * 2)
-                                  .clamp(
-                                    parameter?.min ?? module.fields[i].min,
-                                    parameter?.max ?? module.fields[i].max,
-                                  ),
-                              min: parameter?.min ?? module.fields[i].min,
-                              max: parameter?.max ?? module.fields[i].max,
-                              size: size,
-                              accent: accent,
-                              format: isNam
-                                  ? (v) => NamTone.format(
-                                      i,
-                                      v,
-                                      wideGain:
-                                          widget.namClient?.wideNamGain == true,
-                                    )
-                                  : parameter?.format,
-                              enabled:
-                                  (isNam && _toneDraft != null
-                                      ? !_working &&
-                                            _toneField == i &&
-                                            (widget.recovery == null ||
-                                                widget.recovery!.connected)
-                                      : !_busy) &&
-                                  !_moduleDisabled(module, i),
-                              onPreview: isNam
-                                  ? (value) => _previewNamTone(i, value)
-                                  : null,
-                              onChanged: isNam
-                                  ? (value) => _finishNamTone(i, value)
-                                  : (value) => _changeModule(module, [
-                                      for (
-                                        var k = 0;
-                                        k < module.fields.length;
-                                        k++
+                      if (isFx)
+                        Expanded(
+                          child: FxPanel(
+                            modes: _fxModes,
+                            block: fx!,
+                            busy: _busy,
+                            accent: accent,
+                            editIndex: _pedal.editIndex ?? _pedal.selected,
+                            onWords: _fxWords,
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ParameterDeck(
+                            key: ValueKey('parameters-$selected'),
+                            count: fields.length,
+                            itemBuilder: (index, size) {
+                              final i = fields[index];
+                              if (i == _preGain || i == _preLevel) {
+                                return _namPreKnob(i, size, accent);
+                              }
+                              final parameter = isNam
+                                  ? null
+                                  : parameters[index];
+                              final choices = parameter?.choices;
+                              if (choices != null) {
+                                final value = _pedal.edit!.word(
+                                  module.offset + i * 2,
+                                );
+                                return EffectChoice(
+                                  label: parameter!.label,
+                                  value:
+                                      choices[value] ??
+                                      tr("未選択 ({0})", [value]),
+                                  enabled: !_busy && !unsupported,
+                                  onPressed: () =>
+                                      _pickEffectParameter(module, parameter),
+                                );
+                              }
+                              return Knob(
+                                key: ValueKey(
+                                  'preset-${_pedal.editIndex}-nam-${_namState?.selected}-module-$selected-field-$i',
+                                ),
+                                defaultValue: isNam ? 50 : null,
+                                label: isNam
+                                    ? NamTone.labels[i]!
+                                    : parameter!.label,
+                                value: _pedal.edit!
+                                    .word(module.offset + i * 2)
+                                    .clamp(
+                                      parameter?.min ?? module.fields[i].min,
+                                      parameter?.max ?? module.fields[i].max,
+                                    ),
+                                min: parameter?.min ?? module.fields[i].min,
+                                max: parameter?.max ?? module.fields[i].max,
+                                size: size,
+                                accent: accent,
+                                format: isNam
+                                    ? (v) => NamTone.format(
+                                        i,
+                                        v,
+                                        wideGain:
+                                            widget.namClient?.wideNamGain ==
+                                            true,
                                       )
-                                        k == i
-                                            ? value
-                                            : _pedal.edit!.word(
-                                                module.offset + k * 2,
-                                              ),
-                                    ]),
-                            );
-                          },
+                                    : parameter?.format,
+                                enabled:
+                                    (isNam && _toneDraft != null
+                                        ? !_working &&
+                                              _toneField == i &&
+                                              (widget.recovery == null ||
+                                                  widget.recovery!.connected)
+                                        : !_busy) &&
+                                    !_moduleDisabled(module, i),
+                                onPreview: isNam
+                                    ? (value) => _previewNamTone(i, value)
+                                    : null,
+                                onChanged: isNam
+                                    ? (value) => _finishNamTone(i, value)
+                                    : (value) => _changeModule(module, [
+                                        for (
+                                          var k = 0;
+                                          k < module.fields.length;
+                                          k++
+                                        )
+                                          k == i
+                                              ? value
+                                              : _pedal.edit!.word(
+                                                  module.offset + k * 2,
+                                                ),
+                                      ]),
+                              );
+                            },
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -1434,6 +1486,29 @@ class _PedalPageState extends State<PedalPage> {
       await _refreshNam();
     });
     _pendingEdit = null;
+  }
+
+  /// The FX block's place in the chain views ([ChainStrip.names]).
+  static const _fx = 7;
+
+  /// Null until the pedal described them (op 14).
+  List<FxMode>? _fxModes;
+
+  bool get _canFx => widget.restrictedNam && widget.namClient?.canFx == true;
+
+  /// One word goes out live (op 15), several with the edit buffer (0x97).
+  Future<void> _fxWords(Map<int, int> words) async {
+    final client = widget.namClient;
+    if (client == null || words.isEmpty) return;
+    await _run(tr("エフェクトを調整中"), () async {
+      if (words.length == 1) {
+        final MapEntry(:key, :value) = words.entries.single;
+        await client.setTailWord(key, value);
+        await _pedal.refresh();
+      } else {
+        await _pedal.setEditWords(words);
+      }
+    });
   }
 
   /// Virtual knob fields of the NAM editor: the second NAM's gain and level.

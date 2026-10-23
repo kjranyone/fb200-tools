@@ -1043,4 +1043,17 @@ const translations = <String, List<String>>{
   "なし": ["None", "无"],
   "プリ段で使用中": ["In the pre stage", "前级使用中"],
   "プリ段を使わない": ["No pre stage", "不使用前级"],
+  "{0} 半音": ["{0} st", "{0} 半音"],
+  "不正なエフェクト情報です。": [
+    "The pedal described an effect in an unknown format.",
+    "效果信息格式不正确。",
+  ],
+  "本体にエフェクトがありません。": ["The pedal has no effects for this block.", "设备没有可用的效果。"],
+  "NAMの前": ["Before NAM", "NAM 之前"],
+  "キャビの後": ["After cab", "箱体之后"],
+  "プリ段のNAMと同時には使えません。": [
+    "Cannot run together with the pre NAM.",
+    "不能与前级 NAM 同时使用。",
+  ],
+  "エフェクトを調整中": ["Adjusting the effect", "正在调整效果"],
 };
