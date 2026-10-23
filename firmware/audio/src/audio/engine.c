@@ -153,7 +153,7 @@ static bool s_ready;          /* engine_init done: engine_pump may run */
 static volatile nam_a2_t s_nam_reserve __attribute__((section(".dtcm_lo")));
 _Static_assert(AUDIO_FS == NAM_A2_RATE && !ENGINE_LONG_IR,
                "NAM probe needs 48 kHz and the long-IR tail's RAM");
-_Static_assert(sizeof(nam_a2_t) <= 84u * 1024u, "NAM working set exceeds budget");
+_Static_assert(sizeof(nam_a2_t) <= 85u * 1024u, "NAM working set exceeds budget");
 #endif
 static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
 static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
@@ -197,6 +197,16 @@ COLD int engine_nam_select(unsigned slot)
     s_nam_slot = slot; s_nam_fade = 0;
     s_nam_loading = false;
     return 0;
+}
+
+/* `nambench` (audio/nam_bench.c, flash): borrow the NAM state. The audio
+ * path bypasses NAM until engine_nam_select() reloads the model. */
+COLD nam_a2_t *engine_nam_borrow(unsigned *slot)
+{
+    *slot = s_nam_slot;
+    if (!s_nam_slot || s_nam_loading) return 0;
+    s_nam_slot = 0;
+    return &s_nam;
 }
 #endif
 

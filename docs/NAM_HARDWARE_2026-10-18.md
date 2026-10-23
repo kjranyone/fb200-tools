@@ -420,3 +420,37 @@ presets, settings and the live edit were unchanged. The Android app connected
 over BLE and showed `05 Jcm800  Amp + Cab` with the doubled-cab warning for
 preset 0A (its CAB block is on); the preset was not changed. Evidence (ignored
 local artifacts): `out/kind-20261023/`.
+
+## NAM kernel 2x: layer-major chunks and Cortex-M7 assembly (2026-10-23, user authorized)
+
+Goal: room for a second NAM instance. Every step was flashed (app slot only,
+same deploy/verify flow), measured with `prof` and checked: protected regions,
+40 presets and settings unchanged each time; the live audition (slot 5 on
+preset 0A) restored to RAM after each reboot, never saved.
+
+| Firmware | NAM stage (`prof amp`, cycles/block of 400,000) |
+| --- | --- |
+| before (per-sample C kernel, `4236b9e4`) | 263,660 |
+| layer-major chunks of 8 frames, 4 frames per tap in C (`a0a450e5`) | 244,080 |
+| conv taps in assembly (`fefd6f61`) | 195,670 |
+| + mirrored ring frames, post-processing in assembly (`47d1a47b`) | 157,816 |
+| + head in assembly, block ring writes (`1603335e`) | **130,771** |
+
+What `nambench` (new console command, flash-resident) measured on the M7:
+36 VFMA from registers take 37 cycles, but with 21 single FP loads 93 — FP
+loads, not multiplies, bounded the C kernel. VLDM of a frame pair and of a
+tap's nine weights, a mirror of each ring's first three frames (so four
+frames are always contiguous), and VMAXNM for LeakyReLU removed most of them.
+LDRD + VMOV instead of VLDM was slower (58 vs 53 cycles per 72 FMA).
+Interrupts cost ~2 % of the kernel. Masking them for whole blocks
+desynchronised the SAI DMA (dma_errs climbing until `reset`); that test was
+removed.
+
+Every accumulator keeps the reference addend order, so the host build stays
+bit-identical to `tests/nam_a2_golden.f32`; on the pedal `nambench` compares
+each assembly routine with the C one on the live model: conv4 184 cases,
+post 23, head 23, 0 mismatches. With NAM at 130.8k the engine block averages
+26 % and peaks at 44 % of the budget; no skips over 20 s idle, no DMA errors.
+The working set grows to 86,856 bytes (8-frame ring slack + mirrors).
+A second instance still needs ~87 kB of RAM that is not free (about 60 kB
+spread over DTCM and OCRAM). Evidence: `out/nam-{speed,bench,asm,asm2,asm3}-20261023/`.

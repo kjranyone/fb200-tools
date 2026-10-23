@@ -9,7 +9,11 @@
 #define NAM_A2_RATE 48000u
 #define NAM_A2_LAYERS 23u
 #define NAM_A2_WEIGHTS 1871u
-#define NAM_A2_HISTORY 19110u /* 3 * (sum((K-1)*D+1) + head K=16) */
+/* Frames run layer by layer at a time; each ring keeps NAM_A2_SUB-1 spare
+ * frames so a chunk's writes never reach a frame its oldest tap still reads,
+ * and each ring repeats its first 3 frames (nam_a2_conv.h). */
+#define NAM_A2_SUB 8u
+#define NAM_A2_HISTORY 19830u /* 3 * (sum((K-1)*D+1) + head K=16 + 24*(SUB-1) + 24*3) */
 #define NAM_A2_RECEPTIVE_FIELD 6347u
 
 typedef struct {

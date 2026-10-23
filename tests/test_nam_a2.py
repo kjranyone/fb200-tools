@@ -70,7 +70,7 @@ def reference(weights, audio):
 
 
 class State(ct.Structure):
-    _fields_ = [("weights", ct.c_float * 1871), ("history", ct.c_float * 19110),
+    _fields_ = [("weights", ct.c_float * 1871), ("history", ct.c_float * 19830),
                 ("position", ct.c_uint16 * 24), ("ready", ct.c_int)]
 
 
@@ -121,7 +121,7 @@ def test_numerical_reference_and_chunking(kernel):
         np.testing.assert_array_equal(actual, render(kernel, init(kernel, weights), audio, chunks))
     kernel.nam_a2_reset(ct.byref(state))
     np.testing.assert_array_equal(actual, render(kernel, state, audio))
-    assert ct.sizeof(state) == 83976
+    assert ct.sizeof(state) == 86856
 
 
 def test_kernel_matches_golden_fixture(kernel):

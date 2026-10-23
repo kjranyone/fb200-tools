@@ -3,9 +3,10 @@
  * NAM/wavenet/a2_fast.cpp (MIT). Attribution: docs/NAM_A2_LITE.md.
  * The stream weight order is repacked once at init into tap-major layout so
  * the per-tap inner loop reads sequential weights (the Cortex-M7 scalar
- * baseline measured 719k cycles/block; see docs/NAM_HARDWARE_2026-10-18.md).
- * The repack keeps every accumulator's addend sequence identical to the
- * stream-order reference: bit-identical output (tests/nam_a2_golden.f32). */
+ * baseline measured 719k cycles/block; see docs/NAM_HARDWARE_2026-10-18.md),
+ * and frames run layer-major in chunks (chunk() below). Both keep every
+ * accumulator's addend sequence identical to the stream-order reference:
+ * bit-identical output (tests/nam_a2_golden.f32). */
 #include "cold.h"
 #include "nam_a2.h"
 #include <string.h>
@@ -69,76 +70,73 @@ COLD int nam_a2_init(nam_a2_t *s, const float *weights, size_t count,
     return 0;
 }
 
-/* Fully unrollable tap loop kept as documentation of the measured dead end:
- * a hand-unrolled K=6 macro measured SLOWER on the M7 (339k vs 321k
- * cycles/block) than the runtime-K loop below - the scheduler does better
- * with its own loop. See docs/NAM_HARDWARE_2026-10-18.md. */
+/* A hand-unrolled K=6 tap macro measured SLOWER on the M7 (339k vs 321k
+ * cycles/block) than a runtime-K loop; see docs/NAM_HARDWARE_2026-10-18.md. */
 
-static float sample(nam_a2_t *s, float input)
+/* Layer-major chunks: the convolutions are causal, so each layer can run over
+ * up to NAM_A2_SUB frames before the next layer starts. Every accumulator
+ * still adds bias, then taps ascending, inputs ascending: bit-identical to
+ * the per-sample kernel. Four frames share each tap's nine weights and keep
+ * twelve independent accumulators in flight (nam_a2_conv.h; assembly on the
+ * Cortex-M7, C elsewhere). */
+#define SUB NAM_A2_SUB
+
+#include "nam_a2_conv.h"
+#define wrap nam_a2_wrap
+#ifdef NAM_A2_ASM
+#define conv4 nam_a2_conv4_asm
+#define post nam_a2_post_asm
+#define head4 nam_a2_head4_asm
+#else
+#define conv4 nam_a2_conv4_c
+#define post nam_a2_post_c
+#define head4 nam_a2_head4_c
+#endif
+
+/* m (1..SUB) frames in place. A partial group of four also computes the
+ * frames after m from stale ring data; those results are never used. */
+static void chunk(nam_a2_t *s, float *audio, unsigned m)
 {
     const float *w = s->weights;
-    float x[3] = {w[0] * input, w[1] * input, w[2] * input};
-    float head[3] = {0};
+    float x[SUB][3], head[SUB][3], z[SUB][3];
+    _Static_assert(SUB % 4 == 0, "conv4 groups");
+#pragma GCC unroll 1
+    for (unsigned j = 0; j < m; j++) {
+        for (unsigned c = 0; c < 3; c++) { x[j][c] = w[c] * audio[j]; head[j][c] = 0; }
+    }
     unsigned offset = 0;
     w += 3;
     for (unsigned layer = 0; layer < NAM_A2_LAYERS; layer++) {
-        unsigned k = kernels[layer], d = dilations[layer], len = (k-1)*d+1;
+        unsigned k = kernels[layer], d = dilations[layer], R = (k-1)*d + SUB;
         unsigned pos = s->position[layer];
         float *hist = s->history + offset;
-        memcpy(hist + pos*3, x, sizeof x);
-        const float *bias = w + 9*k, *mix = bias + 3, *linear = mix + 3;
-        float z0 = bias[0], z1 = bias[1], z2 = bias[2];
-        /* Tap-major (oldest first), weights repacked [tap][out*3+in]: the
-         * nine products of a tap read sequential weights, three history
-         * values each. Each accumulator sees taps ascending, inputs
-         * ascending - the reference addend order, bit-identical. */
-        const float *wt = w;
-        for (unsigned tap = 0; tap < k; tap++, wt += 9) {
-            unsigned back = (k-1-tap)*d;
-            unsigned at = pos >= back ? pos-back : pos+len-back;
-            const float *h = hist + at*3;
-            float h0 = h[0], h1 = h[1], h2 = h[2];
-            z0 += wt[0]*h0; z0 += wt[1]*h1; z0 += wt[2]*h2;
-            z1 += wt[3]*h0; z1 += wt[4]*h1; z1 += wt[5]*h2;
-            z2 += wt[6]*h0; z2 += wt[7]*h1; z2 += wt[8]*h2;
-        }
-        float z[3] = {z0, z1, z2};
-        for (unsigned c = 0; c < 3; c++) {
-            z[c] += mix[c] * input;
-            if (z[c] < 0) z[c] *= 0.01f;
-            head[c] += z[c];
-        }
-        for (unsigned out = 0; out < 3; out++) {
-            float residual = linear[9+out];
-            for (unsigned in = 0; in < 3; in++) residual += linear[out*3+in] * z[in];
-            x[out] += residual;
-        }
-        s->position[layer] = pos+1 == len ? 0 : pos+1;
-        offset += len*3;
-        w = linear + 12;
+        nam_a2_ring_write(hist, R, pos, (const float (*)[3])x, m);
+        const float *bias = w + 9*k, *mixlin = bias + 3;
+        for (unsigned j = 0; j < m; j += 4) conv4(hist, R, wrap(pos+j, R), k, d, w, bias, z + j);
+        post(z, x, head, audio, mixlin, m);
+        s->position[layer] = (uint16_t)wrap(pos+m, R);
+        offset += (R + NAM_A2_MIRROR)*3;
+        w = mixlin + 15;
     }
+    /* head: K=16 over the summed layer outputs, weights [tap][channel] */
+    const unsigned R = 16 + SUB - 1;
     unsigned pos = s->position[NAM_A2_LAYERS];
     float *hist = s->history + offset;
-    memcpy(hist + pos*3, head, sizeof head);
-    /* head weights repacked [tap][channel], sequential per tap */
-    float y = w[48];
-    for (unsigned tap = 0; tap < 16; tap++) {
-        unsigned at = (pos+1+tap) & 15u;
-        const float *h = hist + at*3;
-        y += w[tap*3+0] * h[0];
-        y += w[tap*3+1] * h[1];
-        y += w[tap*3+2] * h[2];
+    nam_a2_ring_write(hist, R, pos, (const float (*)[3])head, m);
+    for (unsigned j = 0; j < m; j += 4) {
+        float y[4];
+        head4(hist, R, wrap(pos+j, R), w, y);
+        memcpy(audio + j, y, (m - j < 4 ? m - j : 4) * sizeof *y);
     }
-    s->position[NAM_A2_LAYERS] = (pos+1) & 15u;
-    return y * w[49]; /* trailing stream value overrides config.head_scale */
+    s->position[NAM_A2_LAYERS] = (uint16_t)wrap(pos+m, R);
 }
 
 int nam_a2_process(nam_a2_t *s, float *audio, unsigned n)
 {
     if (!s || !s->ready || n > DSP_BLOCK || (!audio && n)) return -1;
     for (unsigned i = 0; i < n; i++) if (!finite_float(audio[i])) return -1;
+    for (unsigned i = 0; i < n; i += SUB) chunk(s, audio + i, n - i < SUB ? n - i : SUB);
     for (unsigned i = 0; i < n; i++) {
-        audio[i] = sample(s, audio[i]);
         if (!finite_float(audio[i])) {
             nam_a2_reset(s);
             memset(audio, 0, n * sizeof *audio);

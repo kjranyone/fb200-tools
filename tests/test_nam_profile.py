@@ -60,7 +60,7 @@ def test_probe_reserves_real_ram():
                         capture_output=True, text=True, check=True).stdout
     address, size = next((int(p[0], 16), int(p[1], 16)) for line in nm.splitlines()
                          if len(p := line.split()) == 4 and p[3] == "s_nam_reserve")
-    assert size == 83976
+    assert size == 86856
     assert 0x20000000 <= address < address+size <= symbols["__dtcm_lo_end__"] <= 0x20018A00
     assert symbols["__itcm_bss_end__"] <= 0x20000
     assert symbols["__dtcm_hi_end__"] <= symbols["__stack_limit__"] == 0x20056000
@@ -87,7 +87,7 @@ def test_runtime_image_and_flash_busy_safety(profile):
     syms = {p[3]: (int(p[0], 16), int(p[1], 16)) for line in nm.splitlines()
             if len(p := line.split()) == 4}
     address, size = syms["s_nam"]
-    assert size == 83976 and 0x20000000 <= address < address+size <= 0x20018A00
+    assert size == 86856 and 0x20000000 <= address < address+size <= 0x20018A00
     address, size = syms["staging"]
     assert size == 8192 and 0x20200000 <= address < address+size <= 0x20208000
     assert "s_rev" not in syms or profile == "nam-manager"  # reverb ITCM: manager only
