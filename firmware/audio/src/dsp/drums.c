@@ -168,7 +168,7 @@ static void render_sub(drums_t *d, float *out)
     mixer(d, out, DRUMS_SUBBLOCK);
 }
 
-void drums_data_from_stock(drums_data_t *out, const stock_data_t *s)
+void drums_data_from_stock(drums_data_t *out, const stock_ram_t *s)
 {
     *out = (drums_data_t){
         s->drum_events, STOCK_DRUM_EVENTS, s->drum_lens, STOCK_DRUM_PATTERNS,

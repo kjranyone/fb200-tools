@@ -9,7 +9,7 @@
 #include "stock_data.h"
 #include "crc32.h"
 
-const stock_data_t *g_stock;
+const stock_ram_t *g_stock;
 const stock_factory_t *g_stock_factory;
 
 /* The tables the code indexes with (drums.c walks the event lists to their
@@ -66,19 +66,29 @@ const char *stock_error(int code)
 #if defined(__arm__)   /* target only; host tests set g_stock */
 /* In DTCM (.bss): reading flash at run time would stall the audio during
  * flash writes. */
-static stock_data_t s_stock;
+static stock_ram_t s_stock;
 
 int stock_load(void)
 {
     int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
+    const stock_data_t *f = (const stock_data_t *)STOCK_FLASH;
     g_stock = NULL;
     g_stock_factory = NULL;
     if (r == 0) {
-        memcpy(&s_stock, (const void *)STOCK_FLASH, sizeof s_stock);
+#ifdef STOCK_LEAN
+        memcpy(s_stock.cab_taps, f->cab_taps, sizeof s_stock.cab_taps);
+        memcpy(s_stock.cab_gain, f->cab_gain, sizeof s_stock.cab_gain);
+        memcpy(s_stock.drum_events, f->drum_events, sizeof s_stock.drum_events);
+        memcpy(s_stock.drum_lens, f->drum_lens, sizeof s_stock.drum_lens);
+        memcpy(s_stock.drum_rhythm, f->drum_rhythm, sizeof s_stock.drum_rhythm);
+        memcpy(s_stock.drum_beats, f->drum_beats, sizeof s_stock.drum_beats);
+#else
+        memcpy(&s_stock, f, sizeof s_stock);
+#endif
         g_stock = &s_stock;
         /* only read by a factory reset: it stays in flash */
-        if (s_stock.version >= 2u)
-            g_stock_factory = (const stock_factory_t *)(STOCK_FLASH + sizeof s_stock);
+        if (f->version >= 2u)
+            g_stock_factory = (const stock_factory_t *)(STOCK_FLASH + sizeof *f);
     }
     return r;
 }

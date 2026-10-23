@@ -12,7 +12,15 @@
 
 extern uint32_t tusb_time_millis_api(void);
 
-static char ring[16384];
+/* NAM builds trade log history for the second NAM slot's RAM. */
+#ifndef CDC_LOG_RING
+#ifdef NAM_RUNTIME
+#define CDC_LOG_RING 4096
+#else
+#define CDC_LOG_RING 16384
+#endif
+#endif
+static char ring[CDC_LOG_RING];
 static volatile size_t head, tail;
 
 void cdc_log_init(void) { head = tail = 0; }

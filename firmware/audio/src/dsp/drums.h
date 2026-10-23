@@ -110,5 +110,5 @@ void drums_process(drums_t *d, float *mix, size_t n);
 void drums_process_stereo(drums_t *d, float *l, float *r, size_t n);
 
 /* The rhythm tables inside the stock data blob (dsp/stock_data.h). */
-void drums_data_from_stock(drums_data_t *out, const stock_data_t *s);
+void drums_data_from_stock(drums_data_t *out, const stock_ram_t *s);
 #endif

@@ -24,13 +24,13 @@ ifneq ($(VARIANT),app)
 $(error nam-runtime is app-only)
 endif
 BUILD        ?= build/nam-runtime
-PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_RUNTIME
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=300 -DNAM_RUNTIME
 else ifeq ($(PROFILE),nam-manager)
 ifneq ($(VARIANT),app)
 $(error nam-manager is app-only)
 endif
 BUILD        ?= build/nam-manager
-PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_RUNTIME -DNAM_UTILITIES
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=300 -DNAM_RUNTIME -DNAM_UTILITIES
 else ifneq ($(PROFILE),stock)
 $(error unknown PROFILE $(PROFILE))
 endif

@@ -19,6 +19,10 @@ void amp_init(amp_t *a, float fs)
 
 COLD int amp_set_model(amp_t *a, int model)
 {
+#ifdef STOCK_LEAN
+    (void)a; (void)model;
+    return -1;               /* NAM builds: no stock amp tables in RAM */
+#else
     if (!g_stock || model < 1 || model > STOCK_AMP_MODELS) return -1;
     a->m = &g_stock->amp_models[model - 1];
     memset(a->pre_state, 0, sizeof a->pre_state);
@@ -29,6 +33,7 @@ COLD int amp_set_model(amp_t *a, int model)
     arm_biquad_cascade_df1_init_f32(&a->post, STOCK_AMP_SOS, &a->m->post[0][0], a->post_state);
     arm_biquad_cascade_df1_init_f32(&a->aa, 1, g_stock->amp_aa, a->aa_state);
     return 0;
+#endif
 }
 
 COLD void amp_set_params(amp_t *a, int gain, int bass, int mid, int midfreq, int treble, int volume)

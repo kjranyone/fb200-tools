@@ -26,6 +26,10 @@ static int step(int knob) { return (int)(knob_fraction(knob) * 31.0f); }
 
 COLD void tone_set(tone_t *t, int bass, int mid, int midfreq, int treble)
 {
+#ifdef STOCK_LEAN
+    (void)t; (void)bass; (void)mid; (void)midfreq; (void)treble;
+    return;                                  /* NAM builds: no stock tone tables */
+#else
     const stock_data_t *d = g_stock;
     if (!d) return;                          /* no stock data: stays flat */
     const float *rows[TONE_STAGES] = {
@@ -36,6 +40,7 @@ COLD void tone_set(tone_t *t, int bass, int mid, int midfreq, int treble)
     };
     for (unsigned s = 0; s < TONE_STAGES; s++) memcpy(&t->coeffs[5 * s], rows[s], 5 * sizeof(float));
     t->active = 1;
+#endif
 }
 
 #define DF1 TONE_DF1

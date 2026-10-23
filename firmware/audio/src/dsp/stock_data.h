@@ -76,7 +76,25 @@ typedef struct {
 } stock_factory_t;
 
 /* The checked stock data, or NULL. Set by stock_load() (or by a host test). */
-extern const stock_data_t *g_stock;
+/* The RAM copy the DSP plays from. NAM builds play no stock amp or tone
+ * stack (NAM replaces them), so they keep only the cab and drum tables:
+ * 19.6 kB less DTCM for the second NAM slot. The flash blob and its CRC are
+ * unchanged. */
+#ifdef NAM_RUNTIME
+#define STOCK_LEAN 1
+typedef struct {
+    float cab_taps[STOCK_CABS][STOCK_CAB_TAPS];
+    float cab_gain[STOCK_CABS];
+    uint32_t drum_events[STOCK_DRUM_EVENTS];
+    uint16_t drum_lens[STOCK_DRUM_PATTERNS];
+    uint8_t drum_rhythm[STOCK_DRUM_RHYTHMS];
+    uint8_t drum_beats[STOCK_DRUM_PATTERNS];
+} stock_ram_t;
+#else
+typedef stock_data_t stock_ram_t;
+#endif
+
+extern const stock_ram_t *g_stock;
 /* The factory presets (in flash), or NULL with a version 1 blob. */
 extern const stock_factory_t *g_stock_factory;
 
