@@ -13,6 +13,7 @@ use).
 from __future__ import annotations
 
 import contextlib
+import sys
 
 from fb200 import protocol
 from fb200.errors import CommunicationError, DeviceNotFoundError
@@ -69,6 +70,12 @@ class HidapiTransport:
     def write_report(self, report: bytes) -> None:
         if self._dev is None:
             raise CommunicationError("transport is not open")
+        if sys.platform == "win32":
+            # Windows hid_write's first byte is the report ID; the pedal's
+            # reports are unnumbered, so prefix a 0 (Linux strips it). The ID
+            # is additional to all 64 report bytes: truncating to 63 silently
+            # loses a payload byte from every full chunk of a long frame.
+            report = b"\x00" + bytes(report)
         try:
             written = self._dev.write(list(report))
         except (OSError, ValueError) as exc:     # hidapi: device gone

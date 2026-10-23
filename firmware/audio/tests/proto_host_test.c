@@ -38,6 +38,7 @@
 
 #define FLASH_SIZE 0x100000u
 static uint8_t flash[FLASH_SIZE];
+static bool preset_write_fail;
 
 /* ---- stubs for the UI's hardware dependencies ---- */
 static char disp[16];
@@ -53,8 +54,29 @@ const stock_factory_t *g_stock_factory;
 static stock_factory_t fake_factory;
 void display_text(const char *s) { snprintf(disp, sizeof disp, "%s", s); }
 void knob_led(int led, bool on) { if (led >= 0 && led < 16) led_on[led] = on; }
-uint16_t knob_value(int k) { (void)k; return 0; }
-bool knob_changed(int k) { (void)k; return false; }
+static uint16_t knob_raw[KNOB_COUNT];
+static bool knob_moved[KNOB_COUNT];
+uint16_t knob_value(int k) { return knob_raw[k]; }
+bool knob_changed(int k) { bool moved = knob_moved[k]; knob_moved[k] = false; return moved; }
+#ifdef NAM_RUNTIME
+/* Slot availability and loader failures are injected; the real catalog,
+ * pickup, debounce, edit/save/notification code is ui.c. Store validity and
+ * torn-write behavior are tested separately with real NOR in test_nam_runtime. */
+static bool nam_used[NAMSTORE_SLOTS + 1u], nam_busy;
+static uint32_t nam_generation;
+static unsigned nam_selected, nam_loads, nam_failure = UINT32_MAX;
+uint32_t namstore_revision(void) { return nam_generation; }
+int namstore_active(void) { return nam_busy; }
+int namstore_is_model(unsigned n) { return n <= NAMSTORE_SLOTS && nam_used[n]; }
+unsigned engine_nam_selected(void) { return nam_selected; }
+int engine_nam_select(unsigned n)
+{
+    nam_loads++;
+    if (n == nam_failure || (n && (nam_busy || !namstore_is_model(n)))) return -1;
+    nam_selected = n;
+    return 0;
+}
+#endif
 fsw_event_t fsw_event(int *sw)
 {
     if (!evq_n) return FSW_NONE;
@@ -110,6 +132,11 @@ void engine_loop_poll(void)
 }
 void engine_loop_info(looper_info_t *out) { looper_info(&loop, out); }
 void engine_loop_arm(void) { ls_arm(sim_loop_store()); }
+int engine_loop_save(unsigned n) { return looper_save(&loop, n); }
+int engine_loop_load(unsigned n) { return looper_load(&loop, n); }
+void engine_loop_level(unsigned pct) { looper_set_level(&loop, pct); }
+int engine_loop_busy(void) { return ls_busy(sim_loop_store()); }
+int engine_loop_writing(void) { return looper_writing(&loop); }
 
 /* ---- preset layer over the fake flash ---- */
 void preset_read(unsigned index, preset_t *out)
@@ -118,7 +145,7 @@ void preset_read(unsigned index, preset_t *out)
 }
 int preset_write(unsigned index, const preset_t *p)
 {
-    if (index >= PRESET_COUNT) return -1;
+    if (preset_write_fail || index >= PRESET_COUNT) return -1;
     memcpy(flash + PRESET_FLASH + index * PRESET_STRIDE, p, sizeof *p);
     return 0;
 }
@@ -228,6 +255,8 @@ int main(void)
             hexdump("FLASH", flash + off, len);
         } else if (!strcmp(cmd, "index")) {
             printf("IDX %u\n", ui_preset_index());
+        } else if (!strcmp(cmd, "writefail")) {
+            preset_write_fail = atoi(a) != 0;
         } else if (!strcmp(cmd, "notify")) {
             proto_set_notify_mask((uint8_t)atoi(a));
         } else if (!strcmp(cmd, "select")) {
@@ -235,6 +264,29 @@ int main(void)
             proto_notify_preset();
         } else if (!strcmp(cmd, "rev")) {
             printf("REV %u\n", ui_revision());
+        } else if (!strcmp(cmd, "knob")) {
+            unsigned k, value;
+            if (sscanf(line, "%*s %u %u", &k, &value) == 2 && k < KNOB_COUNT && value <= 4095u) {
+                knob_raw[k] = (uint16_t)value;
+                knob_moved[k] = true;
+                ui_task(clock_ms);
+            }
+#ifdef NAM_RUNTIME
+        } else if (!strcmp(cmd, "namused")) {
+            unsigned n, used;
+            if (sscanf(line, "%*s %u %u", &n, &used) == 2 && n && n <= NAMSTORE_SLOTS) {
+                nam_used[n] = used != 0;
+                nam_generation++;
+            }
+        } else if (!strcmp(cmd, "namfail")) {
+            nam_failure = (unsigned)atoi(a);
+        } else if (!strcmp(cmd, "nambusy")) {
+            nam_busy = atoi(a) != 0;
+        } else if (!strcmp(cmd, "namselect")) {
+            printf("NAMRESULT %d\n", ui_nam_select((unsigned)atoi(a), true));
+        } else if (!strcmp(cmd, "namstatus")) {
+            printf("NAM %u %u\n", nam_selected, nam_loads);
+#endif
         } else if (!strcmp(cmd, "fsw")) {
             char what[16] = {0};
             sscanf(line, "%*s %*s %15s", what);

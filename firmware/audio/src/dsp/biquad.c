@@ -5,10 +5,11 @@
  */
 
 #include <string.h>
+#include "cold.h"
 #include "biquad.h"
 #include "math.h"
 
-void biquad_init(biquad_t *b, unsigned stages)
+COLD void biquad_init(biquad_t *b, unsigned stages)
 {
     if (stages > BIQUAD_MAX_STAGES) stages = BIQUAD_MAX_STAGES;
     memset(b, 0, sizeof *b);
@@ -17,7 +18,7 @@ void biquad_init(biquad_t *b, unsigned stages)
     arm_biquad_cascade_df2T_init_f32(&b->inst, (uint8_t)stages, b->coeffs, b->state);
 }
 
-void biquad_design(biquad_t *b, unsigned stage, bq_type_t type, float fs, float f0, float q,
+COLD void biquad_design(biquad_t *b, unsigned stage, bq_type_t type, float fs, float f0, float q,
                    float gain_db)
 {
     if (stage >= b->stages) return;

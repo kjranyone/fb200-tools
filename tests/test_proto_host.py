@@ -40,11 +40,12 @@ LOOPER_SRC = ["dsp/looper.c", "dsp/loopcodec.c", "loopstore/loopstore.c", "loops
 
 
 @functools.cache
-def build() -> Path:
+def build(nam_runtime=False) -> Path:
     """Once per process, in its own dir: parallel workers (pytest -n) do not collide."""
     exe = Path(tempfile.mkdtemp(prefix="proto_host_")) / "proto_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
+         *(["-DNAM_RUNTIME"] if nam_runtime else []),
          "-I", str(FW / "src"), "-I", str(FW / "tests"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
          str(FW / "src" / "ui" / "lightbar.c"), str(FW / "src" / "preset" / "preset_check.c"),
@@ -223,11 +224,79 @@ def test_read_and_write_preset(h):
     assert h.flash(PRESET_FLASH + 12 * 0x200, 256) == bytes(new)
 
 
+@pytest.mark.parametrize("nam_runtime", [False, True])
+def test_saving_current_edit_preserves_knob_pickup(nam_runtime):
+    h = Harness(build(nam_runtime=nam_runtime))
+    try:
+        h.cmd("knob 5 410")  # Pick up GAIN at the preset's 10%.
+        h.cmd("knob 5 2048")
+        before = h.edit()
+        h.cmd("tick 500")  # Blink-off phase: only caught knobs remain lit.
+        assert h.cmd("leds")[0][5 + 11] == "1"
+        assert h.cmd("leds")[0][5 + 0] == "0"  # BASS still awaits pickup.
+        out = h.send(0x97, bytes([0]) + before)
+        assert [(fn, p) for _, fn, p in out] == [(0x99, b"\x01"), (0x98, b"\x00")]
+        assert h.flash(PRESET_FLASH, 256) == before
+        h.cmd("tick 500")
+        assert h.cmd("leds")[0][5 + 11] == "1"
+        assert h.cmd("leds")[0][5 + 0] == "0"
+        h.cmd("knob 5 2457")  # Continue turning without picking up 50 again.
+        assert struct.unpack_from("<H", h.edit(), 0x30)[0] == 60
+        # A genuinely different record still reloads and rearms pickup.
+        changed = bytearray(before)
+        struct.pack_into("<H", changed, 0x30, 25)
+        h.send(0x97, bytes([0]) + changed)
+        h.cmd("tick 500")
+        assert h.cmd("leds")[0][5 + 11] == "0"
+        h.cmd("knob 5 2800")
+        assert struct.unpack_from("<H", h.edit(), 0x30)[0] == 25
+    finally:
+        h.close()
+
+
 def test_rename_preset(h):
     out = h.send(0x99, bytes([3]) + b"Renamed".ljust(20, b"\0"))
     assert [(t, fn) for t, fn, _ in out] == [("b", 0x97), ("b", 0xA1)]
     assert h.flash(PRESET_FLASH + 3 * 0x200, 20) == b"Renamed".ljust(20, b"\0")
     assert out[1][2][0] == 3 and out[1][2][1:8] == b"Renamed"
+
+
+def test_failed_save_keeps_live_edit_and_current_preset(h):
+    h.cmd("knob 5 410")
+    h.cmd("knob 5 2048")
+    before = h.edit()
+    flash = h.flash(PRESET_FLASH, 40 * 0x200)
+    h.cmd("writefail 1")
+    for destination in (0, 12):
+        assert [(fn, p) for _, fn, p in h.send(0x97, bytes([destination]) + before)] == [
+            (0x99, b"\x00")
+        ]
+        assert h.edit() == before and h.cmd("index") == ["IDX 0"]
+        assert h.flash(PRESET_FLASH, 40 * 0x200) == flash
+        h.cmd("tick 500")
+        assert h.cmd("leds")[0][5 + 11] == "1"
+
+
+def test_legacy_app_full_preset_preserves_nam_binding():
+    h = Harness(build(nam_runtime=True))
+    try:
+        preset = bytearray(h.edit())
+        binding = struct.pack("<HH", 0x414E, 2)
+        preset[0xDE:0xE2] = binding
+        h.send(0x97, bytes([4]) + preset)
+        legacy = bytearray(preset)
+        legacy[0xDE:0xE2] = bytes(4)
+        legacy[:4] = b"Old!"
+        h.send(0x97, b"\xff" + legacy)
+        assert h.edit()[0xDE:0xE2] == binding
+        h.send(0x97, bytes([4]) + legacy)
+        assert h.flash(PRESET_FLASH + 4 * 0x200 + 0xDE, 4) == binding
+        # An explicit NAM marker can intentionally clear the binding.
+        legacy[0xDE:0xE2] = struct.pack("<HH", 0x414E, 0)
+        h.send(0x97, b"\xff" + legacy)
+        assert h.edit()[0xDE:0xE2] == struct.pack("<HH", 0x414E, 0)
+    finally:
+        h.close()
 
 
 def test_app_edits_keep_our_eq_bytes(h):
@@ -709,6 +778,50 @@ def loop(h) -> tuple[int, int, str]:
     """(state, undo, actions since the last call): dsp/looper.h LOOPER_*"""
     _, st, undo, *acts = h.cmd("loop")[0].split(" ")
     return int(st), int(undo), " ".join(a for a in acts if a)
+
+
+def looper_status(h) -> tuple[int, ...]:
+    """The 0xD7 status reply as integers: state, level, len/pos/max/prep s,
+    undo, store busy, writing."""
+    [(fn, payload)] = [(f, p) for _, f, p in h.send(0xD7, bytes([0])) if f == 0xD8]
+    assert fn == 0xD8 and len(payload) == 13
+    return (payload[0], payload[1], *struct.unpack("<HHHH", payload[2:10]),
+            payload[10], payload[11], payload[12])
+
+
+def looper_action(h, op: int, arg: int | None = None) -> int:
+    data = bytes([op]) if arg is None else bytes([op, arg])
+    [(fn, payload)] = [(f, p) for _, f, p in h.send(0xD7, data) if f == 0xD8]
+    assert fn == 0xD8 and len(payload) == 1
+    return payload[0]
+
+
+def test_looper_app_commands(h):
+    st = looper_status(h)
+    assert st[0] == 1 and st[1] == 100 and st[2:4] == (0, 0) and st[6] == 0  # empty, level 100
+    assert looper_action(h, 2) == 0                                          # rec (op 2)
+    assert looper_status(h)[0] == 2                                          # recording
+    blocks(h, 2500)                                                          # ~1.7 s of audio
+    assert looper_action(h, 3) == 0                                          # play (close)
+    blocks(h, 40)
+    st = looper_status(h)
+    assert st[0] == 3 and 1 <= st[2] <= st[4]                                # playing, len <= max
+    assert looper_action(h, 4) == 0                                          # dub
+    blocks(h, 60)
+    assert looper_action(h, 6) == 0                                          # undo
+    assert looper_status(h)[6] == 1                                          # undo available
+    assert looper_action(h, 8, 37) == 0 and looper_status(h)[1] == 37       # level
+    assert looper_action(h, 8, 150) == 0 and looper_status(h)[1] == 100     # clamped
+    assert looper_action(h, 5) == 0                                          # stop
+    blocks(h, 40)                                                            # the action settles in looper_poll
+    assert looper_status(h)[0] == 5
+    assert looper_action(h, 7) == 0 and looper_status(h)[0] == 1            # clear
+    # Malformed requests answer 0xFE; unknown ops too.
+    assert looper_action(h, 11) == 0xFE
+    assert looper_action(h, 8) == 0xFE  # level without a byte
+    assert looper_action(h, 9, 3) == 0xFE  # slot out of range
+    [(_, payload)] = [(f, p) for _, f, p in h.send(0xD7, b"") if f == 0xD8]
+    assert payload == b"\xfe"
 
 
 def blocks(h, n: int) -> None:

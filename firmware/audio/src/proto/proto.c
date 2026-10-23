@@ -11,6 +11,7 @@
 #include "proto/proto.h"
 #include "preset/preset.h"
 #include "ui/ui.h"
+#include "audio/engine.h"
 
 /* ---- CRC16 (table CRC-CCITT, init 0, final XOR 0xFFFF) ---------------- */
 static uint16_t crc_table[256];
@@ -54,6 +55,9 @@ __attribute__((weak)) void proto_hook_bt_enable(bool on) { (void)on; }
 __attribute__((weak)) void proto_hook_bootloader(void) {}
 __attribute__((weak)) int proto_hook_factory_reset(void) { return -1; }
 __attribute__((weak)) void proto_hook_ir_changed(unsigned slot) { (void)slot; }
+__attribute__((weak)) uint32_t proto_hook_nam(uint8_t src, const uint8_t *p, uint32_t n,
+                                            uint8_t *out, uint32_t cap)
+{ (void)src; (void)p; (void)n; (void)out; (void)cap; return 0; }
 
 /* ---- state -------------------------------------------------------------- */
 typedef struct { uint8_t buf[PROTO_MAX_FRAME]; uint32_t n; } rx_t;
@@ -62,6 +66,52 @@ static proto_send_fn senders[2];
 static uint8_t notify_mask = PROTO_BLE;
 static uint8_t tx[PROTO_MAX_FRAME];
 static uint8_t pl[PROTO_MAX_LEN];
+
+/* 0xD7 looper control (our extension; docs/PROTOCOL.md). Reply payload:
+ *   op 0 status -> [state][level][len_s u16][pos_s u16][max_s u16][prep_s u16]
+ *                  [undo][store busy][writing] (13 bytes)
+ *   op 1..7 action (tap/rec/play/dub/stop/undo/clear) -> [code] (0 ok,
+ *     1 not now, 2 no flash area, 3 not ready)
+ *   op 8 [level 0..100] -> [0]
+ *   op 9/10 [slot 1..2] save/load -> [0 ok][1 failed]
+ * Anything malformed answers [0xFE]. No looper in this build: state OFF
+ * (engine_loop_info reads a zeroed state) and every action answers 2. */
+static uint32_t looper_reply(const uint8_t *p, uint32_t n, uint8_t *out)
+{
+    if (n < 1u) { out[0] = 0xFE; return 1u; }
+    if (p[0] == 0u) {
+        looper_info_t i;
+        engine_loop_info(&i);
+        unsigned level = i.level > 100u ? 100u : i.level;
+        out[0] = (uint8_t)i.state;
+        out[1] = (uint8_t)level;
+        out[2] = (uint8_t)(i.len_ms / 1000u); out[3] = (uint8_t)((i.len_ms / 1000u) >> 8);
+        out[4] = (uint8_t)(i.pos_ms / 1000u); out[5] = (uint8_t)((i.pos_ms / 1000u) >> 8);
+        out[6] = (uint8_t)(i.max_ms / 1000u); out[7] = (uint8_t)((i.max_ms / 1000u) >> 8);
+        out[8] = (uint8_t)(i.prep_ms / 1000u); out[9] = (uint8_t)((i.prep_ms / 1000u) >> 8);
+        out[10] = (uint8_t)i.undo;
+        out[11] = (uint8_t)(engine_loop_busy() != 0);
+        out[12] = (uint8_t)(engine_loop_writing() != 0);
+        return 13u;
+    }
+    if (p[0] >= 1u && p[0] <= 7u) {
+        int r = engine_loop((int)p[0] - 1);
+        out[0] = r == 0 ? 0u : r == -1 ? 1u : r == -2 ? 2u : 3u;
+        return 1u;
+    }
+    if (p[0] == 8u && n >= 2u) {
+        engine_loop_level(p[1] > 100u ? 100u : p[1]);
+        out[0] = 0;
+        return 1u;
+    }
+    if ((p[0] == 9u || p[0] == 10u) && n >= 2u && p[1] >= 1u && p[1] <= 2u) {
+        int r = p[0] == 9u ? engine_loop_save(p[1]) : engine_loop_load(p[1]);
+        out[0] = r == 0 ? 0u : 1u;
+        return 1u;
+    }
+    out[0] = 0xFE;
+    return 1u;
+}
 
 static uint8_t aux[30];
 static uint8_t ir_names[IR_SLOTS * IR_NAME_LEN];
@@ -456,6 +506,11 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
 {
     uint8_t *s = ui_settings()->b;
     switch (fn) {
+    case 0xE0: {
+        uint32_t size=proto_hook_nam(src,p,n,pl,sizeof pl);
+        if (size) send(src,0xE1,pl,size);
+        break;
+    }
     case 0x00:
         send(src, 0x01, pl, version_block(pl));
         break;
@@ -504,13 +559,33 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
         if (n < 1u + PRESET_SIZE) break;
         preset_t np;
         memcpy(np.b, p + 1, PRESET_SIZE);
+#ifdef NAM_RUNTIME
+        /* Legacy apps may zero the unknown preset tail. Preserve the NAM
+         * binding unless the incoming record explicitly contains our marker. */
+        if (pget(&np,P_NAM_MARK)!=NAM_MARK) {
+            preset_t old;
+            if (p[0]==0xFF) old=*ui_edit_preset();
+            else if (p[0]<PRESET_COUNT) preset_read(p[0],&old);
+            else break;
+            memcpy(np.b+P_NAM_MARK,old.b+P_NAM_MARK,4);
+        }
+#endif
         if (p[0] == 0xFF) { ui_edit_load(&np); break; }
         if (p[0] >= PRESET_COUNT) break;
         uint8_t ok = preset_write(p[0], &np) == 0;
-        ui_select(p[0]);
+        /* Saving the current edit is not a preset recall: reloading the
+         * identical record would rearm every physical knob's pickup (and
+         * restart its blinking LED). Keep the live controls in that case.
+         * An import/copy that changes the record still needs a normal load.
+         * A failed write must never discard the live edit. */
+        if (ok && (p[0] != ui_preset_index() ||
+                   memcmp(np.b, ui_edit_preset()->b, PRESET_SIZE) != 0))
+            ui_select(p[0]);
         send(src, 0x99, &ok, 1);
-        uint8_t i = p[0];
-        send(src, 0x98, &i, 1);
+        if (ok) {
+            uint8_t i = p[0];
+            send(src, 0x98, &i, 1);
+        }
         break;
     }
     case 0x98:                        /* select preset */
@@ -614,6 +689,12 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
     case 0xD6:
         if (n >= 1) d6_value = p[0];
         break;
+    case 0xD7:                        /* looper (ours): status/actions/level/save/load */
+    {
+        uint32_t k = looper_reply(p, n, pl);
+        send(src, 0xD8, pl, k);
+        break;
+    }
     case 0xD9:
         send(src, 0xDA, aux, sizeof aux);
         break;

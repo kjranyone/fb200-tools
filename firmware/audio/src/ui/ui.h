@@ -20,6 +20,11 @@ uint8_t ui_master(void);                  /* 0..100 */
 uint32_t ui_revision(void);               /* bumps on every edit/preset change */
 void ui_select(unsigned index);           /* console / remote */
 int ui_save(void);                        /* write the edit buffer to its slot (console) */
+#ifdef NAM_RUNTIME
+/* Load first; only a successful selection changes the live preset binding.
+ * Shared by panel/CDC/BLE/HID; persistence still requires an explicit save. */
+int ui_nam_select(unsigned slot, bool reload);
+#endif
 void ui_set_log(bool on);                 /* log footswitch and knob events */
 void ui_flush_settings(void);             /* write unsaved settings now (power fail) */
 /* Remote edits (app protocol, src/proto): write into the live edit buffer or

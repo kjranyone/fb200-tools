@@ -87,13 +87,34 @@ def test_open_opens_device_and_io_works(monkeypatch):
     assert dev.opened_path == b"dev-1"
     assert dev.nonblocking == 0
     transport.write_report(b"\x01abc")
-    assert dev.writes == [[1, 97, 98, 99]]
+    if sys.platform == "win32":
+        # Windows prefixes the unnumbered report ID 0 (see write_report).
+        assert dev.writes == [[0, 1, 97, 98, 99]]
+    else:
+        assert dev.writes == [[1, 97, 98, 99]]
     dev.reads.append(b"\x01xyz")
     assert transport.read_report() == b"\x01xyz"
     assert transport.read_report() is None
     transport.close()
     transport.close()
     assert dev.closed is True
+
+
+def test_windows_long_frames_keep_every_payload_byte(monkeypatch):
+    from fb200.protocol import FrameReader, pack_frame, write_frame
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    created = install_fake_hid(monkeypatch)
+    transport = HidapiTransport().open()
+    payload = bytes([255]) + bytes(range(256))
+    write_frame(transport, pack_frame(0x97, payload))
+    reader = FrameReader()
+    for report in created[0].writes:
+        assert len(report) == 65
+        assert report[0] == 0
+        reader.feed_report(bytes(report[1:]))
+    assert reader.next_packet() == bytes([0x97]) + payload
+    transport.close()
 
 
 def test_open_failure_is_wrapped_and_state_is_clean(monkeypatch):

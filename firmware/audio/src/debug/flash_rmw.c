@@ -40,6 +40,10 @@ static int in_region(uint32_t offset, uint32_t len)
     if (offset >= FLASH_IRSTORE_BASE && offset < FLASH_IRSTORE_LIMIT)
         return len <= FLASH_IRSTORE_LIMIT - offset &&
                flash_capacity() >= FLASH_IRSTORE_LIMIT;
+#ifdef NAM_RUNTIME
+    if (offset >= FLASH_NAM_BASE && offset < FLASH_NAM_LIMIT)
+        return len <= FLASH_NAM_LIMIT - offset && flash_capacity() >= FLASH_NAM_LIMIT;
+#endif
     uint32_t end = offset >= FLASH_LOOP_META ? flash_loop_end() : 0u;
     return offset < end && len <= end - offset;
 }

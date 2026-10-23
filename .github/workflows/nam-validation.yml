@@ -1,0 +1,143 @@
+name: NAM validation
+
+on:
+  push:
+    branches: [feat/nam-a2-lite-foundation]
+    paths:
+      - '.github/workflows/nam-validation.yml'
+      - 'firmware/audio/**'
+      - 'firmware/tools/**'
+      - 'src/fb200/**'
+      - 'tools/nam*'
+      - 'tests/**'
+      - 'mobile/**'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - '.github/workflows/nam-validation.yml'
+      - 'firmware/audio/**'
+      - 'firmware/tools/**'
+      - 'src/fb200/**'
+      - 'tools/nam*'
+      - 'tests/**'
+      - 'mobile/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nam-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-and-arm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install native and ARM toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi libeigen3-dev make curl
+          python -m pip install -e '.[dev]' pytest-xdist
+      - name: Check out the pinned official Core oracle
+        uses: actions/checkout@v4
+        with:
+          repository: sdatkinson/NeuralAmpModelerCore
+          ref: 0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842
+          path: .nam-core-reference-source
+      - name: Build the numerical oracle
+        run: |
+          g++ -std=c++20 -O2 -ffp-contract=off -ffunction-sections -fdata-sections \
+            -DNAM_ENABLE_A2_FAST -I .nam-core-reference-source -I .nam-core-reference-source/NAM \
+            -I .nam-core-reference-source/Dependencies/nlohmann -I /usr/include/eigen3 \
+            tools/nam_core_reference.cpp .nam-core-reference-source/NAM/wavenet/a2_fast.cpp \
+            .nam-core-reference-source/NAM/dsp.cpp -Wl,--gc-sections -o /tmp/nam-core-reference
+      - name: Lint and run host tests (no hardware)
+        env:
+          FB200_NAM_CORE_REFERENCE: /tmp/nam-core-reference
+        run: |
+          ruff check src app tests tools firmware
+          # All pytest workers share fetched SDK trees. Fetch once before -n 4.
+          make -C firmware/audio deps
+          pytest -q -rs -n 4 --junitxml=nam-tests.xml
+      - name: Build and check the restricted runtime image
+        run: |
+          make -C firmware/audio PROFILE=nam-runtime -j4 build layout
+          python firmware/tools/hot_path.py firmware/audio/build/nam-runtime/fb200-app.elf --nam-runtime
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nam-host-evidence
+          path: |
+            nam-tests.xml
+            firmware/audio/build/nam-runtime/layout.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-and-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: '3.47.7'
+          cache: true
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Analyze and test the app
+        run: |
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+      - name: Prepare the Android compile SDK
+        run: |
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0'
+          # AGP/plugins request integer 37; the SDK repository publishes 37.0.
+          if [ ! -e "${ANDROID_HOME}/platforms/android-37" ]; then
+            ln -s android-37.0 "${ANDROID_HOME}/platforms/android-37"
+          fi
+      - name: Build Android debug APK and web demo
+        run: |
+          flutter build apk --debug
+          flutter build web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nam-android-debug-and-web-demo
+          path: |
+            mobile/build/app/outputs/flutter-apk/app-debug.apk
+            mobile/build/web/
+          if-no-files-found: error
+          retention-days: 7
+
+  ios-compile:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: '3.47.7'
+          cache: true
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Compile for iOS without signing or installing
+        run: flutter build ios --no-codesign

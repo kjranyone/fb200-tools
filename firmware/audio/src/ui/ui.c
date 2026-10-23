@@ -87,6 +87,109 @@ static bool modifier_used;   /* A held while a knob turned: A is a modifier */
 static uint32_t rhythm_dirty_ms;
 static uint32_t s_now;
 
+#ifdef NAM_RUNTIME
+/* A compact, validated catalog: bypass, followed by populated slot numbers.
+ * Inspect one slot per 10 ms, not all 64 on each turn of the AMP knob.
+ * Mutations invalidate the catalog; the loader still validates on selection. */
+#define NAM_KNOB 2
+#define NAM_SETTLE_MS 250u
+static uint8_t nam_slots[NAMSTORE_SLOTS + 1u];
+static unsigned nam_count = 1, nam_scan = 1;
+static uint32_t nam_generation = UINT32_MAX, nam_scan_ms, nam_move_ms;
+static int nam_previous = -1, nam_pending = -1;
+static bool nam_caught;
+
+static void nam_pickup_reset(void)
+{
+    nam_caught = caught[NAM_KNOB] = false;
+    nam_previous = nam_scan > NAMSTORE_SLOTS ? (int)((unsigned)knob_value(NAM_KNOB) * nam_count / 4096u) : -1;
+    nam_pending = -1;
+}
+
+int ui_nam_select(unsigned selected, bool reload)
+{
+    if (selected > NAMSTORE_SLOTS) return -1;
+    int r = (reload || engine_nam_selected() != selected) ? engine_nam_select(selected) : 0;
+    if (r) return r;   /* keep both edit buffer and running model on failure */
+    pset(&edit, P_NAM_MARK, NAM_MARK);
+    pset(&edit, P_NAM_SLOT, (uint16_t)selected);
+    if (selected) pset(&edit, P_AMP_EN, 1);
+    nam_pickup_reset();
+    revision++;
+    return 0;
+}
+
+static unsigned nam_position(void)
+{
+    return (unsigned)knob_value(NAM_KNOB) * nam_count / 4096u;
+}
+
+static void nam_show(void)
+{
+    unsigned selected = nam_slots[nam_position()];
+    char t[5] = {'n', (char)('0' + selected / 10u), (char)('0' + selected % 10u),
+                 nam_caught && nam_pending < 0 ? 0 : '.', 0};
+    display_text(t);
+}
+
+static void nam_catalog_task(uint32_t now)
+{
+    if (namstore_revision() != nam_generation) {
+        nam_generation = namstore_revision();
+        nam_count = nam_scan = 1;
+        nam_pickup_reset();
+    }
+    if (namstore_active() || nam_scan > NAMSTORE_SLOTS || now - nam_scan_ms < 10u) return;
+    nam_scan_ms = now;
+    if (namstore_is_model(nam_scan)) nam_slots[nam_count++] = (uint8_t)nam_scan;
+    nam_scan++;
+    if (nam_scan > NAMSTORE_SLOTS) nam_previous = (int)nam_position();
+}
+
+static void nam_knob(uint32_t now)
+{
+    nam_move_ms = now;
+    if (tuner_mode) { nam_pending = -1; return; }
+    if (nam_scan <= NAMSTORE_SLOTS || namstore_active()) {
+        display_text("bUS");
+    } else {
+        unsigned position = nam_position(), selected = preset_nam_slot(&edit), target = nam_count;
+        for (unsigned i = 0; i < nam_count; i++) if (nam_slots[i] == selected) target = i;
+        /* Crossing pickup also works when a quick turn skips a narrow bin.
+         * A binding to a removed slot is taken over on the first movement. */
+        if (target == nam_count || position == target ||
+            (nam_previous >= 0 && ((unsigned)nam_previous <= target && position >= target)) ||
+            (nam_previous >= 0 && ((unsigned)nam_previous >= target && position <= target)))
+            nam_caught = true;
+        nam_previous = (int)position;
+        caught[NAM_KNOB] = nam_caught;
+        nam_pending = nam_caught && nam_slots[position] != selected ? (int)nam_slots[position] : -1;
+        nam_show();
+    }
+    overlay_until = now + 1500u;
+}
+
+static void nam_selection_task(uint32_t now)
+{
+    if (nam_pending < 0) return;
+    if (tuner_mode || namstore_active()) { nam_pickup_reset(); return; }
+    if (now - nam_move_ms < NAM_SETTLE_MS) return;
+    unsigned selected = (unsigned)nam_pending;
+    nam_pending = -1;
+    if (ui_nam_select(selected, false)) {
+        nam_pickup_reset();
+        display_text("Err");
+    } else {
+        nam_caught = caught[NAM_KNOB] = true;
+        nam_previous = (int)nam_position();
+        nam_show();
+        proto_notify_module(2);
+        proto_notify_preset();   /* app refreshes binding + selected NAM */
+    }
+    overlay_until = now + 1500u;
+}
+#endif
+
 void ui_set_log(bool on) { ui_log = on; }
 
 static uint16_t knob_units(int k)
@@ -130,6 +233,9 @@ static void show_preset(void)
 
 static void load(unsigned b, unsigned s)
 {
+#ifdef NAM_RUNTIME
+    nam_pickup_reset();
+#endif
     bank = view_bank = b % 10u;
     slot = s & 3u;
     browsing = false;
@@ -453,6 +559,14 @@ static void knobs(uint32_t now)
     for (int k = 0; k < KNOB_COUNT; k++) {
         if (!knob_changed(k)) continue;
         power_activity();
+#ifdef NAM_RUNTIME
+        if (k == NAM_KNOB) {
+            shown_knob = k;
+            name_until = 0;
+            nam_knob(now);
+            continue;
+        }
+#endif
         uint16_t v = knob_units(k), s = stored(k);
         if (ui_log) log_printf("knob k%d = %u (raw %u, stored %u%s)\r\n", k, v,
                                (unsigned)knob_value(k), s, caught[k] ? "" : ", not caught");
@@ -594,6 +708,10 @@ void ui_task(uint32_t now_ms)
         if (li.state != loop_shown) show_loop();   /* closed when full, cleared, stopped */
     }
     knobs(now_ms);
+#ifdef NAM_RUNTIME
+    nam_catalog_task(now_ms);
+    nam_selection_task(now_ms);
+#endif
     leds(now_ms);
     light_rings(now_ms);
     if (overlay_until && (int32_t)(now_ms - overlay_until) >= 0) {
@@ -692,12 +810,18 @@ uint32_t ui_revision(void) { return revision; }
 void ui_edit_write(unsigned off, const void *src, unsigned n)
 {
     if (off >= PRESET_SIZE || n > PRESET_SIZE - off) return;
+#ifdef NAM_RUNTIME
+    if (off < P_NAM_SLOT + 2u && off + n > P_NAM_MARK) nam_pickup_reset();
+#endif
     memcpy(edit.b + off, src, n);
     revision++;
 }
 
 void ui_edit_load(const preset_t *p)
 {
+#ifdef NAM_RUNTIME
+    nam_pickup_reset();
+#endif
     edit = *p;
     (void)preset_sanitize(&edit);   /* app 0x97 [0xFF]: a whole record, unchecked by the stock */
     revision++;

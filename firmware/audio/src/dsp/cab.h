@@ -43,6 +43,9 @@ int cab_set_ir_len(cab_t *c, const float *ir, unsigned taps, float gain);
  * odd samples), 512-point CFFT, gain = 100 / sum_{k=1..85} sqrt|X[k-1]| *
  * (30/k + 1); 1 when the sum is 0. */
 float cab_user_ir_gain(const float *ir);
+/* Resample a 44.1 kHz IR in place for a 48 kHz build (linear, ascending;
+ * see cab.c). The stock gain rules run on the 44.1 kHz taps before this. */
+void cab_ir_441_to_48(float *ir, unsigned taps);
 /* In place, n <= DSP_BLOCK. n < DSP_BLOCK is exact but costs a full block. */
 void cab_process(cab_t *c, float *x, unsigned n);
 #endif

@@ -76,6 +76,7 @@ static bool s_fault_mute;    /* SAI FIFO fault: short mute, then release */
 static uint32_t s_fault_ms;
 static bool s_meters;
 static tuner_t s_tuner;
+static tuner_result_t s_tuner_result;
 static drums_t s_drums;
 static bool s_tuner_on;
 static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
@@ -102,7 +103,9 @@ static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
 static reverb_t s_rev __attribute__((section(".itcm_bss")));
+#endif
 /* Our bass delay (docs/PARITY.md M4). Its line (DELAY_LEN int16, 88 kB for
  * 1 s): the DTCM between .bss and the stack (linker.ld .dtcm_hi). */
 static delay_t s_dly;
@@ -142,12 +145,67 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 static bool s_ready;          /* engine_init done: engine_pump may run */
+#ifdef NAM_MEMORY_PROBE
+#include "dsp/nam_a2.h"
+/* Reserve the complete fixed-player working set (weights + history + state).
+ * Volatile endpoint writes retain this allocation in the linked image.
+ * No NAM processing is connected to the pedal's audio path in this first step. */
+static volatile nam_a2_t s_nam_reserve __attribute__((section(".dtcm_lo")));
+_Static_assert(AUDIO_FS == NAM_A2_RATE && !ENGINE_LONG_IR,
+               "NAM probe needs 48 kHz and the long-IR tail's RAM");
+_Static_assert(sizeof(nam_a2_t) <= 84u * 1024u, "NAM working set exceeds budget");
+#endif
 static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
 static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
 static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
+static float s_level[3];      /* engine_levels(): input, NAM input, output */
+#ifdef NAM_RUNTIME
+#include "dsp/nam_a2.h"
+#include "dsp/nam_tone.h"
+#include "namstore/namstore.h"
+static nam_a2_t s_nam __attribute__((section(".dtcm_lo")));
+/* The preset's amp words shape the NAM stage. Keep this separate from the
+ * user's five-band EQ after the cabinet; neither overwrites the other. */
+static nam_tone_t s_nam_tone __attribute__((section(".ocram")));
+static unsigned s_nam_slot;
+static bool s_nam_loading;
+static float s_nam_fade;
+
+COLD unsigned engine_nam_selected(void) { return s_nam_slot; }
+COLD int engine_nam_select(unsigned slot)
+{
+    if (slot == 0) { s_nam_slot = 0; return 0; }
+    if (s_nam_loading || namstore_active()) return -1;
+    int bank = namstore_current(slot);
+    const uint8_t *p = bank < 0 ? NULL : namstore_record(slot, (unsigned)bank);
+    if (namstore_valid(p) != 1) return -1; /* keep current model on bad selection */
+    s_nam_loading = true;
+    if (nam_a2_init(&s_nam, (const float *)(p+NAMSTORE_HEADER), NAM_A2_WEIGHTS,
+                    NAM_A2_RATE, AUDIO_FS) != 0) {
+        s_nam_slot = 0; s_nam_loading = false; return -1;
+    }
+    /* Keep USB/SAI serviced while settling biases. Audio is muted during
+     * load/warmup; the new model fades in after completing its history. */
+    for (unsigned n=0; n<NAM_A2_RECEPTIVE_FIELD; n+=DSP_BLOCK) {
+        float zero[DSP_BLOCK] = {0};
+        if (nam_a2_process(&s_nam, zero, DSP_BLOCK)) {
+            s_nam_slot = 0; s_nam_loading = false; return -1;
+        }
+        flash_pump(); /* audio/USB service plus watchdog refresh */
+    }
+    nam_tone_reset(&s_nam_tone);
+    s_nam_slot = slot; s_nam_fade = 0;
+    s_nam_loading = false;
+    return 0;
+}
+#endif
 
 COLD void engine_init(void)
 {
+#ifdef NAM_MEMORY_PROBE
+    s_nam_reserve.history[0] = 0;
+    s_nam_reserve.history[NAM_A2_HISTORY - 1] = 0;
+#endif
     usb_audio_init();
     sai_audio_init();
     gain_init(&s_gain, 1.0f);
@@ -173,18 +231,29 @@ COLD void engine_init(void)
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     reverb_init(&s_rev, (float)AUDIO_FS);
+#endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_init(&s_eq, (float)AUDIO_FS);
+#ifdef NAM_RUNTIME
+    nam_tone_init(&s_nam_tone, (float)AUDIO_FS);
+#endif
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     /* the looper's area: the JEDEC ID sizes it (8 MB: F:0x510000..0x800000);
      * nothing in it is read before the looper writes it */
     (void)flash_probe();
     lsio_init(flash_suspend_ok());
     (void)ls_init(&s_ls, &s_lio, s_lmap[0], s_lmap[1], FLASH_LOOP_BASE, flash_loop_end());
     looper_init(&s_loop, &s_lio, &s_ls);
+#else
+    memset(&s_loop, 0, sizeof s_loop);   /* no looper: engine_loop_info stays sane */
+    memset(&s_ls, 0, sizeof s_ls);
+#endif
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
+    (void)drums_set_output_rate(&s_drums, AUDIO_FS);
     s_ready = true;
 }
 
@@ -197,7 +266,13 @@ void engine_pump(void)
     s_drums.no_flash = 0;
 }
 
-void engine_set_tuner(bool on) { s_tuner_on = on; }
+void engine_set_tuner(bool on) {
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
+    s_tuner_on = on;
+#else
+    (void)on;
+#endif
+}
 
 static volatile bool s_reapply;
 
@@ -210,7 +285,13 @@ void engine_dsp_reset(void)
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     reverb_init(&s_rev, (float)AUDIO_FS);
+#endif
+#ifdef NAM_RUNTIME
+    nam_a2_reset(&s_nam);
+    nam_tone_reset(&s_nam_tone);
+#endif
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_reset(&s_eq);            /* the settings come back with the preset */
     s_amp_model = s_cab_type = -1;
@@ -229,7 +310,8 @@ bool engine_needs_reapply(void)
  * The stock plays an empty slot as silence; that left users with a pedal
  * that "stopped working" (seen 2026-09-27: our first version even read the
  * erased flash as NaN taps and stayed silent for good). An empty slot now
- * bypasses the cab instead. */
+ * bypasses the cab instead. The stock gain rule runs on the 44.1 kHz taps;
+ * a 48 kHz build then resamples them in place. */
 static int load_user_ir(unsigned slot)
 {
     const volatile uint8_t *used = (const volatile uint8_t *)(0x60000000u + 0x88000u);
@@ -238,22 +320,29 @@ static int load_user_ir(unsigned slot)
     memcpy(s_ir, ir, CAB_TAPS * sizeof s_ir[0]);
     for (unsigned i = 0; i < CAB_TAPS; i++)
         if (!(s_ir[i] > -1e6f && s_ir[i] < 1e6f)) s_ir[i] = 0.0f;   /* NaN/inf -> 0 */
-    cab_set_ir(&s_cab, s_ir, cab_user_ir_gain(s_ir));
+    float gain = cab_user_ir_gain(s_ir);
+#if defined(NAM_RUNTIME) && defined(NAM_UTILITIES)
+    cab_ir_441_to_48(s_ir, CAB_TAPS);
+#endif
+    cab_set_ir(&s_cab, s_ir, gain);
     return 1;
 }
 
 static bool s_cab_bypass;   /* user IR slot selected but empty */
 
+#ifndef NAM_RUNTIME
 /* Long IR slots (cab 20..83, irstore.h): the data CRC is checked before the
  * IR loads; an empty or bad slot bypasses the cab, as an empty user slot.
  * The gain is the stored one (the stock rule, computed at upload). A build
- * with less IR RAM (ENGINE_IR_TAPS) plays the first taps. */
+ * with less IR RAM (ENGINE_IR_TAPS) plays the first taps. NAM builds do not
+ * compile the store: their cab path stops at the stock/user slots. */
 static int load_long_ir(unsigned slot)
 {
     irstore_entry_t e;
     int taps = irstore_load(slot, s_ir, ENGINE_IR_TAPS, &e);
     return taps > 0 && cab_set_ir_len(&s_cab, s_ir, (unsigned)taps, e.gain) == 0;
 }
+#endif
 
 COLD float *engine_ir_borrow(void)
 {
@@ -295,19 +384,41 @@ COLD int engine_cab_long(unsigned taps)
 
 COLD void engine_apply_preset(const preset_t *p, unsigned master)
 {
+#ifdef NAM_RUNTIME
+    unsigned desired = preset_nam_slot(p);
+    if (desired != s_nam_slot && engine_nam_select(desired) != 0) s_nam_slot = 0;
+#endif
     s_amp_en = pget(p, P_AMP_EN) != 0;
     s_cab_en = pget(p, P_CAB_EN) != 0;
     int model = pget(p, P_AMP_MODEL);
     if (model != s_amp_model && amp_set_model(&s_amp, model) == 0) s_amp_model = model;
     amp_set_params(&s_amp, pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
                    pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
+#ifdef NAM_RUNTIME
+    nam_tone_set(&s_nam_tone, (float)AUDIO_FS,
+                 pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
+                 pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
+#endif
     int cab = pget(p, P_CAB_TYPE);
     if (cab != s_cab_type && !s_ir_busy) {   /* busy: engine_ir_release reapplies */
         s_cab_bypass = false;
-        if (cab >= 1 && cab <= 10) (void)cab_set_model(&s_cab, cab);
+        if (cab >= 1 && cab <= 10) {
+#if defined(NAM_RUNTIME) && defined(NAM_UTILITIES)
+            /* the stock cabs are 44.1 kHz designs: resample for 48 kHz */
+            if (g_stock) {
+                memcpy(s_ir, g_stock->cab_taps[cab - 1], CAB_TAPS * sizeof s_ir[0]);
+                cab_ir_441_to_48(s_ir, CAB_TAPS);
+                cab_set_ir(&s_cab, s_ir, g_stock->cab_gain[cab - 1]);
+            } else (void)cab_set_model(&s_cab, cab);
+#else
+            (void)cab_set_model(&s_cab, cab);
+#endif
+        }
         else if (cab >= 11 && cab <= 19) s_cab_bypass = !load_user_ir((unsigned)(cab - 11));
+#ifndef NAM_RUNTIME
         else if (irstore_slot_of((unsigned)cab) >= 0)
             s_cab_bypass = !load_long_ir((unsigned)irstore_slot_of((unsigned)cab));
+#endif
         s_cab_type = cab;
     }
     s_gate_en = pget(p, P_GATE_EN) != 0;
@@ -319,8 +430,10 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     mod_set_params(&s_mod, pget(p, P_MOD_TYPE), pget(p, P_MOD_P1), pget(p, P_MOD_P2),
                    pget(p, P_MOD_P3), pget(p, P_MOD_P4));
     s_rev_en = pget(p, P_REV_EN) != 0;
-    reverb_set_params(&s_rev, pget(p, P_REV_TYPE), pget(p, P_REV_LEVEL), pget(p, P_REV_DECAY),
-                      pget(p, P_REV_AE), pget(p, P_REV_A8));
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
+    reverb_set_params(&s_rev, pget(p, P_REV_TYPE), pget(p, P_REV_LEVEL),
+                      pget(p, P_REV_DECAY), pget(p, P_REV_AE), pget(p, P_REV_A8));
+#endif
     /* Stock presets have the delay "on" but the stock never plays it: only
      * presets with our marker play (preset.h preset_delay_on). Switching it
      * on starts from a silent line, not from old audio. */
@@ -345,21 +458,41 @@ COLD void engine_apply_settings(const settings_t *s)
     s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
 }
 
+#if defined(NAM_RUNTIME) && !defined(NAM_UTILITIES)
+COLD int engine_loop(int action) { (void)action; return -2; }
+COLD int engine_loop_save(unsigned n) { (void)n; return -1; }
+COLD int engine_loop_load(unsigned n) { (void)n; return -1; }
+COLD void engine_loop_poll(void) {}
+COLD void engine_loop_level(unsigned pct) { (void)pct; }
+COLD void engine_loop_arm(void) {}
+COLD void engine_loop_task(void) {}
+int engine_loop_busy(void) { return 0; }
+int engine_loop_writing(void) { return 0; }
+#else
 COLD int engine_loop(int action) { return looper_cmd(&s_loop, action); }
 COLD int engine_loop_save(unsigned n) { return looper_save(&s_loop, n); }
 COLD int engine_loop_load(unsigned n) { return looper_load(&s_loop, n); }
 COLD void engine_loop_poll(void) { looper_poll(&s_loop); }
-COLD void engine_loop_info(looper_info_t *out) { looper_info(&s_loop, out); }
 COLD void engine_loop_level(unsigned pct) { looper_set_level(&s_loop, pct); }
 COLD void engine_loop_arm(void) { ls_arm(&s_ls); }
 COLD void engine_loop_task(void) { ls_task(&s_ls); }
 int engine_loop_busy(void) { return ls_busy(&s_ls); }
 int engine_loop_writing(void) { return looper_writing(&s_loop); }
+#endif
+COLD void engine_loop_info(looper_info_t *out) { looper_info(&s_loop, out); }
 COLD void engine_loop_stats(engine_loop_stats_t *out)
 {
     ls_info(&s_ls, &out->store);
     out->io = &s_lio;
     out->cut = s_loop.cut;
+}
+
+void engine_levels(float out[3])
+{
+    for (unsigned i = 0; i < 3; i++) {
+        out[i] = s_level[i];
+        s_level[i] = 0.0f;
+    }
 }
 
 float engine_input_peak(void)
@@ -369,7 +502,21 @@ float engine_input_peak(void)
     return p;
 }
 
-bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
+bool engine_tuner_poll(tuner_result_t *out)
+{
+#if defined(NAM_RUNTIME) && !defined(NAM_UTILITIES)
+    /* This profile has no tuner. Keep its cold DSP out of every callback path,
+     * independently of compiler inlining/dead-code decisions. */
+    (void)out;
+    return false;
+#else
+    if (!tuner_poll(&s_tuner, &s_tuner_result)) return false;
+    if (out) *out = s_tuner_result;
+    return true;
+#endif
+}
+void engine_tuner_latest(tuner_result_t *out) { *out = s_tuner_result; }
+void tuner_service(void) { flash_pump(); }
 drums_t *engine_drums(void) { return &s_drums; }
 struct eq_s *engine_eq(void) { return &s_eq; }
 
@@ -536,15 +683,18 @@ void engine_task(void)
         testgen_process(&s_testgen, &s_block, n);
         for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
-    float pk = s_in_peak;
+    float pk = 0.0f;
     for (size_t i = 0; i < n; i++) {
         x[i] = s_block.data[0][i] + s_block.data[1][i];
         float a = x[i] < 0.0f ? -x[i] : x[i];
         if (a > pk) pk = a;
     }
-    s_in_peak = pk;
+    if (pk > s_in_peak) s_in_peak = pk;
+    if (pk > s_level[0]) s_level[0] = pk;
     PROF(P_IN);
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     tuner_feed(&s_tuner, x, n);
+#endif
     PROF(P_TUNER);
     for (size_t i = 0; i < n; i++) x[i] *= dsp_knob_next(&s_in_gain);
     /* stock chain (ITCM 0x7b60): gate -> comp -> amp -> cab -> mod -> reverb;
@@ -554,19 +704,52 @@ void engine_task(void)
     PROF(P_GATE);
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
     PROF(P_COMP);
+#ifdef NAM_RUNTIME
+    if (s_nam_loading) memset(x, 0, sizeof x);
+    else if (s_nam_slot && s_amp_en) {
+        nam_tone_pre(&s_nam_tone, x, (unsigned)n);
+        float npk = s_level[1];
+        for (size_t i = 0; i < n; i++) {
+            float a = x[i] < 0.0f ? -x[i] : x[i];
+            if (a > npk) npk = a;
+        }
+        s_level[1] = npk;
+        if (nam_a2_process(&s_nam, x, (unsigned)n)) {
+            s_nam_slot = 0;
+            memset(x, 0, sizeof x);
+            s_stats.dsp_resets++;
+        }
+        nam_tone_post(&s_nam_tone, x, (unsigned)n);
+        for (unsigned i=0; i<n; i++) {
+            if (s_nam_fade < 1.0f) s_nam_fade += 1.0f/256.0f;
+            x[i] *= s_nam_fade;
+        }
+    }
+#else
     if (s_amp_en) amp_process(&s_amp, x, (unsigned)n);
+#endif
     PROF(P_AMP);
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_cab_en && !s_cab_bypass) cab_process(&s_cab, x, (unsigned)n);
+#endif
     PROF(P_CAB);
     eq_process(&s_eq, x, (unsigned)n);   /* returns at once when off or flat */
     PROF(P_EQ);
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
+#endif
     PROF(P_MOD);
     if (s_dly_en) delay_process(&s_dly, x, (unsigned)n);
     PROF(P_DELAY);
     float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */
-    else { memcpy(xl, x, n * sizeof x[0]); memcpy(xr, x, n * sizeof x[0]); }
+    else
+#endif
+    { memcpy(xl, x, n * sizeof x[0]); memcpy(xr, x, n * sizeof x[0]); }
+#ifdef NAM_RUNTIME
+    if (s_nam_loading) { memset(xl, 0, sizeof xl); memset(xr, 0, sizeof xr); }
+#endif
     PROF(P_REVERB);
     /* Never get stuck silent: one NaN/inf in a filter state keeps a chain
      * outputting NaN (which reaches the DAC as 0). Reset the DSP state and
@@ -581,10 +764,18 @@ void engine_task(void)
         }
     }
     /* the looper: records the chain (mono), plays into both sides */
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     looper_process(&s_loop, xl, xr, (unsigned)n);
+#endif
     PROF(P_LOOP);
     float btl[ENGINE_FRAMES] = {0}, btr[ENGINE_FRAMES] = {0};
-    size_t nbt = bt_audio_pull(btl, btr, n);                 /* Bluetooth audio in */
+    size_t nbt = 0;
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
+    /* Bluetooth audio in. SAI3 runs in every profile (the module slaves to
+     * our I2S clock, so 48 kHz needs no resampling); the base restricted
+     * runtime just never pulls the ring. */
+    nbt = bt_audio_pull(btl, btr, n);
+#endif
     for (size_t i = nbt; i < n; i++) btl[i] = btr[i] = 0.0f;
     for (size_t i = 0; i < n; i++) {
         s_master += 0.001f * (s_master_target - s_master);   /* stock: smoothed master */
@@ -604,7 +795,9 @@ void engine_task(void)
 
     /* Drums before the capture tap: the stock leaves them out of the USB
      * recording; a user playing along wants them in (better than stock). */
+#if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (!s_tuner_on) drums_process_stereo(&s_drums, s_block.data[0], s_block.data[1], n);
+#endif
     PROF(P_DRUMS);
 
     /* USB capture: chain + Bluetooth audio + drums. */
@@ -618,15 +811,20 @@ void engine_task(void)
     }
     PROF(P_USB_IN);
 
+    float opk = s_level[2];
     for (size_t i = 0; i < n; i++) {
         float l = s_block.data[0][i] + (float)play[i * 2 + 0] * (1.0f / 32768.0f);
         float r = s_block.data[1][i] + (float)play[i * 2 + 1] * (1.0f / 32768.0f);
+        float al = l < 0.0f ? -l : l, ar = r < 0.0f ? -r : r;
+        if (al > opk) opk = al;
+        if (ar > opk) opk = ar;
         /* stock output clip */
         if (l > 0.95f) l = 0.95f; else if (l < -0.95f) l = -0.95f;
         if (r > 0.95f) r = 0.95f; else if (r < -0.95f) r = -0.95f;
         out[i * 2 + 0] = outq_sample(&s_outq, l);   /* rounded (v0.9.1: truncated) */
         out[i * 2 + 1] = outq_sample(&s_outq, r);
     }
+    s_level[2] = opk;
     PROF(P_OUT);
     s_prof_n++;
     uint32_t dt = DWT->CYCCNT - t0;

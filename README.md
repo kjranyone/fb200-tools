@@ -1,13 +1,101 @@
 ![banner](images/banner.svg)
 
-# fb200-tools: open firmware for the FLAMMA FB200
+# fb200-tools NAM — neural amp captures on the FLAMMA FB200
 
-**Open-source replacement firmware and tools for the
-[FLAMMA FB200](https://www.flamma.shop/products/flamma-fb200-bass-guitar-intelligent-combined-multi-effects-pedal)
-bass multi-effects pedal.** It sounds like the stock firmware, keeps your presets and the
-official app working, and adds what the stock firmware lacks: USB updates without a
-button combo, a debug console, crash reports, better display feedback, drums in
-your recordings and a bass delay. Add what you want: the software is yours to modify.
+This fork of [w1ne/fb200-tools](https://github.com/w1ne/fb200-tools) runs
+[Neural Amp Modeler](https://www.neuralampmodeler.com/) **A2-Lite** captures on
+the FLAMMA FB200's i.MX RT1052, and adds **FB200 Studio**, an Android app that
+browses captures on [TONE3000](https://www.tone3000.com/), stores them on the
+pedal and edits its presets over Bluetooth.
+
+> **Experimental, unofficial firmware.** It has been installed and used on one
+> FB200 (the maintainer's) since 2026-10-18. Flashing is at your own risk; read
+> [`DISCLAIMER.md`](DISCLAIMER.md). This project is not affiliated with FLAMMA,
+> Mooer, TONE3000 or the Neural Amp Modeler project.
+
+## What it does
+
+**Firmware (`PROFILE=nam-manager`, 48 kHz)**
+
+- Plays a NAM A2-Lite capture in the amp position of the stock chain:
+  gate → compressor → **NAM** → cabinet/IR → EQ → modulation → delay → reverb,
+  plus drums, tuner, looper and Bluetooth audio.
+- 64 persistent model slots. Presets remember their slot; the AMP knob picks a
+  model from the front panel. Each slot also records what the capture is
+  (Amp + Cab, Amp, Cab, Pedal, Outboard…).
+- Models are data: uploading one never rebuilds the firmware. The pedal checks
+  every packet (CRCs, shape, finite weights) and writes it to a spare bank, so
+  an interrupted transfer keeps the previous model.
+- NAM tone controls from the preset's amp settings: GAIN −18..+18 dB before
+  the model, bass/mid/treble and volume after it.
+- Measured on the pedal with everything on (NAM + cab + modulation + reverb +
+  tuner): 80 % of the real-time budget per audio block, no DMA errors.
+
+**FB200 Studio (Android, Flutter)**
+
+- Bluetooth connection to the pedal: presets (40), the full effect chain,
+  NAM model choice and tone, drums, tuner, looper, IR management, settings,
+  backups.
+- TONE3000: sign in, browse favourites/trending/your tones, save compatible
+  A2-Lite captures on the device and send them to free pedal slots.
+- Shows each model's kind and warns when a full-rig capture is doubled by the
+  cabinet/IR stage (or an amp-only capture plays without one).
+- IN / NAM / OUT level meters for setting the input level; English, Japanese
+  and Simplified Chinese.
+
+## Limits
+
+- Only the fixed 48 kHz **A2-Lite** architecture (3 channels, 1,871 weights)
+  runs. Standard/other NAM architectures do not fit the pedal.
+- No per-capture input calibration yet: captures expect different input
+  levels. Use GAIN and the level meters; defaults are still being tuned by ear.
+- Tested on a single pedal and a single Android tablet (Lenovo TB-J716F,
+  Android 16). iOS builds but is unverified on a phone; Bluetooth audio playback
+  has not been listened to.
+- There is **no prebuilt NAM firmware release or APK yet**. Building and
+  installing is currently a developer workflow:
+  [NAM firmware](docs/NAM_A2_LITE.md), [app build](mobile/README.md),
+  [handover notes](docs/NAM_HANDOVER.md). The vendor bootloader is never
+  overwritten, and holding **A+D at power-on** always returns to the vendor
+  updater.
+
+## 日本語の概要
+
+FLAMMA FB200（i.MX RT1052 搭載のマルチエフェクター）で、Neural Amp Modeler の
+**A2-Lite** キャプチャを動かす非公式ファームウェアと、Android アプリ
+**FB200 Studio** です。[w1ne/fb200-tools](https://github.com/w1ne/fb200-tools)
+のフォークです。
+
+- ゲート → コンプ → **NAM** → キャビ/IR → EQ → モジュレーション → ディレイ →
+  リバーブの全エフェクトに加え、ドラム、チューナー、ルーパー、Bluetooth オーディオが
+  動きます（実機で全部オンにして CPU 使用率 80%）。
+- 本体に 64 個のモデルを保存できます。プリセットごとにモデルを割り当て、
+  本体の AMP つまみでも切り替えられます。
+- アプリから Bluetooth で、TONE3000 のキャプチャを探して保存し、本体へ転送できます。
+  プリセットとエフェクトの編集、モデルの種類（Amp + Cab など）の表示、
+  レベルメーター、チューナー、ドラム、ルーパーにも対応しています。
+- **実験段階です。** 確認済みの実機は 1 台だけで、配布用のビルドはまだありません。
+  書き込みは自己責任でお願いします。FLAMMA、Mooer、TONE3000 とは無関係です。
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [NAM firmware](docs/NAM_A2_LITE.md) | supported models, slots, storage, memory |
+| [Hardware log](docs/NAM_HARDWARE_2026-10-18.md) | every flash and on-pedal measurement, with CRCs |
+| [FB200 Studio](mobile/README.md) | app features, build and tests |
+| [TONE3000 on Android](docs/TONE3000_ANDROID.md) | sign-in, library, bulk save and transfer |
+| [Transfer protocol](docs/NAM_BLE_PROTOCOL.md) | BLE/HID messages, retry, capability flags |
+| [Handover](docs/NAM_HANDOVER.md) | implementation map and reproducible checks |
+| [Core attribution](docs/NAM_LICENSE.md) | NeuralAmpModelerCore reference and notice |
+
+## Upstream project
+
+This work builds on [w1ne/fb200-tools](https://github.com/w1ne/fb200-tools).
+The following upstream documentation describes the original project and
+stock-profile functionality. Hardware results reported there are upstream
+results, not validation of this fork's NAM implementation. The photograph and
+support links below belong to the upstream project.
 
 ![The FB200 running the open firmware](images/in-use.jpg)
 
@@ -25,9 +113,10 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.12)
+## Upstream stock firmware status (v0.12)
 
-Verified on a real pedal:
+The following table reproduces **upstream-reported stock-profile hardware
+results**. It does not describe the experimental `nam-runtime` profile.
 
 | Area | What works |
 | --- | --- |
@@ -73,6 +162,14 @@ the "better" roadmap. The code runs on the stock hardware only.
 
 ## Flashing
 
+**The instructions below are for the upstream stock-profile firmware.** The
+linked upstream web flasher and `fb200 update app latest` install upstream
+releases, not this fork's NAM build. This fork publishes no NAM firmware release
+yet: build `PROFILE=nam-manager` as described in
+[NAM_A2_LITE.md](docs/NAM_A2_LITE.md) and [NAM_HANDOVER.md](docs/NAM_HANDOVER.md);
+every NAM flash so far is recorded in the
+[hardware log](docs/NAM_HARDWARE_2026-10-18.md).
+
 > Flashing custom firmware is **at your own risk**; read [`DISCLAIMER.md`](DISCLAIMER.md).
 > The vendor bootloader and your presets are never overwritten, and holding **A+D at
 > power-on** always gets you back to the vendor updater.
@@ -113,7 +210,11 @@ Linux permissions: **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
 ## Using the pedal
 
-The controls work as on the stock firmware:
+The following describes the **upstream stock profile**. Several effects and
+panel actions are disabled in `nam-runtime`; the stock GAIN/tone knobs do not
+edit the NAM model. See the NAM profile's [restricted audio path](docs/NAM_A2_LITE.md#restricted-audio-profile).
+
+The upstream stock-profile controls work as on the stock firmware:
 
 | Action | What it does |
 | --- | --- |
@@ -294,6 +395,10 @@ A desktop app (PoC) with editors and an assistant chat on top of these tools:
 
 ## Credits
 
+- [w1ne/fb200-tools](https://github.com/w1ne/fb200-tools): original FB200 firmware,
+  hardware/protocol research and host tools on which this fork is based.
+- Steven Atkinson's [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore):
+  A2 architecture and reference behavior; see [NAM_LICENSE.md](docs/NAM_LICENSE.md).
 - [wattsline/Flamma-FF20](https://github.com/wattsline/Flamma-FF20): protocol research for
   the sibling Flamma FF20.
 - [ThijsWithaar/MooerManager](https://github.com/ThijsWithaar/MooerManager),

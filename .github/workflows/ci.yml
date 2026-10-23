@@ -126,6 +126,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: labwired-core
+          # -C target-cpu=native artifacts may SIGILL on another runner CPU.
+          # Start a new namespace; keep registry sources, not native binaries.
+          prefix-key: native-registry-only-v1
+          cache-targets: false
       - name: Build labwired
         working-directory: labwired-core
         env:

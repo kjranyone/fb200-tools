@@ -166,6 +166,17 @@ def test_nothing_hot_runs_from_flash():
     assert bad == [], "\n".join(bad)
 
 
+def test_const_data_in_text_is_not_a_callback():
+    """The linker merges data into executable sections; nm's t is not STT_FUNC."""
+    import hot_path
+    image = hot_path.Image(fwbuild.build(FW) / "fb200-app.elf", "arm-none-eabi-")
+    assert "kRingFirst" not in image.funcs.values()
+    assert "engine_task" in image.funcs.values()
+    # SAI callback roots still count; the cold-audio negative controls below
+    # also ensure the improved symbol filter cannot hide a real violation.
+    assert "rx_done" in {image.name(addr) for addr in image.taken}
+
+
 def test_hot_path_check_catches_cold_audio_code(tmp_path):
     """Negative control: audio files (gain.c, called by engine_task; the
     looper's codec) and an ISR callback file (rgb.c) moved to flash

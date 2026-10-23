@@ -1,0 +1,6 @@
+Use case: precise-object-edit
+Asset type: Correction to the generated FB200 Studio application UI mockup.
+Input images: Image 1 is the edit target.
+Primary request: Fix only the signal-chain panel: it currently mistakenly contains TWO MOD tiles. Delete one of the duplicate MOD tiles and evenly redistribute the remaining eight effect tiles along the single continuous horizontal signal wire.
+The final signal path must be exactly IN > GATE > COMP > AMP > CAB > EQ > MOD > DELAY > REVERB > OUT. Exactly eight effect tiles. Exactly one MOD tile. MOD is OFF, DELAY is OFF, all other effect tiles are ON. Keep AMP selected with orange border. No branching.
+Invariants: Preserve all other UI content, app dimensions, typography, overall layout, sidebar, header, colors, six AMP parameter controls and values, model name, bottom utility strip, and all text outside the signal-chain panel exactly unchanged. Do not add any new controls. Keep the result a clean flat screenshot.

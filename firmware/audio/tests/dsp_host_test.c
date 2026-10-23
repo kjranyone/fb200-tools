@@ -13,6 +13,74 @@
 #include "dsp/gain.h"
 #include "dsp/math.h"
 #include "dsp/testgen.h"
+#include "dsp/nam_tone.h"
+
+static double tone_response(unsigned bass, unsigned mid, unsigned freq,
+                            unsigned treble, double hz)
+{
+    nam_tone_t t;
+    nam_tone_init(&t, 48000.0f);
+    nam_tone_set(&t, 48000.0f, 50, bass, mid, freq, treble, 50);
+    double in = 0, out = 0;
+    for (unsigned block = 0; block < 1500; block++) {
+        float x[32];
+        for (unsigned i = 0; i < 32; i++)
+            x[i] = (float)(0.1 * sin(6.28318530718 * hz * (block * 32 + i) / 48000));
+        if (block >= 750)
+            for (unsigned i = 0; i < 32; i++) in += x[i] * x[i];
+        nam_tone_pre(&t, x, 32);
+        nam_tone_post(&t, x, 32);
+        if (block >= 750)
+            for (unsigned i = 0; i < 32; i++) {
+                assert(isfinite(x[i]));
+                out += x[i] * x[i];
+            }
+    }
+    return sqrt(out / in);
+}
+
+static void test_nam_tone(void)
+{
+    nam_tone_t t;
+    nam_tone_init(&t, 48000.0f);
+    float neutral[] = {0.1f, -0.2f, 0.3f, -0.4f};
+    float x[4];
+    memcpy(x, neutral, sizeof x);
+    nam_tone_pre(&t, x, 4);
+    nam_tone_post(&t, x, 4);
+    assert(memcmp(x, neutral, sizeof x) == 0); /* flat path is bit-exact */
+    nam_tone_set(&t, 48000, 100, 50, 50, 50, 50, 25);
+    nam_tone_pre(&t, x, 4);
+    assert(fabsf(x[0] - 0.7943f) < 0.001f); /* drive BEFORE the model: +18 dB */
+    nam_tone_post(&t, x, 4);
+    assert(fabsf(x[0] - 0.3972f) < 0.001f); /* level AFTER the model: x 0.5 */
+    nam_tone_set(&t, 48000, 0, 50, 50, 50, 50, 50);
+    memcpy(x, neutral, sizeof x);
+    nam_tone_pre(&t, x, 4);
+    assert(fabsf(x[0] - 0.01259f) < 0.0001f); /* -18 dB */
+    nam_tone_set(&t, 48000, 25, 50, 50, 50, 50, 50);
+    memcpy(x, neutral, sizeof x);
+    nam_tone_pre(&t, x, 4);
+    assert(fabsf(x[0] - 0.03548f) < 0.0001f); /* -9 dB */
+    nam_tone_set(&t, 48000, 50, 50, 50, 50, 50, 0);
+    nam_tone_post(&t, x, 4);
+    for (unsigned i = 0; i < 4; i++) assert(x[i] == 0.0f);
+    /* Independent sine measurements of both shelves and the sweepable mid. */
+    assert(tone_response(100, 50, 50, 50, 20) > 3.5);
+    assert(tone_response(0, 50, 50, 50, 20) < 0.3);
+    assert(tone_response(50, 100, 0, 50, 200) > 3.7);
+    assert(tone_response(50, 100, 100, 50, 2000) > 3.7);
+    assert(tone_response(50, 100, 100, 50, 200) < 1.2);
+    assert(tone_response(50, 50, 50, 100, 10000) > 3.5);
+    assert(tone_response(50, 50, 50, 0, 10000) < 0.3);
+    /* Returning to flat must remove all history as well as the response. */
+    nam_tone_set(&t, 48000, 50, 100, 50, 50, 50, 50);
+    nam_tone_post(&t, x, 4);
+    nam_tone_set(&t, 48000, 50, 50, 50, 50, 50, 50);
+    memcpy(x, neutral, sizeof x);
+    nam_tone_post(&t, x, 4);
+    assert(memcmp(x, neutral, sizeof x) == 0);
+}
 
 static void fill(dsp_block_t *b, float v)
 {
@@ -22,6 +90,7 @@ static void fill(dsp_block_t *b, float v)
 
 int main(void)
 {
+    test_nam_tone();
     /* gain: 0.5x, fully settled */
     dsp_block_t b;
     fill(&b, 1.0f);

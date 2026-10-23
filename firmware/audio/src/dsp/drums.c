@@ -194,6 +194,8 @@ int drums_init(drums_t *d, const void *bank, const drums_data_t *data)
 
 void drums_start(drums_t *d)
 {
+    d->resample_ready = 0;
+    d->resample_phase = 0;
     d->on = 1;
     d->started = 0;          /* stock re-init on the first tick */
     d->cur_pattern = -1;     /* always start the list from the top */
@@ -248,15 +250,48 @@ void drums_render(drums_t *d, float *out, size_t n)
     }
 }
 
+int drums_set_output_rate(drums_t *d, uint32_t rate)
+{
+    if (rate != 44100u && rate != 48000u) return -1;
+    d->output_rate = rate;
+    d->resample_ready = 0;
+    d->resample_phase = 0;
+    return 0;
+}
+
+static float native_next(drums_t *d)
+{
+    if (d->sub_pos >= DRUMS_SUBBLOCK) {
+        render_sub(d, d->sub);
+        d->sub_pos = 0;
+    }
+    return d->sub[d->sub_pos++];
+}
+
+static float output_next(drums_t *d)
+{
+    if (d->output_rate != 48000u) return native_next(d);
+    if (!d->resample_ready) {
+        d->resample_previous = native_next(d);
+        d->resample_next = native_next(d);
+        d->resample_ready = 1;
+    }
+    float t = (float)d->resample_phase * (1.0f / 48000.0f);
+    float value = d->resample_previous + (d->resample_next - d->resample_previous) * t;
+    d->resample_phase += 44100u;
+    if (d->resample_phase >= 48000u) {
+        d->resample_phase -= 48000u;
+        d->resample_previous = d->resample_next;
+        d->resample_next = native_next(d);
+    }
+    return value;
+}
+
 void drums_process(drums_t *d, float *mix, size_t n)
 {
     float lvl = (float)d->level;
     for (size_t i = 0; i < n; i++) {
-        if (d->sub_pos >= DRUMS_SUBBLOCK) {
-            render_sub(d, d->sub);
-            d->sub_pos = 0;
-        }
-        mix[i] += d->sub[d->sub_pos++] * lvl * 0.02f * 0.8f;
+        mix[i] += output_next(d) * lvl * 0.02f * 0.8f;
     }
 }
 
@@ -264,11 +299,7 @@ void drums_process_stereo(drums_t *d, float *l, float *r, size_t n)
 {
     float lvl = (float)d->level;
     for (size_t i = 0; i < n; i++) {
-        if (d->sub_pos >= DRUMS_SUBBLOCK) {
-            render_sub(d, d->sub);
-            d->sub_pos = 0;
-        }
-        float v = d->sub[d->sub_pos++] * lvl * 0.02f * 0.8f;
+        float v = output_next(d) * lvl * 0.02f * 0.8f;
         l[i] += v;
         r[i] += v;
     }

@@ -8,6 +8,7 @@
  * volume/mute. The signal path is codec ADC -> SAI1 RX and SAI1 TX -> codec
  * DAC; the codec is the I2S clock slave (SAI1 drives MCLK/BCLK/FS). */
 #include <string.h>
+#include "cold.h"
 #include "audio/codec.h"
 #include "audio/nau8821.h"
 
@@ -157,7 +158,7 @@ static uint16_t s_init_first_retry_reg = 0xFFFFu;
 /* Each write is retried: at boot the first attempt of some writes NAKs (the
  * codec was still settling), and one NAK used to fail the whole init and
  * leave the pedal muted with an unconfigured codec. */
-bool codec_init(void)
+COLD bool codec_init(void)
 {
     const codec_write_t *seq = kInitSequence;
     size_t n = sizeof(kInitSequence) / sizeof(kInitSequence[0]);

@@ -35,9 +35,12 @@
 #include <stdint.h>
 #include "dsp.h"
 
-#define DELAY_FS_MAX 44100u      /* = AUDIO_FS (audio_config.h): the pedal runs at 44.1 kHz only */
+#include "audio/audio_config.h"
+#define DELAY_FS_MAX AUDIO_FS
 #define DELAY_MS_MIN 20
+#ifndef DELAY_MS_MAX
 #define DELAY_MS_MAX 1000         /* RAM-bound, see above (no suffix: printed with STR) */
+#endif
 #define DELAY_LEN (DELAY_FS_MAX * DELAY_MS_MAX / 1000u + 4u)   /* samples */
 /* settings for a preset that never had our delay (console `delay on`) */
 #define DELAY_DEF_MS 300u        /* <= DELAY_MS_MAX */

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Experimental NAM fork
+
+- Add app-only `nam-probe` and `nam-runtime` profiles for fixed 48 kHz A2-Lite
+  inference and RAM feasibility. Default stock/recovery behavior stays at 44.1 kHz.
+- Add three persistent, two-bank model slots with validated USB CDC and framed
+  BLE/HID upload, explicit model selection/reload, deletion and preset binding.
+- Add a Flutter manager with a local `.nam` validator and an explicit offline
+  demo; Android debug APK and web builds pass. An unsigned iOS compile on a
+  GitHub macOS runner also passed on 2026-10-18; phone operation remains unverified.
+- Preserve NAM binding on legacy full-preset writes and fix parallel objcopy
+  targets. Add host numerical, fake-NOR, RPC, compatibility and mobile tests.
+- Document the fork's scope, upstream attribution, reproducible handover and
+  remaining physical checks. At `969f833`: 492 Python/C/ARM tests passed,
+  15 skipped, and 27 Flutter tests passed.
+- This NAM work has not been flashed or tested on an FB200. Physical BLE,
+  real-time performance, audio quality and official-app compatibility remain
+  unverified. The runtime profile disables several stock effects, including
+  cabinet IR processing; it is not a production release.
+
 ### Changed
 
 - The open-firmware gate checks the looper panel strings `LP-`, `rEC`, and

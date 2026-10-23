@@ -33,7 +33,8 @@ pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compi
 
 FS = 44100
 SRC = [FW / "tests" / "drums_tuner_host_test.c", FW / "src" / "dsp" / "drums.c",
-       FW / "src" / "dsp" / "tuner.c", FW / "src" / "dsp" / "stock_data.c", FW / "src" / "crc32.c"]
+       FW / "src" / "dsp" / "tuner.c", FW / "src" / "dsp" / "stock_data.c",
+       FW / "src" / "dsp" / "cab_rate.c", FW / "src" / "crc32.c"]
 CFLAGS = ["-O2", "-Wall", "-Wextra", "-Werror", "-ffp-contract=off", "-I", str(FW / "src")]
 
 
@@ -89,6 +90,15 @@ def test_selftest_without_stock_data():
     r = subprocess.run([str(exe), "selftest"], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "drums tuner host tests OK" in r.stdout
+
+
+@pytest.mark.parametrize("rate", [44100, 48000])
+def test_manager_rates(rate, tmp_path):
+    exe = tmp_path / "manager_rate_test"
+    subprocess.run(["cc", *CFLAGS, f"-DAUDIO_FS={rate}",
+                    str(FW / "tests/manager_rate_host_test.c"),
+                    *[str(p) for p in SRC[1:]], "-lm", "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
 
 
 def test_blob_reads_the_stock_image(stock_blob):

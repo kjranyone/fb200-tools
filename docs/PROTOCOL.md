@@ -149,6 +149,10 @@ edit buffer (the current preset, 256 bytes, layout in
 | `C1`, `C4` | - | enter the updater: flash `0x86000` = `00`, `AT+B500`, `AT+CZ`, `C2 [1]` to USB, SYSRESETREQ | `C2 [1]` |
 | `C9` | `[b]` | S`+0x20` (rhythm mode) = b | none **(E)** |
 | `D6` | `[b]` | BLE flow flag (RAM) | none; from BLE the stock also sends `9B 00` on USB |
+| `D7` (ours) | `[op=0]` | looper status | `D8` (13 B, §5.11) |
+| `D7` (ours) | `[op 1..7]` | looper action (tap/rec/play/dub/stop/undo/clear) | `D8 [code]` (0 ok, 1 not now, 2 no area, 3 not ready) |
+| `D7` (ours) | `[8][level 0..100]` | looper playback level | `D8 [0]` |
+| `D7` (ours) | `[9|10][slot 1..2]` | looper save/load | `D8 [0 ok][1 failed]` |
 | `D9` | - | read the 30-byte block at flash `0x85000` | `DA [30 B]` **(E)** |
 | `DA` | `[30 B]` | write the block at flash `0x85000` | none **(E)** |
 | other | - | ignored (incl. identify-byte frames) | none |
@@ -302,6 +306,16 @@ The transfer is on the USB console (CDC), not HID
   it); `cab en=<0|1> type=<n>`.
 
 Flash layout and table format: [UI_AND_STORAGE.md §5](UI_AND_STORAGE.md#5-flash-map-and-storage-h-verified-entries-read-on-the-pedal).
+
+### 5.11 Looper control (ours, `D7`/`D8`)
+
+`D7 [0]` status reply `D8` (13 B): `[state][level][len_s u16][pos_s u16]
+[max_s u16][prep_s u16][undo][store busy][writing]` — state 0..5
+(`dsp/looper.h`: off/empty/rec/play/dub/stop), level 0..100, lengths in
+whole seconds, undo 0/1/2 (none/undo/redo). A build without the looper
+(base `nam-runtime`) answers status state 0 and code 2 for every action.
+`nam-manager` and the stock open profile have the looper; the vendor stock
+firmware ignores `D7` entirely.
 
 ## 6. IR format
 

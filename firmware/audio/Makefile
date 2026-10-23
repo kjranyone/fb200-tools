@@ -10,6 +10,30 @@
 # VARIANT=recovery builds the resident recovery image (block 0); the default
 # builds the app for the slot. See docs/BOOTLOADER.md §4.
 VARIANT      ?= app
+# Host-first NAM memory/clock experiment, NOT a supported pedal image.
+# Separate BUILD prevents stale objects when changing rate/RAM defines.
+PROFILE      ?= stock
+ifeq ($(PROFILE),nam-probe)
+ifneq ($(VARIANT),app)
+$(error nam-probe is app-only; keep recovery on its stock configuration)
+endif
+BUILD        ?= build/nam-probe
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_MEMORY_PROBE
+else ifeq ($(PROFILE),nam-runtime)
+ifneq ($(VARIANT),app)
+$(error nam-runtime is app-only)
+endif
+BUILD        ?= build/nam-runtime
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_RUNTIME
+else ifeq ($(PROFILE),nam-manager)
+ifneq ($(VARIANT),app)
+$(error nam-manager is app-only)
+endif
+BUILD        ?= build/nam-manager
+PROFILE_DEFS := -DAUDIO_FS=48000u -DENGINE_IR_TAPS=512 -DDELAY_MS_MAX=500 -DNAM_RUNTIME -DNAM_UTILITIES
+else ifneq ($(PROFILE),stock)
+$(error unknown PROFILE $(PROFILE))
+endif
 # BUILD overrides where output goes (default: build/); tests/fwbuild.py passes
 # a per-process tmp dir so parallel pytest workers never share one build tree.
 BUILD        ?= build
@@ -80,19 +104,19 @@ CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
              $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \
-             $(TUSB_INC) $(TUSB_DEFS) -I src -I src/compat -I board -I . -MMD -MP
+             $(TUSB_INC) $(TUSB_DEFS) $(PROFILE_DEFS) -I src -I src/compat -I board -I . -MMD -MP
 LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -L $(TARGET) -T linker.ld \
              -Wl,-Map=$(TARGET).map,--cref
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c src/cpu_idle.c src/cpu_power.c \
-  src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
+  src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c src/dsp/nam_a2.c \
   src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
   src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loopcodec.c \
   src/loopstore/loopstore.c src/loopstore/lsio.c \
-  src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
+  src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/cab_rate.c src/dsp/stock_data.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
@@ -129,6 +153,12 @@ SRC_C := \
   $(MCUX_CORE)/drivers/flexio/fsl_flexio.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
+ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
+SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c src/dsp/nam_tone.c
+# NAM builds: the former long IR area F:0x400000.. is the extended NAM store
+# (flash_rmw.h); the long IR store is not compiled in.
+SRC_C := $(filter-out src/irstore/%,$(SRC_C))
+endif
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
 ifeq ($(VARIANT),recovery)
@@ -149,6 +179,9 @@ endif
 # no image contains it. It lives in its own flash area, written from the
 # user's stock .mr (src/dsp/stock_data.h, `fb200 update stock`).
 STOCK_OBJS  := $(patsubst %,$(TARGET)/%.o,src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/drums.c)
+# The NAM kernel is the audio path's biggest cost; -O3 measured faster than
+# -O2 (262k vs 321k cycles/block; see docs/NAM_HARDWARE_2026-10-18.md).
+$(TARGET)/src/dsp/nam_a2.c.o: CFLAGS += -O3
 # The stock amp's filter chains are ill-conditioned: parity needs the stock's
 # separate multiply and add, no FMA contraction (tests/test_stock_dsp_parity.py).
 $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
@@ -171,7 +204,10 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 # Every other file stays in ITCM. The main loop (main.c), boot (startup.c),
 # the fault path (vectors.c, recovery.c) and crc32.c stay in ITCM on purpose.
 # Recovery has no XIP code: it runs everything from ITCM.
+# CMSIS sine/cosine are used only by cold coefficient design, not audio.
+# The compiled hot-path check also checks this placement.
 COLD_SRC := \
+  $(DSP_SRC)/FastMathFunctions/FastMathFunctions.c \
   src/debug/console.c src/debug/regs.c \
   src/led.c src/cpu_power.c \
   src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/power_logic.c src/ui/lightbar.c \
@@ -192,6 +228,10 @@ COLD_SRC := \
   $(MCUX_CORE)/drivers/dmamux/fsl_dmamux.c
 # tests/test_audio_image.py: negative controls of hot_path.py
 COLD_SRC += $(COLD_EXTRA)
+ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
+COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c
+COLD_SRC := $(filter-out src/irstore/%,$(COLD_SRC))
+endif
 ifeq ($(VARIANT),recovery)
 COLD_SRC :=
 endif
@@ -221,10 +261,16 @@ $(TARGET)/cold.ld: Makefile
 # .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
 # .dtcmdata.bin is the slot's data blob: .xiptext + .ocramdata + .dtcmdata
 # (contiguous LMAs).
-$(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin: $(TARGET).elf
+$(TARGET).vectors.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
+
+$(TARGET).blob.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
+
+$(TARGET).copier.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .copier $< $(TARGET).copier.bin
+
+$(TARGET).dtcmdata.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .xiptext -j .ocramdata -j .dtcmdata $< $(TARGET).dtcmdata.bin
 
 $(TARGET)/%.c.o: %.c

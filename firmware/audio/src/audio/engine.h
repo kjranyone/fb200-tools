@@ -57,6 +57,11 @@ extern volatile float g_meter_peak[2];
 void engine_set_tuner(bool on);
 bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
 float engine_input_peak(void);   /* chain input peak since the last call (main loop) */
+/* Level meter peaks since the last call (main loop), full scale 1.0:
+ * [0] instrument input |L + R|, [1] the NAM model's input after input gain,
+ * gate, comp and drive (0 without a NAM stage), [2] output before the clip.
+ * Independent of engine_input_peak(), which the idle timer consumes. */
+void engine_levels(float out[3]);
 drums_t *engine_drums(void);
 /* Our EQ (dsp/eq.h), for the console `eq` (main loop, as engine_task). */
 struct eq_s;
@@ -67,13 +72,21 @@ void engine_apply_preset(const preset_t *p, unsigned master);
 /* Global settings: input gain (S+0x1a), tuner A4 (S+0x2c), tuner mute (S+0x2e). */
 void engine_apply_settings(const settings_t *s);
 void engine_dsp_reset(void);
+#ifdef NAM_RUNTIME
+/* Main-loop only: validated flash slot -> RAM, zero-input warmup, then use.
+ * slot 0 = dry bypass. Selection never erases flash. */
+int engine_nam_select(unsigned slot);
+unsigned engine_nam_selected(void);
+#endif
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
 /* User IR staging in taps, a RAM budget (engine.c; memory map:
  * docs/FIRMWARE_BRINGUP.md). 512 (CAB_TAPS, the stock and user slot size) =
  * long IRs off: no conv2 tail (~96 kB), no 512-point FFT tables (~4.9 kB);
  * `cab long` over 512 is "not available". Up to 4096 (CAB_MAX_TAPS) = long
  * IRs on (docs/PARITY.md M5). */
+#ifndef ENGINE_IR_TAPS
 #define ENGINE_IR_TAPS 4096
+#endif
 /* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on
  * success, -2 when taps is over what this build has RAM for (long IRs off:
  * 512, engine.c ENGINE_IR_TAPS), -4 while the IR buffer is in use (long IR
@@ -94,6 +107,7 @@ void engine_ir_release(void);
  * record or a dub is writing (flash_store waits; RAM code).
  * engine_loop_arm: start erasing ahead (looper mode on). */
 #include "dsp/looper.h"
+void engine_tuner_latest(tuner_result_t *out);
 #include "loopstore/loopstore.h"
 int engine_loop(int action);
 /* loop save / load, record n = 0 or 1 (console slots 1 and 2). */

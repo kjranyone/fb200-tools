@@ -31,6 +31,12 @@ No LCD, no controller, no frame buffer; the "font" is a code switch
 
 ## 2. Controls (H)
 
+NAM builds override the AMP knob (k2) with stored-model selection: bypass
+plus validated occupied NAM slots, ascending, with crossing pickup and a
+250 ms settle before loading. Display: `n00` / `n01`..`n64`; a dot means
+pickup or selection pending. Stock builds retain AMP 1..10. See
+[Studio UX](design/NAM_STUDIO_UX.md) for the workflow and verification.
+
 Footswitches: pads `GPIO_SD_B0_00/01/02` and `GPIO_B1_08`, ALT5, pad
 **0xF0B0** (22k pull-up), **active low**.
 
@@ -198,9 +204,8 @@ would read our copy as its data. The stock format itself has no spare room
 | 0x89000 + s x 0x2800 | 0x2800 | user IR data |
 | 0xB0000 | 8 | magic "B01" - **verified** |
 | 0xD0000 | 3286016 | model library (block 1) - **verified** (count 0x14 = 20); ends at 0x3F2400 |
-| 0x400000 | 0x2000 | ours: long IR slot table, 2 copies of 4 KB (A, B) |
-| 0x402000 + s x 0x4000 | 0x4000 | ours: long IR slot s = cab type 20 + s (s 0..63), float32 taps |
-| 0x502000 | - | end of the long IR store |
+| 0x400000 | 0x100000 | ours: NAM model store in NAM profiles (`namstore.h`, 64 slots x two 8 KiB banks); long IR store in the stock open profile (`irstore.h`) |
+| 0x500000 | 0xE000 | spare in NAM profiles (the old three-slot store lived at 0x502000; its slots were empty when the layout changed); long IR store tail / old NAM store otherwise |
 | 0x50F000 | 0x1000 | ours: looper `loop save` (one sector, two records of the chunk maps) |
 | 0x510000 | to the chip end (0x2F0000 on 8 MB) | ours: the looper's loops (`loopstore/loopstore.h`; a saved loop survives power off) |
 
@@ -210,6 +215,10 @@ is used only when the chip holds F:0x502000 (JEDEC capacity and the FlexSPI
 window both). Nothing of the stock uses flash above the model library (block
 1 ends at 0x3F2400; the stock code's literal words hold no flash address
 above it). The looper starts at F:0x50F000, so the two stores do not overlap.
+**NAM profiles (`nam-runtime`, `nam-manager`) do not compile the long IR
+store**: F:0x400000..0x4FFFFF is their 64-slot NAM model store
+(`flash_rmw.h`), and the long IR console commands are absent; the stock open
+profile keeps the store as described here.
 Table (little endian, 3092 B): magic "FBIR", version u16 = 1,
 slots u16 = 64, seq u32, entry size u16 = 48, 0 u16; 64 entries of taps u16
 (0 = empty), flags u16, source rate u32, gain f32, data crc32 u32, name[24];

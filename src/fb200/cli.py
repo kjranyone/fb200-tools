@@ -506,12 +506,48 @@ def _cmd_update(args) -> int:
     return 0
 
 
+def _cmd_nam(args) -> int:
+    from fb200 import nam, nam_console
+
+    # Validate local JSON before opening a pedal connection.
+    packet = nam.load(args.model, args.name) if args.nam_command == "put" else None
+    with nam_console.connect(args.port) as con:
+        if args.nam_command == "put":
+            nam.put(con, args.slot, packet)
+            print(f"NAM stored in slot {args.slot}; select with fb200 nam select {args.slot}")
+        elif args.nam_command == "select":
+            nam.select(con, args.slot, save=args.save)
+            print(f"NAM active slot {args.slot}" if args.slot else "NAM bypass")
+        elif args.nam_command == "delete":
+            nam.delete(con, args.slot)
+            print(f"NAM slot {args.slot} deleted")
+        else:
+            print(nam.ls(con), end="")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fb200", description="Tools for the FLAMMA FB200 pedal")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_info = sub.add_parser("info", help="show device and firmware versions")
     p_info.set_defaults(func=_cmd_info)
+
+    p_nam = sub.add_parser("nam", help="runtime A2-Lite slots (nam-runtime firmware)")
+    nam_sub = p_nam.add_subparsers(dest="nam_command", required=True)
+    from fb200.nam import SLOTS as _nam_slots
+    for action in ("put", "list", "select", "delete"):
+        p = nam_sub.add_parser(action)
+        p.add_argument("--port", help="USB console port")
+        if action != "list":
+            p.add_argument("slot", type=int,
+                           choices=range(0 if action == "select" else 1, _nam_slots + 1))
+        if action == "put":
+            p.add_argument("model", help="48 kHz A2-Lite or packed A2 .nam")
+            p.add_argument("--name")
+        if action == "select":
+            p.add_argument("--save", action="store_true", help="save model choice with current preset")
+        p.set_defaults(func=_cmd_nam)
 
     p_ir = sub.add_parser("ir", help="manage impulse response slots")
     ir_sub = p_ir.add_subparsers(dest="ir_command", required=True)

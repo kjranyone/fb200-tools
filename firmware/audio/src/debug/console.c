@@ -30,6 +30,9 @@
 #include "flash_rmw.h"
 #include "recovery.h"
 #include "regs.h"
+#ifdef NAM_RUNTIME
+#include "namstore/namstore.h"
+#endif
 #ifndef FB200_RECOVERY
 #include "loopstore/lsio.h"
 #include "ui/display.h"
@@ -177,8 +180,10 @@ static void cmd_help(void)
              "  i2c   : scan | dump [bus addr]\r\n"
              "  flash : fwinfo | fwtest | jedec | fwbegin|fwrec|fwstock <len> <crc32>\r\n"
 #ifndef FB200_RECOVERY
+#ifndef NAM_RUNTIME
              "  irs   : irls | irdel <20-83> | irput <20-83> <taps 1-4096> <crc32> <name> [rate]\r\n"
              "          (long IRs, cab types 20-83; irput then takes taps x 4 raw float32 bytes)\r\n"
+#endif
 #endif
              "  boot  : recovery | boot | reset\r\n");
 }
@@ -485,12 +490,18 @@ static void cmd_jedec(void)
     log_printf("flexspi A1 window %lu kB; usable %lu kB\r\n", (unsigned long)(win / 1024u),
                (unsigned long)(cap / 1024u));
 #ifndef FB200_RECOVERY
+#ifndef NAM_RUNTIME
     log_printf("ir store F:0x%06lx..0x%06lx: %s\r\n", (unsigned long)IRSTORE_BASE,
                (unsigned long)IRSTORE_END, cap >= IRSTORE_END ? "fits" : "does NOT fit (off)");
+#else
+    log_printf("nam store F:0x%06lx..0x%06lx (%u slots)\r\n",
+               (unsigned long)NAMSTORE_BASE, (unsigned long)NAMSTORE_END,
+               (unsigned)NAMSTORE_SLOTS);
+#endif
 #endif
 }
 
-#ifndef FB200_RECOVERY
+#if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
 /* Long IR store (irstore/irstore.h): irput / irls / irdel. */
 static void cmd_irput(int argc, char **argv)
 {
@@ -888,21 +899,67 @@ static void dispatch(char *cmd)
                    on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
                    (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
+#ifdef NAM_RUNTIME
+    else if (streq(argv[0], "namls")) {
+        namstore_list();
+        log_printf("nam active %u\r\n", engine_nam_selected());
+    }
+    else if (streq(argv[0], "namput")) {
+        int a=0,b=0,c=0;
+        uint32_t slot = argc == 4 ? parse_num(argv[1], &a) : 0;
+        uint32_t bytes = argc == 4 ? parse_num(argv[2], &b) : 0;
+        uint32_t crc = argc == 4 ? parse_num(argv[3], &c) : 0;
+        if (a && b && c) (void)namstore_begin(slot, bytes, crc);
+        else log_printf("nam: usage namput <1-3> <bytes> <crc>\r\n");
+    }
+    else if (streq(argv[0], "namuse") || streq(argv[0], "namdel")) {
+        int ok=0;
+        uint32_t slot = (argc == 2 || (argc == 3 && streq(argv[0], "namuse") &&
+                                      streq(argv[2], "save"))) ? parse_num(argv[1], &ok) : 99;
+        int r = !ok ? -1 : streq(argv[0], "namuse") ? engine_nam_select(slot)
+            : namstore_delete(slot);
+        if (r == 0 && (streq(argv[0], "namuse") || engine_nam_selected() == slot)) {
+            unsigned selected = streq(argv[0], "namuse") ? slot : 0;
+            if (!selected) (void)engine_nam_select(0);
+            uint8_t record[4] = {(uint8_t)NAM_MARK, (uint8_t)(NAM_MARK>>8), (uint8_t)selected, 0};
+            ui_edit_write(P_NAM_MARK, record, sizeof record);
+            if (selected) {
+                uint8_t enabled[2] = {1,0};
+                ui_edit_write(P_AMP_EN, enabled, sizeof enabled);
+            }
+            if (argc == 3 && ui_save() != 0) r = -1;
+        }
+        log_printf("nam %s %s slot %u\r\n", streq(argv[0], "namuse") ? "use" : "delete",
+                   r == 0 ? "ok" : "FAILED", (unsigned)slot);
+    }
+#endif
     else if (streq(argv[0], "prof")) engine_profile();
     else if (streq(argv[0], "loop")) cmd_loop(argc, argv);
+#if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
     else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
     else if (streq(argv[0], "irls")) irstore_print_list();
     else if (streq(argv[0], "irdel")) cmd_irdel(argv[1]);
+#endif
     else if (streq(argv[0], "cab") && (argc == 1 || !streq(argv[1], "long"))) {
         /* cab [<1-83>]: the edit buffer's cab on, with this type (save: `save`) */
         int ok = 1;
         uint32_t t = argc > 1 ? parse_num(argv[1], &ok) : 0u;
-        if (argc > 1 && ok && t >= 1u && t <= IRSTORE_LAST) {
+        uint32_t max_cab =
+#ifdef NAM_RUNTIME
+            19u;   /* no long IR store in NAM builds */
+#else
+            IRSTORE_LAST;
+#endif
+        if (argc > 1 && ok && t >= 1u && t <= max_cab) {
             uint8_t b[4] = {1, 0, (uint8_t)t, 0};
             ui_edit_write(P_CAB_EN, b, sizeof b);
             proto_notify_module(3);
         } else if (argc > 1) {
+#ifdef NAM_RUNTIME
+            log_printf("usage: cab [<1-10 stock | 11-19 user IR>]\r\n");
+#else
             log_printf("usage: cab [<1-10 stock | 11-19 user IR | 20-83 long IR>] | cab long <taps>\r\n");
+#endif
             return;
         }
         const preset_t *p = ui_edit_preset();
@@ -1064,7 +1121,10 @@ void console_init(void)
 void console_task(void)
 {
     if (fw_active()) { fw_rx_task(); return; }
-#ifndef FB200_RECOVERY
+#ifdef NAM_RUNTIME
+    if (namstore_console_active()) { namstore_task(); return; }
+#endif
+#if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
     if (irstore_put_active()) { irstore_put_task(); return; }
 #endif
     while (tud_cdc_available()) {
@@ -1074,6 +1134,10 @@ void console_task(void)
             line[line_len] = 0;
             dispatch(line);
             line_len = 0;
+#ifdef NAM_RUNTIME
+            /* Do not consume coalesced binary bytes in the line reader. */
+            if (namstore_console_active()) return;
+#endif
         } else if (c == 8 || c == 127) {
             if (line_len) { line_len--; cdc_log_write("\b \b", 3); }
         } else if (line_len < sizeof line - 1) {

@@ -84,6 +84,8 @@ void proto_hook_bt_enable(bool on);               /* settings+0x17 changed; stoc
 void proto_hook_bootloader(void);                 /* 0xC1/0xC4: flag F:0x86000 = 0 already written */
 int proto_hook_factory_reset(void);               /* presets + settings to factory, 0 = ok */
 void proto_hook_ir_changed(unsigned slot);        /* 0..8: user IR stored/deleted/renamed */
+/* Optional NAM extension: fn E0 request -> E1 response, 0 = unsupported. */
+uint32_t proto_hook_nam(uint8_t src, const uint8_t *p, uint32_t n, uint8_t *out, uint32_t cap);
 
 /* IR store layout (stock): names 9 x 50 at F:0x87000, used flags at
  * F:0x88000, data 0x2800 bytes per slot at F:0x89000 + slot * 0x2800. */
