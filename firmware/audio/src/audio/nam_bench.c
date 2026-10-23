@@ -7,6 +7,7 @@
 #include "dsp/dsp.h"
 #include "dsp/nam_a2.h"
 #include "dsp/nam_a2_conv.h"
+#include "dsp/fx_pitch.h"
 #include <string.h>
 #include "fsl_device_registers.h"
 
@@ -256,4 +257,17 @@ COLD void engine_nam_bench(void)
     }
     log_printf("nambench kernel: %lu cycles/block\r\n", (unsigned long)(total / 32));
     log_printf("nambench reload slot %u: %d\r\n", slot, engine_nam_select(slot));
+}
+
+fx_pitch_t *engine_fx_pitch(void);
+
+/* `fxstat`: the pitch shifter's splice statistics, then a reset of the maxima. */
+COLD void engine_fx_stat(void)
+{
+    fx_pitch_t *p = engine_fx_pitch();
+    log_printf("fx pitch: delay %d, ratio x1000 %d, splices %u, searches %lu, "
+               "search max %lu, block max %lu cycles\r\n",
+               (int)p->d, (int)(p->r * 1000.0f), p->splices, (unsigned long)p->searches,
+               (unsigned long)p->search_max, (unsigned long)p->block_max);
+    p->search_max = p->block_max = 0;
 }

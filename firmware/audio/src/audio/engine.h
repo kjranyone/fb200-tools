@@ -80,6 +80,7 @@ unsigned engine_nam_selected(void);
 int engine_nam2_select(unsigned slot);   /* second NAM (pre); -2: arena held by FX */
 unsigned engine_nam2_selected(void);
 void engine_nam_bench(void);   /* `nambench`: kernel cycle measurements */
+void engine_fx_stat(void);    /* `fxstat`: pitch shifter splice cost */
 #endif
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
 /* User IR staging in taps, a RAM budget (engine.c; memory map:

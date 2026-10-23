@@ -16,6 +16,10 @@ static uint16_t cached_id;
 static uint8_t cached_source;
 __attribute__((weak)) uint32_t namrpc_tuner(uint8_t *out) { (void)out; return 0; }
 __attribute__((weak)) uint32_t namrpc_levels(uint8_t *out) { (void)out; return 0; }
+__attribute__((weak)) uint32_t namrpc_fx_describe(unsigned mode, uint8_t *out, uint32_t cap)
+{ (void)mode; (void)out; (void)cap; return 0; }
+__attribute__((weak)) int namrpc_edit_word(unsigned offset, uint16_t value)
+{ (void)offset; (void)value; return -1; }
 
 void namrpc_task(void)
 {
@@ -51,11 +55,12 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
          * 9 NAM amp-word tone EQ is connected to the audio path,
          * 10 level peaks (op 10), 11 NAM GAIN spans -18..+18 dB,
          * 12 model kind byte (ops 11/12, header byte 52),
-         * 13 second NAM before the first (preset words 0xE2..0xE9) */
+         * 13 second NAM before the first (preset words 0xE2..0xE9),
+         * 14 FX block (ops 14/15, preset words 0xEA..0xFF) */
 #ifdef NAM_UTILITIES
-        wr(out+15,15|16|32|64|128|256|512|1024|2048|4096|8192,2);
+        wr(out+15,15|16|32|64|128|256|512|1024|2048|4096|8192|16384,2);
 #else
-        wr(out+15,7|16|32|512|1024|2048|4096|8192,2);
+        wr(out+15,7|16|32|512|1024|2048|4096|8192|16384,2);
 #endif
         out[17]=(uint8_t)namrpc_selected(); size=18; break;
     case 1: /* list page [start:u8, 0-based]: [selected][start][count] then
@@ -137,6 +142,15 @@ uint32_t namrpc_request(uint8_t source,const uint8_t *p,uint32_t n,uint8_t *out,
         if(namstore_active()) { out[4]=2; break; }
         { int r=namstore_set_kind(a[0],a[1]);
           out[4]=r==0?0:(r==-2||r==-3)?4:1; }
+        break;
+    case 14: /* FX mode descriptor: [mode 1..]; status 1 past the last mode */
+        if(len!=1) { out[4]=1; break; }
+        { uint32_t k=namrpc_fx_describe(a[0],out+5,cap-5);
+          if(k) size+=k; else out[4]=1; }
+        break;
+    case 15: /* a preset-tail word of the edit buffer: [offset 0xE2..0xFE even][value u16] */
+        if(len!=3 || (a[0]&1u) || a[0]<0xE2u) { out[4]=1; break; }
+        out[4]=namrpc_edit_word(a[0],(uint16_t)rd(a+1,2))?4:0;
         break;
     default: out[4]=5; break;
     }

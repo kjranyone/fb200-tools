@@ -23,6 +23,7 @@ def rpc(tmp_path_factory):
                     "-I", str(FW / "src"),
                     *[str(FW / p) for p in ["tests/namstore_host.c", "tests/namrpc_host.c",
                       "src/namstore/namstore.c", "src/namstore/namrpc.c", "src/dsp/nam_a2.c",
+                      "src/dsp/fx.c",
                       "src/crc32.c"]], "-o", str(path)], check=True)
     lib = ct.CDLL(str(path))
     lib.namstore_record.restype = ct.POINTER(ct.c_ubyte)
@@ -94,7 +95,7 @@ def test_mobile_fixture_matches_python_packet_and_frame():
 
 def test_caps_list_transfer_select_save_delete_and_commit_retry(client):
     c = client
-    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512 | 1024 | 2048 | 4096 | 8192, 0)
+    assert c.call(0) == struct.pack("<IHBBHHB", 48000, 1871, 64, 64, 7548, 7 | 16 | 32 | 512 | 1024 | 2048 | 4096 | 8192 | 16384, 0)
     selected, slots = c.list_all()
     assert selected == 0 and not any(used for used, _, _ in slots.values())
     packet = nam.pack(model(), "phone")
@@ -296,6 +297,33 @@ def test_kind_byte_is_stored_listed_set_and_kept_by_rename(client):
     token = c.begin(nam.pack(model(), "other"), 3)
     c.call(12, bytes([2, 4]), status=2)
     c.call(5, token)
+
+
+def test_fx_modes_describe_their_parameters(client):
+    data = client.call(14, bytes([1]))
+    mode, heavy, name, count = data[0], data[1], data[2:18].split(b"\0")[0], data[18]
+    assert (mode, heavy, name, count) == (1, 0, b"PITCH", 5)
+    params = []
+    for i in range(count):
+        r = data[19 + 43 * i:19 + 43 * (i + 1)]
+        lo, hi, default = struct.unpack("<hhh", r[12:18])
+        params.append((r[:12].split(b"\0")[0].decode(), lo, hi, default, r[18],
+                       r[19:43].split(b"\0")[0].decode()))
+    assert params[0] == ("SHIFT", 0, 4800, 3600, 4, "")
+    assert params[4] == ("RANGE", 0, 1, 1, 5, "Guitar|Bass")
+    assert len(data) == 19 + 43 * count
+    client.call(14, bytes([2]), status=1)      # past the last mode
+    client.call(14, bytes([0]), status=1)
+    client.call(14, b"", status=1)
+
+
+def test_tail_words_are_set_one_at_a_time(client):
+    client.call(15, bytes([0xF0]) + struct.pack("<H", 3600))
+    value = ct.c_uint()
+    assert client.lib.fake_word(ct.byref(value)) == 0xF0 and value.value == 3600
+    for bad in (bytes([0xE1]) + b"\0\0", bytes([0xE0]) + b"\0\0", bytes([0xE2]) + b"\0", bytes([0xF1, 0, 0])):
+        client.call(15, bad, status=1)
+    assert client.lib.fake_writes() == 0
 
 
 def test_level_peaks_are_read_once(client):

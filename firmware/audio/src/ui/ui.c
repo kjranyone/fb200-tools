@@ -106,6 +106,14 @@ static void nam_pickup_reset(void)
     nam_pending = -1;
 }
 
+int ui_set_edit_word(unsigned offset, uint16_t value)
+{
+    if (offset < P_NAM2_MARK || offset > PRESET_SIZE - 2u || (offset & 1u)) return -1;
+    pset(&edit, offset, value);
+    revision++;
+    return 0;
+}
+
 int ui_nam_select(unsigned selected, bool reload)
 {
     if (selected > NAMSTORE_SLOTS) return -1;

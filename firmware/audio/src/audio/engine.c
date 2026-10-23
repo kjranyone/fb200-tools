@@ -162,6 +162,8 @@ static float s_level[3];      /* engine_levels(): input, NAM input, output */
 #ifdef NAM_RUNTIME
 #include "dsp/nam_a2.h"
 #include "dsp/nam_tone.h"
+#include "dsp/fx.h"
+#include "dsp/fx_pitch.h"
 #include "namstore/namstore.h"
 static nam_a2_t s_nam __attribute__((section(".dtcm_lo")));
 /* The preset's amp words shape the NAM stage. Keep this separate from the
@@ -210,6 +212,33 @@ static float s_nam2_fade, s_nam2_gain = 1.0f, s_nam2_level = 1.0f;
 static float s_nam2_gain_to = 1.0f, s_nam2_level_to = 1.0f;
 
 COLD unsigned engine_nam2_selected(void) { return s_nam2_slot; }
+
+/* The FX block (light modes: their own memory below dtcm_lo's limit). */
+static fx_pitch_t s_fx_pitch __attribute__((section(".dtcm_lo")));
+static unsigned s_fx_mode;
+static bool s_fx_on, s_fx_post;
+
+COLD fx_pitch_t *engine_fx_pitch(void) { return &s_fx_pitch; }
+
+static COLD void fx_apply(const preset_t *p)
+{
+    unsigned mode = pget(p, P_FX_MARK) == FX_MARK ? pget(p, P_FX_MODE) : FX_MODE_OFF;
+    unsigned flags = pget(p, P_FX_FLAGS);
+    const fx_mode_desc_t *d = fx_mode_desc(mode);
+    if (!d || d->heavy) mode = FX_MODE_OFF;        /* no heavy mode yet */
+    if (mode != s_fx_mode) {
+        s_fx_on = false;
+        if (mode == FX_MODE_PITCH) fx_pitch_init(&s_fx_pitch, (float)AUDIO_FS);
+        s_fx_mode = mode;
+    }
+    if (mode == FX_MODE_PITCH) {
+        uint16_t w[8];
+        for (unsigned i = 0; i < 8; i++) w[i] = pget(p, P_FX_PARAM + 2u * i);
+        fx_pitch_set(&s_fx_pitch, (float)AUDIO_FS, w);
+    }
+    s_fx_post = (flags & FX_FLAG_POST) != 0;
+    s_fx_on = mode != FX_MODE_OFF && (flags & FX_FLAG_ON);
+}
 
 /* The second NAM, before the first (a pedal into the amp). -2: a heavy FX
  * mode holds the arena; -1: busy or not a model. */
@@ -464,6 +493,7 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
         s_nam2_gain_to = nam2_db18(pget(p, P_NAM2_GAIN));
         s_nam2_level_to = nam2_db18(pget(p, P_NAM2_LEVEL));
     }
+    fx_apply(p);
 #endif
     s_amp_en = pget(p, P_AMP_EN) != 0;
     s_cab_en = pget(p, P_CAB_EN) != 0;
@@ -782,6 +812,8 @@ void engine_task(void)
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
     PROF(P_COMP);
 #ifdef NAM_RUNTIME
+    /* the FX block before the NAMs (counted in the comp stage) */
+    if (s_fx_on && !s_fx_post) fx_pitch_process(&s_fx_pitch, x, (unsigned)n);
     if (s_nam2_slot && !s_nam_loading) {
         /* the second NAM (pre): gain and level glide over the block */
         float g = s_nam2_gain, l = s_nam2_level;
@@ -828,6 +860,10 @@ void engine_task(void)
 #endif
     PROF(P_CAB);
     eq_process(&s_eq, x, (unsigned)n);   /* returns at once when off or flat */
+#ifdef NAM_RUNTIME
+    /* the FX block after the cabinet and EQ (counted in the EQ stage) */
+    if (s_fx_on && s_fx_post) fx_pitch_process(&s_fx_pitch, x, (unsigned)n);
+#endif
     PROF(P_EQ);
 #if !defined(NAM_RUNTIME) || defined(NAM_UTILITIES)
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);

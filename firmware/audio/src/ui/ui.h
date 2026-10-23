@@ -24,6 +24,9 @@ int ui_save(void);                        /* write the edit buffer to its slot (
 /* Load first; only a successful selection changes the live preset binding.
  * Shared by panel/CDC/BLE/HID; persistence still requires an explicit save. */
 int ui_nam_select(unsigned slot, bool reload);
+/* A preset-tail word (0xE2..0xFE, even) of the edit buffer: the second NAM
+ * and the FX block. Applied by the main loop like any edit. */
+int ui_set_edit_word(unsigned offset, uint16_t value);
 #endif
 void ui_set_log(bool on);                 /* log footswitch and knob events */
 void ui_flush_settings(void);             /* write unsaved settings now (power fail) */

@@ -125,7 +125,10 @@ class Image:
             if op == ".word":
                 val = int(args.split()[0], 0)
                 if "veneer" in self.funcs.get(cur, ""):
-                    self.veneer[cur] = val & ~1
+                    # the first Thumb word: the last veneer before const
+                    # data runs on into that data's words
+                    if val & 1 and cur not in self.veneer:
+                        self.veneer[cur] = val & ~1
                 else:
                     self.words.setdefault(cur, set()).add(val)
                     if val & 1 and (val & ~1) in self.funcs:
@@ -137,7 +140,7 @@ class Image:
                     tgt = self.owner(int(t.group(1), 16))
                     if tgt is not None and tgt != cur:
                         self.calls.setdefault(cur, set()).add(tgt)
-        # ARM->Thumb long veneers keep the target as their last word; Thumb
+        # ARM->Thumb long veneers keep the target in a literal word; Thumb
         # veneers ("ldr.w pc, [pc]") too. Link veneers into the graph.
         for v, tgt in self.veneer.items():
             self.calls.setdefault(v, set()).add(tgt)

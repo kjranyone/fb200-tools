@@ -154,7 +154,7 @@ SRC_C := \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
 ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
-SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c src/dsp/nam_tone.c src/audio/nam_bench.c
+SRC_C += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c src/dsp/nam_tone.c src/audio/nam_bench.c src/dsp/fx_pitch.c src/dsp/fx.c
 # NAM builds: the former long IR area F:0x400000.. is the extended NAM store
 # (flash_rmw.h); the long IR store is not compiled in.
 SRC_C := $(filter-out src/irstore/%,$(SRC_C))
@@ -229,7 +229,7 @@ COLD_SRC := \
 # tests/test_audio_image.py: negative controls of hot_path.py
 COLD_SRC += $(COLD_EXTRA)
 ifneq ($(filter nam-runtime nam-manager,$(PROFILE)),)
-COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c src/audio/nam_bench.c
+COLD_SRC += src/namstore/namstore.c src/namstore/namstore_port.c src/namstore/namrpc.c src/namstore/namrpc_port.c src/audio/nam_bench.c src/dsp/fx.c
 COLD_SRC := $(filter-out src/irstore/%,$(COLD_SRC))
 endif
 ifeq ($(VARIANT),recovery)

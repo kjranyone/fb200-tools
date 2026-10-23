@@ -1,8 +1,8 @@
 # Second NAM and the FX block (nam-manager)
 
-Status: the second NAM is implemented and measured on the pedal
-([hardware log](NAM_HARDWARE_2026-10-18.md)); the FX block is being built,
-starting with the time-domain pitch shifter.
+Status: the second NAM and the FX block's first mode, a time-domain pitch
+shifter, are implemented and measured on the pedal
+([hardware log](NAM_HARDWARE_2026-10-18.md)). The app's FX controls are next.
 
 ## Resources
 
@@ -55,17 +55,51 @@ block falls back to off.
 
 ## Modes are described by the pedal
 
-The app does not hard-code modes. NAM RPC (capability bit 14, planned):
+The app does not hard-code modes. NAM RPC, capability bit 14:
 
-- op 14 *describe* `[mode]` → name, flags (heavy), and for each parameter
-  its name, minimum, maximum, default and unit. The app builds the controls
-  from it, so a new mode needs no app update.
-- op 15 *set* `[param, value u16]` → writes the edit buffer word and applies
-  it at once (live control without resending the 256-byte preset).
+- op 14 *describe* `[mode 1..]` → `[mode][heavy][name 16][count]`, then per
+  parameter `{name 12, min, max, def i16 LE, unit u8, labels 24}` (43
+  bytes; `src/dsp/fx.h`). Status 1 past the last mode, so the app finds the
+  modes by asking 1, 2, … The app builds the controls from it, so a new
+  mode needs no app update.
+- op 15 *set* `[offset 0xE2..0xFE even][value u16]` → writes that tail
+  word of the edit buffer and applies it at once (live control without
+  resending the 256-byte preset). Nothing is saved.
+
+Units: none, percent, DB18 (50 = 0 dB, ±18 dB), ms, cents (value − 2400),
+choice (labels `"A|B"` for min..max).
 
 ## Modes
 
 | Mode | Kind | State |
 | --- | --- | --- |
-| Pitch (time-domain, correlation splice) | light | offline prototype (`out/pitch-proto-*`), then C |
+| Pitch (time-domain, correlation splice) | light | firmware, measured on the pedal |
 | Polyphonic pitch (frequency domain) | heavy | later, if there is a use for it |
+
+## Pitch (mode 1)
+
+| Parameter | Range | Default |
+| --- | --- | --- |
+| SHIFT | 0..4800 cents (2400 = none, ±2 octaves) | 3600 (+12) |
+| MIX | 0..100 % | 50 |
+| LEVEL | DB18 (wet) | 50 |
+| GLIDE | 0..1000 ms (one pole) | 0 |
+| RANGE | Guitar (14 ms longest period) / Bass (26 ms) | Bass |
+
+The H910/H949 idea in software: the output reads an int16 history (4096
+samples, `.dtcm_lo`) at the new rate, and when the read point runs into the
+write point (up) or too far behind (down) it jumps by whole periods, with a
+4 ms crossfade. The jump is the correlation peak of a 6 ms window: a coarse
+pass on every 4th sample and every 8th lag, then ±4 lags at full rate and a
+parabola for the fraction. Among peaks within 0.05 of the best it takes the
+one that keeps the delay short, so chords splice where the waveform repeats
+and the latency stays low. Down shifts also try optional splices every
+~10 ms and take them only on a clear peak (score ≥ 0.92).
+
+Latency (offline, `out/pitch-proto-20261023/latency-c.json`): 7 ms mean up,
+15 ms down in the guitar range; 8.5–9 ms up, 18 ms down for bass.
+
+CPU (`fxstat` on the pedal, cycles of a 400,000-cycle block): at most one
+search per block; a block that searches costs up to 33k (guitar) / 58k
+(bass). Worst engine peaks with both NAMs: 82 % (guitar), 87 % (bass); no
+skips or DMA errors.

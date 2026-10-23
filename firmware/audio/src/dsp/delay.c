@@ -97,7 +97,7 @@ COLD void delay_init(delay_t *dl, float fs, int16_t *line)
     dl->fresh = 1;                      /* the first set after init snaps too */
 }
 
-void delay_set_params(delay_t *dl, unsigned time_ms, unsigned fb, unsigned mix, unsigned lowcut,
+COLD void delay_set_params(delay_t *dl, unsigned time_ms, unsigned fb, unsigned mix, unsigned lowcut,
                       unsigned tone)
 {
     if (time_ms < DELAY_MS_MIN) time_ms = DELAY_MS_MIN;

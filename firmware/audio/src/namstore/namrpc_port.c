@@ -4,6 +4,7 @@
 #include "audio/engine.h"
 #include "ui/ui.h"
 #include "proto/proto.h"
+#include "dsp/fx.h"
 #ifdef NAM_UTILITIES
 uint32_t namrpc_tuner(uint8_t *out)
 {
@@ -36,4 +37,14 @@ int namrpc_delete(unsigned slot)
     int r=namstore_delete(slot);
     if(!r && engine_nam_selected()==slot) return namrpc_select(0,0);
     return r;
+}
+
+uint32_t namrpc_fx_describe(unsigned mode, uint8_t *out, uint32_t cap)
+{
+    return fx_describe(mode, out, cap);
+}
+
+int namrpc_edit_word(unsigned offset, uint16_t value)
+{
+    return ui_set_edit_word(offset, value);
 }

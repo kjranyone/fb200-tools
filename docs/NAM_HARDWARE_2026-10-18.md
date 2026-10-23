@@ -454,3 +454,31 @@ post 23, head 23, 0 mismatches. With NAM at 130.8k the engine block averages
 The working set grows to 86,856 bytes (8-frame ring slack + mirrors).
 A second instance still needs ~87 kB of RAM that is not free (about 60 kB
 spread over DTCM and OCRAM). Evidence: `out/nam-{speed,bench,asm,asm2,asm3}-20261023/`.
+
+## FX block: pitch shifter on the pedal (2026-10-23, user authorized)
+
+nam-manager builds with the FX block (mode 1, pitch) flashed to the app slot
+(same deploy/verify flow; protected regions, presets and settings
+unchanged; the live edit restored to RAM after each reboot, never saved).
+`out/fx-20261023/fxtest.py` describes the mode (op 14), sets the tail words
+live (op 15), profiles 10 s per case, then restores the edit buffer.
+
+| Splice search | search max | block max | engine peak, both NAMs |
+| --- | --- | --- | --- |
+| float, two searches per block possible (bass) | 112–125k | 245k | 96–134 % |
+| int16 + SMLALD, memcpy as calls (`-fno-builtin`) | 504–591k | 594k | 200–221 % |
+| `__builtin_memcpy` (one LDR) | 56–90k | 60–94k | 88–96 % |
+| word-aligned buffers, even offsets | 56–62k | 60–66k | 88–89 % |
+| fine-pass energies slid (final, bass) | 48–54k | 52–58k | **86–87 %** |
+| final, guitar range | 28–33k | 32–38k | **81–82 %** |
+
+At most one search per block (`searched`), which bounds a block's cost.
+Down shifts were 1.6x slower than up shifts before the alignment change: the
+int16 arrays on the stack were only 2-byte aligned, and half the lags
+started on odd indices. Baseline (NAM 1 only, no FX) peaks at 41 %. No skips
+or DMA errors in any case. Evidence: `out/fx-20261023/fxtest{4,5,6,7,7g}.log`.
+
+Also found while running the full suite: `hot_path.py` took a veneer's last
+`.word` as its target; the last veneer before const data then read a string
+as its target and lost the edge (`flash_store → … → flash_capacity` in the
+negative control). It now takes the veneer's first Thumb word.

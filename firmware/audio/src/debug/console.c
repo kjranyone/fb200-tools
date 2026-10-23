@@ -936,6 +936,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "prof")) engine_profile();
 #ifdef NAM_RUNTIME
     else if (streq(argv[0], "nambench")) engine_nam_bench();
+    else if (streq(argv[0], "fxstat")) engine_fx_stat();
 #endif
     else if (streq(argv[0], "loop")) cmd_loop(argc, argv);
 #if !defined(FB200_RECOVERY) && !defined(NAM_RUNTIME)
