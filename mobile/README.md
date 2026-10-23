@@ -1,9 +1,11 @@
 # FB200 NAM mobile manager
 
-Flutter prototype for Android / iOS. Web provides the same explicit offline demo;
-web Bluetooth is not implemented. **Physical FB200 Bluetooth model transfer
-remains unverified.** Physical Android BLE capabilities and empty-slot listing,
-firmware installation and Windows USB capture were checked separately.
+FB200 Studio: Flutter app for Android / iOS. Web provides the same explicit
+offline demo; web Bluetooth is not implemented. On a physical FB200 running
+`nam-manager`, the Android app has been used over BLE for preset and effect
+editing, model selection, model kinds and level meters (Lenovo TB-J716F,
+Android 16; see the [hardware log](../docs/NAM_HARDWARE_2026-10-18.md)).
+iOS builds but has not been run on a phone.
 This app has no firmware-update action. Review it through
 the demo without connecting a pedal.
 

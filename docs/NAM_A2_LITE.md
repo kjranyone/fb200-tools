@@ -12,9 +12,11 @@ in the [Flutter app](../mobile/README.md). The device validates the resulting
 binary packet again. USB CDC and the [BLE/HID extension](NAM_BLE_PROTOCOL.md)
 share the same persistent store.
 
-**Status:** implemented and host-tested, ARM cross-built, not flashed or tested
-on a real FB200. This is not a production firmware release. Real-time CPU cost,
-hardware clocks, audio quality and uninterrupted USB streaming are unmeasured.
+**Status:** installed and running on one physical FB200 since 2026-10-18; the
+`nam-manager` profile is the one in use. Every flash, the real-time CPU
+measurements and the model store tests are in the
+[hardware log](NAM_HARDWARE_2026-10-18.md). This is not a production firmware
+release; listening tests and input-level calibration are still in progress.
 The default `PROFILE=stock` remains the existing 44.1 kHz firmware. The earlier
 fixed-model prototype is recorded in [NAM_A2_LITE_INITIAL.md](NAM_A2_LITE_INITIAL.md).
 
