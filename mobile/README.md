@@ -71,6 +71,13 @@ See [UX design, implemented screens and deployment](../docs/design/NAM_STUDIO_UX
   dBFS is in each meter's tooltip. Without bit 10 the sidebar explains the
   missing meters. The global input gain stays in Settings, shown in dB
   (stock steps: -55..-5 dB in 5 dB steps, 0 dB, then +0.5 dB to +6 dB).
+- **Pre NAM**: on firmware with capability bit 13 a second NAM runs before
+  the first (a pedal capture into the amp). The NAM block shows a PRE line
+  with its own picker (00 = none) and adds PRE GAIN / PRE LEVEL knobs
+  (±18 dB); the choice lives in preset words 0xE2..0xE9 and is written with
+  the edit buffer, like the delay. The same firmware plays delays up to
+  300 ms, and the delay knob stops there. See
+  [second NAM and FX block](../docs/NAM_FX_BLOCK.md).
 - **Model kinds**: each stored model carries what it captures (Amp + Cab,
   Amp, Cab, Pedal, Outboard, Space, Experimental) in its header on firmware
   with capability bit 12. TONE3000 transfers take the tone's gear, `.nam`

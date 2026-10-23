@@ -114,10 +114,13 @@ abstract final class EffectParameters {
     };
   }
 
+  /// [delayMax]: the longest delay the firmware plays (stored times above it
+  /// play clamped); null for the stock format's 2500 ms.
   static List<EffectParameter> forModule(
     PedalModule m,
     PedalPreset preset, {
     List<IrSlotInfo>? irSlots,
+    int? delayMax,
   }) {
     EffectParameter knob(int f, String label, {String Function(int)? format}) =>
         EffectParameter(f, label, format: format ?? percent);
@@ -195,7 +198,7 @@ abstract final class EffectParameters {
             4,
             tr("ディレイタイム"),
             min: 40,
-            max: 2500,
+            max: delayMax ?? 2500,
             format: _milliseconds,
           ),
         ];

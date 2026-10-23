@@ -12,6 +12,8 @@ Future<int?> pickNamModel(
   DeviceState state, {
   bool transfer = false,
   bool canAdd = false,
+  bool pre = false,
+  int? selected,
 }) => showModalBottomSheet<int>(
   context: context,
   isScrollControlled: true,
@@ -25,7 +27,13 @@ Future<int?> pickNamModel(
               MediaQuery.viewInsetsOf(context).bottom > 0
           ? .96
           : .85,
-      child: NamModelPicker(state: state, transfer: transfer, canAdd: canAdd),
+      child: NamModelPicker(
+        state: state,
+        transfer: transfer,
+        canAdd: canAdd,
+        pre: pre,
+        selected: selected,
+      ),
     ),
   ),
 );
@@ -33,11 +41,18 @@ Future<int?> pickNamModel(
 class NamModelPicker extends StatefulWidget {
   final DeviceState state;
   final bool transfer, canAdd;
+
+  /// Choosing the second NAM: slot 0 means none, and [selected] (its slot)
+  /// is the one marked in use instead of the first NAM's.
+  final bool pre;
+  final int? selected;
   const NamModelPicker({
     super.key,
     required this.state,
     this.transfer = false,
     this.canAdd = false,
+    this.pre = false,
+    this.selected,
   });
 
   @override
@@ -53,7 +68,7 @@ class _NamModelPickerState extends State<NamModelPicker> {
   @override
   Widget build(BuildContext context) {
     final all = [
-      if (!widget.transfer) const ModelSlot(0, 'BYPASS'),
+      if (!widget.transfer) ModelSlot(0, widget.pre ? tr("なし") : 'BYPASS'),
       for (final slot in widget.state.slots)
         if (widget.transfer || slot.name != null) slot,
     ];
@@ -146,7 +161,9 @@ class _NamModelPickerState extends State<NamModelPicker> {
                         separatorBuilder: (_, _) => const SizedBox(height: 6),
                         itemBuilder: (context, index) {
                           final slot = slots[index];
-                          final loaded = slot.number == widget.state.selected;
+                          final loaded =
+                              slot.number ==
+                              (widget.selected ?? widget.state.selected);
                           return Material(
                             color: loaded && !widget.transfer
                                 ? StudioTheme.nam.withValues(alpha: .12)
@@ -192,10 +209,16 @@ class _NamModelPickerState extends State<NamModelPicker> {
                                     ? slot.name == null
                                           ? tr("新しく保存")
                                           : tr("上書き前に確認します")
+                                    : widget.pre && slot.number == 0
+                                    ? tr("プリ段を使わない")
                                     : loaded
-                                    ? tr("本体で選択中")
+                                    ? (widget.pre
+                                          ? tr("プリ段で使用中")
+                                          : tr("本体で選択中"))
                                     : slot.number == 0
-                                    ? tr("NAMを通さない")
+                                    ? (widget.pre
+                                          ? tr("プリ段を使わない")
+                                          : tr("NAMを通さない"))
                                     : tr("タップしてロード・試聴"),
                               ),
                               trailing: loaded && !widget.transfer

@@ -1033,4 +1033,14 @@ const translations = <String, List<String>>{
     "该模型已含箱体，箱体/IR 重复叠加",
   ],
   "すべて": ["All", "全部"],
+  "本体の編集中プリセットを読み取れていません。": [
+    "The pedal's current preset has not been read yet.",
+    "尚未读取设备当前编辑的预设。",
+  ],
+  "プリ段のNAMを調整中": ["Adjusting the pre NAM", "正在调整前级 NAM"],
+  "プリ段のNAMをロード中": ["Loading the pre NAM", "正在加载前级 NAM"],
+  "なし（NAMを1段で使用）": ["None (one NAM stage)", "无（仅使用一级 NAM）"],
+  "なし": ["None", "无"],
+  "プリ段で使用中": ["In the pre stage", "前级使用中"],
+  "プリ段を使わない": ["No pre stage", "不使用前级"],
 };

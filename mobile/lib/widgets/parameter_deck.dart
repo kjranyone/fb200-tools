@@ -25,7 +25,7 @@ class _ParameterDeckState extends State<ParameterDeck> {
     builder: (context, box) {
       final columns =
           (box.maxWidth >= 560
-                  ? 7
+                  ? (box.maxWidth >= 8 * 76 ? 8 : 7)
                   : box.maxWidth >= 400
                   ? 4
                   : box.maxWidth >= 260

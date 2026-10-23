@@ -187,6 +187,18 @@ class PedalClient extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  /// Writes edit-buffer words no module command covers (the preset tail) by
+  /// sending the whole edit buffer, as the delay block does.
+  Future<void> setEditWords(Map<int, int> words) async {
+    var changed = edit;
+    if (changed == null) throw DeviceError(tr("本体の編集中プリセットを読み取れていません。"));
+    for (final MapEntry(:key, :value) in words.entries) {
+      changed = changed!.setWord(key, value);
+    }
+    await transport.sendCommand(0x97, [255, ...changed!.bytes]);
+    await refresh();
+  }
+
   Future<void> select(int index) async {
     if (index < 0 || index >= 40) throw RangeError.range(index, 0, 39);
     await transport.exchange(

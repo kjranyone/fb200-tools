@@ -171,6 +171,10 @@ class NamClient {
   /// NAM GAIN spans -18..+18 dB instead of 0.5..2x.
   bool get wideNamGain => (capabilityFlags & 2048) != 0;
 
+  /// A second NAM runs before the first, set by preset words 0xE2..0xE9;
+  /// the same firmware caps the delay at 300 ms.
+  bool get canNam2 => (capabilityFlags & 8192) != 0;
+
   /// Header byte 52 holds the model kind (ops 11/12). Older firmware
   /// rejects a packet with it set.
   bool get canStoreKind => (capabilityFlags & 4096) != 0;

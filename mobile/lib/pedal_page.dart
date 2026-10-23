@@ -24,6 +24,7 @@ import 'pedal/ir_tab.dart';
 import 'pedal/level_meter.dart';
 import 'pedal/looper_tab.dart';
 import 'pedal/nam_model_selector.dart';
+import 'pedal/nam_pre_selector.dart';
 import 'pedal/pedal_nav_bar.dart';
 import 'pedal/presets_tab.dart';
 import 'pedal/settings_tab.dart';
@@ -1169,9 +1170,22 @@ class _PedalPageState extends State<PedalPage> {
       module,
       _pedal.edit!,
       irSlots: _irs,
+      delayMax: !widget.restrictedNam
+          ? null
+          : _canNam2
+          ? 300
+          : 500,
     );
     final fields = isNam
-        ? const [2, 3, 4, 6, 5, 7]
+        ? [
+            2,
+            3,
+            4,
+            6,
+            5,
+            7,
+            if (_canNam2 && _nam2Slot != 0) ...[_preGain, _preLevel],
+          ]
         : parameters.map((p) => p.field).toList();
     final toggle = Switch(
       value: enabled.contains(selected),
@@ -1268,6 +1282,15 @@ class _PedalPageState extends State<PedalPage> {
                         if (isNam) ...[
                           const SizedBox(height: 6),
                           _namModelSelector(),
+                          if (_canNam2) ...[
+                            const SizedBox(height: 4),
+                            NamPreSelector(
+                              state: _namState,
+                              slot: _nam2Slot,
+                              busy: _busy,
+                              onChoose: _chooseNamPre,
+                            ),
+                          ],
                         ],
                       ],
                       if (isNam &&
@@ -1289,6 +1312,9 @@ class _PedalPageState extends State<PedalPage> {
                           count: fields.length,
                           itemBuilder: (index, size) {
                             final i = fields[index];
+                            if (i == _preGain || i == _preLevel) {
+                              return _namPreKnob(i, size, accent);
+                            }
                             final parameter = isNam ? null : parameters[index];
                             final choices = parameter?.choices;
                             if (choices != null) {
@@ -1408,6 +1434,84 @@ class _PedalPageState extends State<PedalPage> {
       await _refreshNam();
     });
     _pendingEdit = null;
+  }
+
+  /// Virtual knob fields of the NAM editor: the second NAM's gain and level.
+  static const _preGain = 100, _preLevel = 101;
+
+  bool get _canNam2 =>
+      widget.restrictedNam && widget.namClient?.canNam2 == true;
+
+  /// The edit buffer's second NAM slot, 0 when unset.
+  int get _nam2Slot {
+    final edit = _pedal.edit;
+    if (edit == null || edit.word(NamPre.mark) != NamPre.marker) return 0;
+    final slot = edit.word(NamPre.slot);
+    return slot <= 64 ? slot : 0;
+  }
+
+  int _namPreWord(int offset) {
+    final edit = _pedal.edit!;
+    // An unset tail reads 0; the pre stage's neutral is 50 (0 dB).
+    return edit.word(NamPre.mark) == NamPre.marker
+        ? edit.word(offset).clamp(0, 100)
+        : 50;
+  }
+
+  Widget _namPreKnob(int field, double size, Color accent) {
+    final offset = field == _preGain ? NamPre.gain : NamPre.level;
+    return Knob(
+      key: ValueKey('preset-${_pedal.editIndex}-nam-pre-$field'),
+      defaultValue: 50,
+      label: field == _preGain ? 'PRE GAIN' : 'PRE LEVEL',
+      value: _namPreWord(offset),
+      min: 0,
+      max: 100,
+      size: size,
+      accent: accent,
+      format: (v) => NamTone.format(2, v, wideGain: true),
+      enabled: !_busy,
+      onChanged: (value) =>
+          _run(tr("プリ段のNAMを調整中"), () => _pedal.setEditWords({offset: value})),
+    );
+  }
+
+  Future<void> _chooseNamPre() async {
+    final state = _namState;
+    if (_busy || state == null || _pedal.edit == null) return;
+    final preset = _pedal.selected;
+    setState(() => _libraryOpen = true);
+    int? choice;
+    try {
+      await _poll;
+      if (!mounted) return;
+      choice = await pickNamModel(
+        context,
+        state,
+        canAdd: widget.onOpenModels != null,
+        pre: true,
+        selected: _nam2Slot,
+      );
+    } finally {
+      if (mounted) setState(() => _libraryOpen = false);
+    }
+    if (!mounted || choice == null) return;
+    if (choice == -1) {
+      await _guard(_openModels);
+      return;
+    }
+    if (preset != _pedal.selected) {
+      setState(() => _error = tr("本体のプリセットが切り替わりました。モデルを選び直してください。"));
+      return;
+    }
+    if (choice == _nam2Slot) return;
+    final words = {
+      NamPre.mark: NamPre.marker,
+      NamPre.slot: choice,
+      NamPre.gain: _namPreWord(NamPre.gain),
+      NamPre.level: _namPreWord(NamPre.level),
+    };
+    await _run(tr("プリ段のNAMをロード中"), () => _pedal.setEditWords(words));
   }
 
   Future<void> _editNamKind() async {
