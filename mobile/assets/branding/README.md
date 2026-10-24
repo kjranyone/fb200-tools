@@ -9,8 +9,14 @@ The launcher resources are installed in Android's five `res/mipmap-*`
 directories, iOS's `AppIcon.appiconset`, and `web/icons` plus `web/favicon.png`.
 The existing Android manifest, Xcode asset catalog and web manifest already
 reference these filenames. These are platform launcher resources; they do not
-need a Flutter `pubspec.yaml` asset entry. Android currently uses legacy PNG
-launcher icons, without adaptive or themed icon layers.
+need a Flutter `pubspec.yaml` asset entry.
+
+On Android 8+ the launcher uses the adaptive icon in
+`res/mipmap-anydpi-v26/ic_launcher.xml`: a solid `ic_launcher_background`
+color, the knob as `ic_launcher_foreground.png` (outer ring at 64 dp of the
+108 dp canvas), and a flat `ic_launcher_monochrome.png` for themed icons.
+`mobile/tool/make_launcher_icons.py` regenerates both layers from the master.
+The legacy `ic_launcher.png` files remain for older launchers.
 
 `tone3000.png` is the unmodified primary logo from TONE3000's official
 [logo package](https://www.tone3000.com/TONE3000%20Logos.zip), linked in the
