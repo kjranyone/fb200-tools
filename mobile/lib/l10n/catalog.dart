@@ -223,6 +223,23 @@ const translations = <String, List<String>>{
     "Select your FB200. Its name depends on the pedal’s Bluetooth settings.",
     "请选择 FB200。名称取决于效果器的蓝牙设置。",
   ],
+  "Bluetoothがオフになっています。オンにすると機器の検索を始めます。": [
+    "Bluetooth is off. Turn it on to start searching for devices.",
+    "蓝牙已关闭。开启后将开始搜索设备。",
+  ],
+  "Bluetoothをオンにする": ["Turn on Bluetooth", "开启蓝牙"],
+  "Bluetoothの設定を開けませんでした。": [
+    "Could not open the Bluetooth settings.",
+    "无法打开蓝牙设置。",
+  ],
+  "前回接続した機器": ["Previously connected", "以前连接过的设备"],
+  "その他の機器": ["Other devices", "其他设备"],
+  "検索中": ["Searching", "正在搜索"],
+  "近くに見つかりません。タップすると接続を試みます。": [
+    "Not found nearby. Tap to try connecting.",
+    "附近未找到。点按可尝试连接。",
+  ],
+  "この機器を忘れる": ["Forget this device", "忘记此设备"],
   "機器が見つかりません。Bluetoothと本体の電源を確認してください。": [
     "No devices found. Check Bluetooth and the pedal power.",
     "未找到设备。请检查蓝牙和效果器电源。",

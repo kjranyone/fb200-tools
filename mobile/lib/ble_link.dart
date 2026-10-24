@@ -34,7 +34,8 @@ class BleConnector {
           defaultTargetPlatform == TargetPlatform.iOS);
   FlutterReactiveBle get ble => _instance ??= FlutterReactiveBle();
 
-  Future<void> prepare() async {
+  /// Permissions and plugin setup, without waiting for the adapter to be on.
+  Future<void> authorize() async {
     if (!supported) {
       throw DeviceError(tr("実機へのBluetooth接続はAndroid / iOSで利用できます。"));
     }
@@ -53,14 +54,34 @@ class BleConnector {
       throw DeviceError(tr("Bluetoothの利用を許可してください。拒否済みの場合は端末の設定から変更できます。"));
     }
     await ble.initialize();
-    if (ble.status != BleStatus.ready) {
-      try {
-        await ble.statusStream
-            .firstWhere((s) => s == BleStatus.ready)
-            .timeout(const Duration(seconds: 10));
-      } on TimeoutException {
-        throw DeviceError(tr("Bluetoothをオンにしてください。"));
-      }
+  }
+
+  /// Emits the current adapter state on listen, then every change.
+  Stream<BleStatus> get statusStream => ble.statusStream;
+
+  /// Asks the system to turn Bluetooth on (Android only).
+  bool get canRequestEnable =>
+      supported && defaultTargetPlatform == TargetPlatform.android;
+
+  Future<bool> requestEnable() async =>
+      await const MethodChannel('dev.fb200/platform')
+          .invokeMethod<bool>('requestBluetoothEnable') ??
+      false;
+
+  Future<void> prepare() async {
+    await authorize();
+    if (ble.status == BleStatus.ready) return;
+    BleStatus status;
+    try {
+      // Fail at once when the adapter is reported off instead of waiting.
+      status = await ble.statusStream
+          .firstWhere((s) => s == BleStatus.ready || s == BleStatus.poweredOff)
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      status = BleStatus.unknown;
+    }
+    if (status != BleStatus.ready) {
+      throw DeviceError(tr("Bluetoothをオンにしてください。"));
     }
   }
 

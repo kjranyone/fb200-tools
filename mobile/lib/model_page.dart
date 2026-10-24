@@ -6,10 +6,10 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
 import 'ble_link.dart';
 import 'connection_recovery.dart';
+import 'known_devices.dart';
 import 'widgets/device_picker.dart';
 import 'widgets/dialogs.dart';
 import 'widgets/recovery_layer.dart';
@@ -180,7 +180,7 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
   }
 
   Future<void> _connect() async {
-    final device = await showModalBottomSheet<DiscoveredDevice>(
+    final device = await showModalBottomSheet<PedalDevice>(
       context: context,
       isScrollControlled: true,
       builder: (_) => DevicePicker(connector: _connector),
@@ -194,6 +194,7 @@ class _ModelPageState extends State<ModelPage> with WidgetsBindingObserver {
         false,
         reopen: () => _connector.openLink(device.id),
       );
+      await const KnownDevices().remember(device);
     });
   }
 

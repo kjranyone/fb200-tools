@@ -3,6 +3,8 @@ package dev.fb200.fb200_nam
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.bluetooth.BluetoothAdapter
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -16,8 +18,17 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.fb200/platform")
             .setMethodCallHandler { call, result ->
-                if (call.method == "androidSdkInt") result.success(Build.VERSION.SDK_INT)
-                else result.notImplemented()
+                when (call.method) {
+                    "androidSdkInt" -> result.success(Build.VERSION.SDK_INT)
+                    "requestBluetoothEnable" -> try {
+                        // Needs BLUETOOTH_CONNECT on API 31+, granted before the picker asks.
+                        startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                    else -> result.notImplemented()
+                }
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.fb200/tone3000")
             .setMethodCallHandler { call, result ->
