@@ -1,0 +1,10 @@
+Use case: logo-brand
+Asset type: square master launcher icon for FB200 Studio, an existing Flutter app controlling guitar amp captures and a multi-effects pedal.
+Primary request: Create one polished, distinctive app launcher icon based on a single amplifier control knob and its signal arc. This is the actual icon artwork, not a presentation or icon sheet.
+Scene/backdrop: opaque flat dark graphite #0c0f13 background reaching every edge of the square.
+Subject: a bold centered amplifier control knob, finely machined dark graphite metal, one clear warm orange #ffa25c illuminated arc and a simple orange position marker. Modern professional guitar studio equipment character, restrained depth, crisp balanced geometry. Recognizable even as a tiny launcher icon.
+Composition/framing: front-facing square canvas, centered circular symbol, entire meaningful symbol contained inside a central circle of diameter 64 percent of the canvas; generous clean background on all sides for operating system masks.
+Style/medium: premium raster app icon with subtle realistic material depth, strong graphic silhouette, understated highlights.
+Color palette: use the existing app palette, graphite #0c0f13 and #151a20, orange #ffa25c, subtle neutral metal highlights.
+Text: none.
+Constraints: exactly one icon, fully opaque full-bleed square, no baked-in rounded square corners, no border around the canvas, no letters or numerals, no labels, no watermark, no external logos, no Flutter logo, no phone mockup, no collage, no extra controls, no decorative particles.

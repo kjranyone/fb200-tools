@@ -166,8 +166,9 @@ flutter build web
 ```
 
 APK: `build/app/outputs/flutter-apk/app-debug.apk`. Debug prototype, not a store
-release; no automatic installation. Android/iOS launch icons are still Flutter
-template assets in this first version.
+release; no automatic installation. Android, iOS and web use the FB200 Studio
+amplifier-knob launcher icon. The 1024 px master and generation prompt are in
+[`assets/branding/`](assets/branding/README.md).
 
 iOS source includes Bluetooth purpose keys and targets iOS 15+. Compile/sign on
 macOS/Xcode (`flutter build ios --no-codesign` for a compile check, then configure
