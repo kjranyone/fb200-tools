@@ -1,3 +1,4 @@
+import 'package:fb200_nam/widgets/chain_strip.dart';
 import 'package:fb200_nam/widgets/knob.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,4 +76,93 @@ void main() {
       },
     );
   }
+
+  testWidgets('a swipe on the module card steps along the chain', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final h = StudioHarness();
+    await tester.pumpWidget(studio(h));
+    await tester.pumpAndSettle();
+    int selected() =>
+        tester.widget<ChainStrip>(find.byType(ChainStrip)).selected!;
+    final start = selected();
+    // The header icon is no hit target of its own.
+    final empty =
+        tester.getTopLeft(find.byKey(const ValueKey('module-card'))) +
+        const Offset(28, 28);
+
+    await tester.dragFrom(empty, const Offset(-160, 0));
+    await tester.pumpAndSettle();
+    expect(selected(), start + 1);
+    expect(find.text('NAM A2 LITE'), findsNothing);
+
+    await tester.dragFrom(empty, const Offset(160, 0));
+    await tester.pumpAndSettle();
+    expect(selected(), start);
+    expect(find.text('NAM A2 LITE'), findsOneWidget);
+
+    // While the finger is down the card follows it and shows where a
+    // release goes; a short, slow pull springs back.
+    final card = find.byKey(const ValueKey('module-card'));
+    final body = find.descendant(of: card, matching: find.byType(Card));
+    final rest = tester.getTopLeft(body);
+    final gesture = await tester.startGesture(empty);
+    for (var i = 0; i < 6; i++) {
+      await gesture.moveBy(const Offset(-8, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    final next = find.descendant(
+      of: card,
+      matching: find.byKey(const ValueKey('swipe-next')),
+    );
+    expect(next, findsOneWidget);
+    expect(
+      find.descendant(of: next, matching: find.text('CAB')),
+      findsOneWidget,
+    );
+    expect(tester.getTopLeft(body).dx, lessThan(rest.dx));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(selected(), start);
+    expect(next, findsNothing);
+    expect(tester.getTopLeft(body), rest);
+
+    // A slow pull past the threshold arms the hint and moves on release.
+    final slow = await tester.startGesture(empty);
+    for (var i = 0; i < 20; i++) {
+      await slow.moveBy(const Offset(-8, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(selected(), start);
+    await tester.pump(const Duration(milliseconds: 200));
+    await slow.up();
+    await tester.pumpAndSettle();
+    expect(selected(), start + 1);
+    await tester.dragFrom(empty, const Offset(160, 0));
+    await tester.pumpAndSettle();
+    expect(selected(), start);
+
+    // The chain's first module gives way but never wraps around.
+    final first = tester.widget<ChainStrip>(find.byType(ChainStrip));
+    first.onTap(0);
+    await tester.pumpAndSettle();
+    await tester.dragFrom(empty, const Offset(200, 0));
+    await tester.pumpAndSettle();
+    expect(selected(), 0);
+    first.onTap(start);
+    await tester.pumpAndSettle();
+
+    // A sideways drag on a knob is fine control, never a module change.
+    await tester.drag(find.byType(Knob).first, const Offset(-160, 0));
+    await tester.pumpAndSettle();
+    expect(selected(), start);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(h.close);
+  });
 }
