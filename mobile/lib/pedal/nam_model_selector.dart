@@ -66,85 +66,89 @@ class NamModelSelector extends StatelessWidget {
         : !namOn
         ? tr("ロード済み · NAMはOFF")
         : tr("NAM有効 · ドラッグ中も音に反映");
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
+    // The whole strip opens the picker, which also offers add / transfer;
+    // with nothing stored yet it goes straight to the library.
+    final onTap = busy || state == null
+        ? null
+        : empty && onOpenLibrary != null
+        ? onOpenLibrary
+        : canChoose
+        ? onChoose
+        : null;
+    return Semantics(
+      button: true,
+      label: empty ? tr("追加・転送") : tr("モデルを選ぶ"),
+      child: Material(
         color: StudioTheme.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: StudioTheme.nam.withValues(alpha: .45)),
-      ),
-      child: LayoutBuilder(
-        builder: (context, box) => Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: StudioTheme.nam.withValues(alpha: .45)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: const ValueKey('choose-nam-model'),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Text(
-                          state == null
-                              ? fallbackModel ?? 'NAM MODEL'
-                              : selected == 0
-                              ? '00  BYPASS'
-                              : '${selected.toString().padLeft(2, '0')}  ${name ?? tr("モデルなし")}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              state == null
+                                  ? fallbackModel ?? 'NAM MODEL'
+                                  : selected == 0
+                                  ? '00  BYPASS'
+                                  : '${selected.toString().padLeft(2, '0')}  ${name ?? tr("モデルなし")}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
+                          if (kind != null &&
+                              (kind != ModelKind.unknown ||
+                                  onEditKind != null)) ...[
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: ModelKindBadge(
+                                kind,
+                                key: const ValueKey('nam-model-kind'),
+                                onTap: busy ? null : onEditKind,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        warning ?? status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: warning == null
+                              ? StudioTheme.ready
+                              : const Color(0xffe4bd69),
                         ),
                       ),
-                      if (kind != null &&
-                          (kind != ModelKind.unknown ||
-                              onEditKind != null)) ...[
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: ModelKindBadge(
-                            kind,
-                            key: const ValueKey('nam-model-kind'),
-                            onTap: busy ? null : onEditKind,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
-                  Text(
-                    warning ?? status,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: warning == null
-                          ? StudioTheme.ready
-                          : const Color(0xffe4bd69),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                Icon(
+                  empty ? Icons.add : Icons.unfold_more,
+                  size: 20,
+                  color: onTap == null ? StudioTheme.line : StudioTheme.nam,
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              key: const ValueKey('choose-nam-model'),
-              style: FilledButton.styleFrom(
-                backgroundColor: StudioTheme.nam,
-                foregroundColor: StudioTheme.background,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-              ),
-              onPressed: busy || state == null || !canChoose ? null : onChoose,
-              icon: const Icon(Icons.swap_horiz, size: 18),
-              label: Text(box.maxWidth >= 560 ? tr("モデルを選ぶ") : tr("選ぶ")),
-            ),
-            if (onOpenLibrary != null)
-              IconButton(
-                key: const ValueKey('open-nam-library'),
-                tooltip: tr("追加・転送"),
-                onPressed: busy ? null : onOpenLibrary,
-                icon: const Icon(Icons.add),
-              ),
-          ],
+          ),
         ),
       ),
     );

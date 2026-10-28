@@ -126,10 +126,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
       expect(find.textContaining('Bass Crunch'), findsOneWidget);
+      // Add / transfer lives in the picker that the model strip opens.
       await tester.ensureVisible(
-        find.byKey(const ValueKey('open-nam-library')),
+        find.byKey(const ValueKey('choose-nam-model')),
       );
-      await tester.tap(find.byKey(const ValueKey('open-nam-library')));
+      await tester.tap(find.byKey(const ValueKey('choose-nam-model')));
+      await tester.pumpAndSettle();
+      final add = find.text('モデルを追加・転送');
+      await tester.tap(
+        add.evaluate().isEmpty ? find.byTooltip('モデルを追加・転送') : add,
+      );
       await tester.pumpAndSettle();
       expect(find.textContaining('RenamedBass'), findsOneWidget);
       expect(h.pedal.writes, 0);

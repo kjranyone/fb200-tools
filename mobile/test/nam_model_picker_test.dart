@@ -1,4 +1,5 @@
 import 'package:fb200_nam/nam_client.dart';
+import 'package:fb200_nam/pedal/nam_model_selector.dart';
 import 'package:fb200_nam/studio_theme.dart';
 import 'package:fb200_nam/widgets/nam_model_picker.dart';
 import 'package:flutter/material.dart';
@@ -87,4 +88,35 @@ void main() {
       expect(choice, 2);
     },
   );
+
+  testWidgets('the model strip opens the picker, or the library when empty', (
+    tester,
+  ) async {
+    final taps = <String>[];
+    Future<void> strip(DeviceState state) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: StudioTheme.theme,
+          home: Scaffold(
+            body: NamModelSelector(
+              state: state,
+              activeModel: state.slots.firstOrNull?.name,
+              fallbackModel: null,
+              namOn: true,
+              busy: false,
+              canChoose: true,
+              onChoose: () => taps.add('choose'),
+              onOpenLibrary: () => taps.add('library'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('choose-nam-model')));
+    }
+
+    await strip(DeviceState(1, [const ModelSlot(1, 'Studio Clean')]));
+    await strip(DeviceState(0, [const ModelSlot(1, null)]));
+    expect(taps, ['choose', 'library']);
+    expect(find.byType(IconButton), findsNothing);
+  });
 }
